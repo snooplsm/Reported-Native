@@ -45,3 +45,11 @@ export const ButtonStyle = StyleSheet.create({
     color: colors.orange,
   },
 });
+
+export const AutoStyle = StyleSheet.create( {
+  style: {
+    borderColor: '#ec682c',
+    padding: 10,
+    borderWidth: 1,
+  }
+});
