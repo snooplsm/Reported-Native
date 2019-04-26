@@ -2,6 +2,7 @@ import React from 'react';
 import Splash from './Splash';
 import Login from './Login';
 import Register from './Register';
+import Submission from './Submission';
 import { StyleSheet, Text, View } from 'react-native';
 import { createStackNavigator, createAppContainer } from "react-navigation";
 
@@ -9,7 +10,8 @@ const AppNavigator = createStackNavigator(
   {
     Home: Splash,
     Login: Login,
-    Register: Register
+    Register: Register,
+    Submission: Submission
   },
   {
     initialRouteName: 'Home'
