@@ -5,15 +5,15 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Button, Input, Icon } from "react-native-elements";
-import { api } from './Api'
+import { api } from "./Api";
 
 export default class Login extends React.Component {
   static navigationOptions = {
-    title: "Login",
+    title: "Login"
   };
 
   constructor(props) {
@@ -22,7 +22,7 @@ export default class Login extends React.Component {
     this.state = {
       email: "",
       password: "",
-      loading: false,
+      loading: false
     };
   }
 
@@ -56,17 +56,25 @@ export default class Login extends React.Component {
   }
 
   submitLogin() {
-    const { email, password } = this.state
-    api.login(email, password).then((res=> {
-      console.log(res.data)
-    }))
-    .catch(x=> {
-      console.log(x)
-    })
+    const {
+      navigation: { navigate }
+    } = this.props;
+
+    const { email, password } = this.state;
+    api
+      .login(email, password)
+      .then(res => {
+        navigate("Home");
+      })
+      .catch(x => {
+        console.log(x);
+      });
   }
 
   isSubmitEnabled() {
-    return this.validateEmail(this.state.email) && this.state.password.length>2
+    return (
+      this.validateEmail(this.state.email) && this.state.password.length > 2
+    );
   }
 
   validateEmail(email) {
@@ -77,7 +85,7 @@ export default class Login extends React.Component {
   render() {
     return (
       <KeyboardAvoidingView style={styles.container}>
-        <View style={{marginTop: '20%'}}/>
+        <View style={{ marginTop: "20%" }} />
         <Input
           label={"Email"}
           autoCapitalize={"none"}
@@ -95,7 +103,7 @@ export default class Login extends React.Component {
           secureTextEntry={true}
           containerStyle={styles.field}
           errorStyle={ErrorStyle.style}
-          onChangeText={password=> this.setState({password})}
+          onChangeText={password => this.setState({ password })}
           leftIcon={<Icon type="material-community" name="lock" />}
         />
         <TouchableOpacity
@@ -108,7 +116,9 @@ export default class Login extends React.Component {
           <Button
             disabled={!this.isSubmitEnabled()}
             loading={this.state.loading}
-            onPress={() => {this.submitLogin()}}
+            onPress={() => {
+              this.submitLogin();
+            }}
             buttonStyle={ButtonStyle.primary}
             title="Login"
           />
@@ -123,16 +133,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     flex: 1,
     width: "100%",
-    height: "100%",
+    height: "100%"
   },
-  email: {
-
-  },
+  email: {},
   field: {
-    marginTop: 30,
+    marginTop: 30
   },
   forgotPassword: {
     marginTop: 125,
-    alignItems: "center",
-  },
+    alignItems: "center"
+  }
 });
