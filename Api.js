@@ -2,7 +2,7 @@ import axios from 'axios'
 import {AsyncStorage} from 'react-native';
 
 const ax = axios.create({
-  baseURL: "https://hidden-scrubland-12819.herokuapp.com"
+  baseURL: "http://localhost:8084/staging/"
 });
 
 const openAx = axios.create({
@@ -55,10 +55,10 @@ export const api = {
     })
   },
 
-  login: (email, password) => {
+  login: (username, password) => {
     return ax.post('/login', {
-      email: email,
-      password: password
+      username,
+      password
     }).then(res=> {
       return new UserPromise(res)
     })

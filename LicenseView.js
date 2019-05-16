@@ -105,6 +105,7 @@ export default class LicenseViewModal extends React.Component {
         )}
         <Input
           placeholder='License Number or Medallion'
+          onChangeText={licensePlate=>this.setState({licensePlate: licensePlate.toUpperCase()}) }
           label={this.state.licensePlate.length==0 ? "" : 'License Number or Medallion'}
           value={this.state.licensePlate}/>
 
@@ -118,7 +119,7 @@ export default class LicenseViewModal extends React.Component {
                   {plate.plates.map(x=>{
                     return (
                       <View style={styles.plateTextContainer}>
-                        <Text style={styles.plateText}>{x.plate} ({x.confidence.toFixed(1)})</Text>
+                        <Text style={styles.plateText}>{x.plate} ({x. confidence.toFixed(1)})</Text>
                         <Button
                          onPress={() => this._onPlateSelected({plate:plate, candidate: x})}
                          icon={

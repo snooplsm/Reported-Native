@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Button, Input, Icon } from "react-native-elements";
+import { api } from './Api'
 
 export default class Login extends React.Component {
   static navigationOptions = {
@@ -54,6 +55,20 @@ export default class Login extends React.Component {
     }
   }
 
+  submitLogin() {
+    const { email, password } = this.state
+    api.login(email, password).then((res=> {
+      console.log(res.data)
+    }))
+    .catch(x=> {
+      console.log(x)
+    })
+  }
+
+  isSubmitEnabled() {
+    return this.validateEmail(this.state.email) && this.state.password.length>2
+  }
+
   validateEmail(email) {
     var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     return re.test(email);
@@ -62,6 +77,7 @@ export default class Login extends React.Component {
   render() {
     return (
       <KeyboardAvoidingView style={styles.container}>
+        <View style={{marginTop: '20%'}}/>
         <Input
           label={"Email"}
           autoCapitalize={"none"}
@@ -79,6 +95,7 @@ export default class Login extends React.Component {
           secureTextEntry={true}
           containerStyle={styles.field}
           errorStyle={ErrorStyle.style}
+          onChangeText={password=> this.setState({password})}
           leftIcon={<Icon type="material-community" name="lock" />}
         />
         <TouchableOpacity
@@ -89,8 +106,9 @@ export default class Login extends React.Component {
         </TouchableOpacity>
         <View style={styles.field}>
           <Button
+            disabled={!this.isSubmitEnabled()}
             loading={this.state.loading}
-            onPress={() => {}}
+            onPress={() => {this.submitLogin()}}
             buttonStyle={ButtonStyle.primary}
             title="Login"
           />
@@ -108,7 +126,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   email: {
-    top: "20%",
+
   },
   field: {
     marginTop: 30,
