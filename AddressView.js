@@ -13,7 +13,8 @@ export default class AddressView extends React.Component {
   }
 
   render() {
-    return (<GooglePlacesAutocomplete
+    return (
+      <GooglePlacesAutocomplete
       placeholder='Street Address of Complaint'
       minLength={3} // minimum length of text to search
       autoFocus={false}

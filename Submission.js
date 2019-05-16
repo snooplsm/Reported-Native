@@ -2,14 +2,14 @@ import React from 'react';
 import {Text, TouchableOpacity, View, StyleSheet} from 'react-native';
 import ComplaintView from './ComplaintView'
 import { ImagePicker, Permissions } from 'expo';
-import { Button, Image } from 'react-native-elements'
+import { Button, Image, Input } from 'react-native-elements'
 import { Modal } from 'react-native';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import { ImageManipulator } from 'expo';
 import AddressView from './AddressView'
 import LicenseView from './LicenseView'
 import ImageCarousel from './ImageCarousel'
-import moment from 'moment'
+import moment from "moment"
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr } from './Api'
 
@@ -23,7 +23,7 @@ export default class Submission extends React.Component {
     this.state = {
       images: [],
       resizedImages: [],
-      datePickerVisible: true
+      datePickerVisible: true,
     }
   }
 
@@ -46,6 +46,27 @@ export default class Submission extends React.Component {
     } else {
       return (<></>)
     }
+  }
+
+  componentWillMount() {
+    this.timeofreportinterval = setInterval(()=> {
+      const time = this.timeofreport(this.state.timeofreport)
+      this.setState({timeofreportstr: time})
+    }, 30000)
+  }
+
+  componentWillUnMount() {
+    clearInterval(this.timeofreportinterval)
+  }
+
+  timeofreport(timeofreport) {
+    console.log(timeofreport)
+    const momy = moment(timeofreport)
+    console.log(momy)
+    if(momy.isValid()) {
+      return `${momy.fromNow()} @ ${momy.format("M/d h:mm a")}`
+    }
+    return ''
   }
 
   render() {
@@ -73,6 +94,7 @@ export default class Submission extends React.Component {
           onConfirm={(date)=> {
             this.setState({
               timeofreport: date,
+              timeofreportstr: this.timeofreport(date),
               datePickerVisible: false
             })
           }}
@@ -80,6 +102,13 @@ export default class Submission extends React.Component {
             this.setState({datePickerVisible: false})
           }}
         />
+        <View>
+          <Input
+            onFocus={(x)=>this.setState({datePickerVisible:true})}
+            label={'When incident occurred'}
+            value={this.state.timeofreportstr}
+          />
+        </View>
       </View>
     )
   }
@@ -134,13 +163,14 @@ export default class Submission extends React.Component {
         GPSLongitude:lng } = exif
         console.log(exif)
         console.log(width,height,uri,type,timeofreport,altitude,lat,lng)
-      console.log(timeofreport)
+        console.log(timeofreport)
       if(timeofreport) {
         console.log('we have a time of report')
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate()
         console.log(datetime)
         this.setState({
           timeofreport: datetime,
+          timeofreportstr: this.timeofreport(datetime)
 
         })
       }
