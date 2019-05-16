@@ -1,223 +1,221 @@
-import React from 'react';
-import {Text, TouchableOpacity, View, StyleSheet} from 'react-native';
-import ComplaintView from './ComplaintView'
-import { ImagePicker, Permissions } from 'expo';
-import { Button, Image, Input } from 'react-native-elements'
-import { Modal } from 'react-native';
-import ImageViewer from 'react-native-image-zoom-viewer';
-import { ImageManipulator } from 'expo';
-import AddressView from './AddressView'
-import LicenseView from './LicenseView'
-import ImageCarousel from './ImageCarousel'
-import moment from "moment"
+import React from "react";
+import { Text, TouchableOpacity, View, StyleSheet } from "react-native";
+import ComplaintView from "./ComplaintView";
+import { ImagePicker, Permissions } from "expo";
+import { Button, Image, Input } from "react-native-elements";
+import { Modal } from "react-native";
+import ImageViewer from "react-native-image-zoom-viewer";
+import { ImageManipulator } from "expo";
+import AddressView from "./AddressView";
+import LicenseView from "./LicenseView";
+import ImageCarousel from "./ImageCarousel";
+import moment from "moment";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr } from './Api'
+import { alpr } from "./Api";
 
 export default class Submission extends React.Component {
-  static navigationOptions = {
-    title: 'Report'
+  static navigationOptions = ({ navigation }) => {
+    return {
+      headerTitle: "Report",
+      headerLeft: <Button title="+1" color="#000" />
+    };
   };
 
   constructor(props) {
-    super(props)
+    super(props);
     this.state = {
       images: [],
       resizedImages: [],
-      datePickerVisible: true,
-    }
+      datePickerVisible: true
+    };
   }
 
   closeModal() {
-    this.setState({imageModal: false})
+    this.setState({ imageModal: false });
   }
 
   imageModal() {
-    if(this.state.imageModal) {
-      return <Modal
-        visible={true}
-        onRequestClose={()=> {
-
-        }}
-        transparent={false}>
+    if (this.state.imageModal) {
+      return (
+        <Modal visible={true} onRequestClose={() => {}} transparent={false}>
           <ImageViewer
-            onClick={()=> this.closeModal()}
-            imageUrls={this.state.images} />
-            </Modal>
+            onClick={() => this.closeModal()}
+            imageUrls={this.state.images}
+          />
+        </Modal>
+      );
     } else {
-      return (<></>)
+      return <></>;
     }
   }
 
   componentWillMount() {
-    this.timeofreportinterval = setInterval(()=> {
-      const time = this.timeofreport(this.state.timeofreport)
-      this.setState({timeofreportstr: time})
-    }, 30000)
+    this.timeofreportinterval = setInterval(() => {
+      const time = this.timeofreport(this.state.timeofreport);
+      this.setState({ timeofreportstr: time });
+    }, 30000);
   }
 
   componentWillUnMount() {
-    clearInterval(this.timeofreportinterval)
+    clearInterval(this.timeofreportinterval);
   }
 
   timeofreport(timeofreport) {
-    console.log(timeofreport)
-    const momy = moment(timeofreport)
-    console.log(momy)
-    if(momy.isValid()) {
-      return `${momy.fromNow()} @ ${momy.format("M/d h:mm a")}`
+    console.log(timeofreport);
+    const momy = moment(timeofreport);
+    console.log(momy);
+    if (momy.isValid()) {
+      return `${momy.fromNow()} @ ${momy.format("M/d h:mm a")}`;
     }
-    return ''
+    return "";
   }
 
   render() {
     return (
       <View style={styles.container}>
-        <ComplaintView/>
-        <Button
-          onPress={this._pickImage}
-          title={'Photo/Video'}/>
+        <ComplaintView />
+        <Button onPress={this._pickImage} title={"Photo/Video"} />
         <ImageCarousel entries={this.state.images} />
         {this.imageModal()}
         <LicenseView
-          onPlateSelected={(plate)=> console.log('plate selected', plate)}
+          onPlateSelected={plate => console.log("plate selected", plate)}
           images={this.state.images}
-          />
-        <AddressView onPress={(rowData)=> {
-          console.log(rowData)
-          this.setState({location: rowData})
-        }}/>
+        />
+        <AddressView
+          onPress={rowData => {
+            console.log(rowData);
+            this.setState({ location: rowData });
+          }}
+        />
         <DateTimePicker
-          mode={'datetime'}
+          mode={"datetime"}
           titleIOS={"Time of incident"}
           isVisible={this.state.datePickerVisible}
           date={this.state.timeofreport}
-          onConfirm={(date)=> {
+          onConfirm={date => {
             this.setState({
               timeofreport: date,
               timeofreportstr: this.timeofreport(date),
               datePickerVisible: false
-            })
+            });
           }}
           onCancel={() => {
-            this.setState({datePickerVisible: false})
+            this.setState({ datePickerVisible: false });
           }}
         />
         <View>
           <Input
-            onFocus={(x)=>this.setState({datePickerVisible:true})}
-            label={'When incident occurred'}
+            onFocus={x => this.setState({ datePickerVisible: true })}
+            label={"When incident occurred"}
             value={this.state.timeofreportstr}
           />
         </View>
       </View>
-    )
+    );
   }
 
-  resizeImages = async()=> {
-    const resizeAsync = this.state.images.map(x=> {
-      let crop = null
-      if(x.width<x.height) {
+  resizeImages = async () => {
+    const resizeAsync = this.state.images.map(x => {
+      let crop = null;
+      if (x.width < x.height) {
         crop = {
           originX: (x.height - x.width) / 2,
           originY: 0,
           width: x.width,
           height: x.width
-        }
+        };
       } else {
         crop = {
           originY: (x.width - x.height) / 2,
           originX: 0,
           width: x.height,
           height: x.height
-        }
+        };
       }
       return ImageManipulator.manipulateAsync(x.url, [
         {
           crop: crop
         },
-        { resize: {
-          width: 200,
-          height: 200
-        }}
-      ])
-    })
-    return Promise.all(resizeAsync)
-  }
+        {
+          resize: {
+            width: 200,
+            height: 200
+          }
+        }
+      ]);
+    });
+    return Promise.all(resizeAsync);
+  };
 
-  _pickImage = async ()=> {
+  _pickImage = async () => {
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
-        exif: true,
-        mediaTypes: ImagePicker.MediaTypeOptions.All
-      });
-    const success = (result)=> {
-      if(result.cancelled) {
-        return
+      exif: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.All
+    });
+    const success = result => {
+      if (result.cancelled) {
+        return;
       }
-      const { exif } = result
-      const { width, height, uri, type } = result
+      const { exif } = result;
+      const { width, height, uri, type } = result;
       const {
         DateTimeOriginal: timeofreport,
-        GPSAltitude:altitude,
-        GPSLatitude:lat,
-        GPSLongitude:lng } = exif
-        console.log(exif)
-        console.log(width,height,uri,type,timeofreport,altitude,lat,lng)
-        console.log(timeofreport)
-      if(timeofreport) {
-        console.log('we have a time of report')
-        var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate()
-        console.log(datetime)
+        GPSAltitude: altitude,
+        GPSLatitude: lat,
+        GPSLongitude: lng
+      } = exif;
+      console.log(exif);
+      console.log(width, height, uri, type, timeofreport, altitude, lat, lng);
+      console.log(timeofreport);
+      if (timeofreport) {
+        console.log("we have a time of report");
+        var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
+        console.log(datetime);
         this.setState({
           timeofreport: datetime,
           timeofreportstr: this.timeofreport(datetime)
-
-        })
+        });
       }
       const image = {
         url: uri,
         width: width,
         height: height
-      }
-      console.log(timeofreport)
-      const images = [...this.state.images, image]
-      this.setState({images: images})
-      this.resizeImages().then(x=> {
-        this.setState({resizedImages:x})
-      }).catch(x=> {
-        console.error(x)
-      })
-    }
-    if (permission.status !== 'granted') {
+      };
+      console.log(timeofreport);
+      const images = [...this.state.images, image];
+      this.setState({ images: images });
+      this.resizeImages()
+        .then(x => {
+          this.setState({ resizedImages: x });
+        })
+        .catch(x => {
+          console.error(x);
+        });
+    };
+    if (permission.status !== "granted") {
       const newPermission = await Permissions.askAsync(Permissions.CAMERA_ROLL);
-      if (newPermission.status === 'granted') {
-        imageLaunch.then(success)
-
+      if (newPermission.status === "granted") {
+        imageLaunch.then(success);
       }
     } else {
-      imageLaunch.then(success)
+      imageLaunch.then(success);
     }
-  }
+  };
 }
 
 const styles = StyleSheet.create({
   button: {
-    width: '30%',
+    width: "30%",
     height: 60
   },
   container: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%"
   },
   imageViewer: {
-    backgroundColor: 'yellow',
+    backgroundColor: "yellow",
     width: 200,
     height: 200
-  },
-  backgroundVideo: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
-}});
+  }
+});
