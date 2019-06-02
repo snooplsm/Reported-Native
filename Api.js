@@ -2,6 +2,20 @@ import axios from "axios";
 import { AsyncStorage } from "react-native";
 import { isSignedIn } from "./Auth";
 import { USER_KEY } from "./Auth";
+import Amplify from "aws-amplify";
+
+Amplify.configure({
+  Auth: {
+    identityPoolId: "us-east-1:de9cd95b-261c-4212-8df6-78193b350f99", //REQUIRED - Amazon Cognito Identity Pool ID
+    region: "us-east-1" // REQUIRED - Amazon Cognito Region
+  },
+  Storage: {
+    AWSS3: {
+      bucket: "reportedcab", //REQUIRED -  Amazon S3 bucket
+      region: "us-east-1" //OPTIONAL -  Amazon service region
+    }
+  }
+});
 
 const ax = axios.create({
   baseURL: "http://localhost:8084/staging/"
@@ -34,6 +48,8 @@ ax.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+export const uploadFile = (file, meta) => {};
 
 class UserPromise extends Promise {
   constructor(res) {
