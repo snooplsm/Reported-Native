@@ -9,7 +9,7 @@ import {
   Button
 } from "react-native";
 import { Icon } from "react-native-elements";
-import { api } from "./Api";
+import { api, uploadFile } from "./Api";
 import { colors } from "./Styles";
 import ReportView from "./ReportView";
 import SubmissionFilter from "./SubmissionFilter";
