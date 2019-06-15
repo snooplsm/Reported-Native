@@ -11,7 +11,20 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr } from "./Api";
+import { alpr, uploadFile } from "./Api";
+
+const promiseSerial = (funcs, error, success) => {
+  console.log("promise serial", funcs);
+  funcs.reduce(
+    (promise, func) =>
+      promise.then(result =>
+        func()
+          .then(Array.prototype.concat.bind(result))
+          .catch(e => error(e))
+      ),
+    Promise.resolve([])
+  );
+};
 
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -26,7 +39,8 @@ export default class Submission extends React.Component {
     this.state = {
       images: [],
       resizedImages: [],
-      datePickerVisible: true
+      datePickerVisible: true,
+      uploadedImages: {}
     };
   }
 
@@ -70,6 +84,25 @@ export default class Submission extends React.Component {
     return "";
   }
 
+  submit() {
+    console.log("submit");
+    const onEachSuccess = result => {
+      console.log("success", result);
+    };
+    const onEachFailure = failure => {
+      console.log(failure);
+    };
+    const needToUpload = this.state.images
+      .filter(x => !this.state.uploadedImages[x.url])
+      .map(file => {
+        console.log("not uploaded");
+        return uploadFile(file, [], result => {
+          console.log("file", file, "has been uploaded to", result);
+        });
+      });
+    promiseSerial(needToUpload, onEachSuccess, onEachFailure);
+  }
+
   render() {
     return (
       <View style={styles.container}>
@@ -110,6 +143,11 @@ export default class Submission extends React.Component {
             value={this.state.timeofreportstr}
           />
         </View>
+        <Button
+          onPress={() => this.submit()}
+          title="Submit"
+          containerStyle={styles.submitButton}
+        />
       </View>
     );
   }
@@ -165,9 +203,7 @@ export default class Submission extends React.Component {
         GPSLatitude: lat,
         GPSLongitude: lng
       } = exif;
-      console.log(exif);
-      console.log(width, height, uri, type, timeofreport, altitude, lat, lng);
-      console.log(timeofreport);
+
       if (timeofreport) {
         console.log("we have a time of report");
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
@@ -180,9 +216,12 @@ export default class Submission extends React.Component {
       const image = {
         url: uri,
         width: width,
-        height: height
+        height: height,
+        exif: exif,
+        lat: lat,
+        lng: lng,
+        timeofimage: timeofreport
       };
-      console.log(timeofreport);
       const images = [...this.state.images, image];
       this.setState({ images: images });
       this.resizeImages()
@@ -205,6 +244,11 @@ export default class Submission extends React.Component {
 }
 
 const styles = StyleSheet.create({
+  submitButton: {
+    position: "absolute",
+    bottom: 0,
+    right: 0
+  },
   button: {
     width: "30%",
     height: 60

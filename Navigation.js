@@ -30,7 +30,7 @@ const SignedOutNavigator = createStackNavigator(
 
 const UserHomeStack = createStackNavigator({
   Submissions: {
-    screen: Submissions
+    screen: Submission
   }
 });
 

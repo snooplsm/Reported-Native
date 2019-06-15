@@ -10,6 +10,7 @@ import {
 import { Button } from "react-native-elements";
 import SplashMp4 from "./assets/splash.mp4";
 import { ButtonContainerStyle, ButtonStyle } from "./Styles";
+import { uploadFile } from "./Api";
 
 export default class Splash extends React.Component {
   static navigationOptions = {
@@ -28,7 +29,7 @@ export default class Splash extends React.Component {
       <KeyboardAvoidingView style={styles.container}>
         <Video
           source={SplashMp4}
-          shouldPlay={true}
+          shouldPlay={false}
           isLooping={true}
           resizeMode="cover"
           isMuted={true}

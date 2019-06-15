@@ -2,17 +2,19 @@ import axios from "axios";
 import { AsyncStorage } from "react-native";
 import { isSignedIn } from "./Auth";
 import { USER_KEY } from "./Auth";
-import Amplify from "aws-amplify";
+import Amplify, { Storage } from "aws-amplify";
+import moment from "moment";
+import { Platform } from "react-native";
+import { Constants } from "expo";
 
 Amplify.configure({
   Auth: {
-    identityPoolId: "us-east-1:de9cd95b-261c-4212-8df6-78193b350f99", //REQUIRED - Amazon Cognito Identity Pool ID
+    identityPoolId: "us-east-1:ccbbb41a-4490-4b85-af8d-a047aabeec5d", //REQUIRED - Amazon Cognito Identity Pool ID
     region: "us-east-1" // REQUIRED - Amazon Cognito Region
   },
   Storage: {
     AWSS3: {
-      bucket: "reportedcab", //REQUIRED -  Amazon S3 bucket
-      region: "us-east-1" //OPTIONAL -  Amazon service region
+      bucket: "reportedcab" //REQUIRED -  Amazon S3 bucket
     }
   }
 });
@@ -49,7 +51,63 @@ ax.interceptors.request.use(
   }
 );
 
-export const uploadFile = (file, meta) => {};
+export const uploadFile = (file, meta, success, error) => {
+  console.log("uploadFile", file, meta, success, error);
+  const data = {};
+  return new Promise((resolve, reject) => {
+    isSignedIn()
+      .then(user => {
+        data.user = user;
+        console.log("we have user");
+        return fetch(file.url);
+      })
+      .then(file => {
+        console.log("making blob");
+        return file.blob();
+      })
+      .then(blob => {
+        console.log("blobby");
+        const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
+        const key = `${data.user.id}/${time}.jpg`;
+        console.log("blob key", key);
+        const metaData = Object.assign(
+          {
+            "User-Id": data.user.id,
+            "File-Name": file.url,
+            "Operating-System": Platform.OS,
+            Device: Constants.deviceName,
+            width: file.width,
+            height: file.height,
+            duration: file.duration,
+            lat: file.lat,
+            lng: file.lng,
+            timeofimage: file.timeofimage
+          },
+          meta
+        );
+        console.log("meta data", meta);
+        Storage.put(key, blob, {
+          customPrefix: {
+            public: "uploads/"
+          },
+          level: "public",
+          metadata: metaData,
+          contentType: "image/jpeg"
+        })
+          .then(res => {
+            console.log("success", res);
+            resolve(res);
+            success(file, res);
+          })
+          .catch(e => {
+            console.log("there was an error");
+            console.log(e);
+            reject(e);
+            error(e);
+          });
+      });
+  });
+};
 
 class UserPromise extends Promise {
   constructor(res) {
