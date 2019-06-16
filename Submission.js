@@ -96,7 +96,7 @@ export default class Submission extends React.Component {
       .filter(x => !this.state.uploadedImages[x.url])
       .map(file => {
         console.log("not uploaded");
-        return uploadFile(file, [], result => {
+        return uploadFile(file, {}, result => {
           console.log("file", file, "has been uploaded to", result);
         });
       });

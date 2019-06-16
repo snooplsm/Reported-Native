@@ -5,7 +5,7 @@ import { USER_KEY } from "./Auth";
 import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
 import { Platform } from "react-native";
-import { Constants } from "expo";
+import { Constants, ImageManipulator } from "expo";
 
 Amplify.configure({
   Auth: {
@@ -59,28 +59,34 @@ export const uploadFile = (file, meta, success, error) => {
       .then(user => {
         data.user = user;
         console.log("we have user");
-        return fetch(file.url);
+        return ImageManipulator.manipulateAsync(file.url, [], {
+          compress: 0.3,
+          format: "jpg"
+        });
       })
-      .then(file => {
-        console.log("making blob");
-        return file.blob();
+      .then(fc => {
+        console.log(fc);
+        data.fc = fc;
+        return fetch(fc.uri);
+      })
+      .then(fc => {
+        return fc.blob();
       })
       .then(blob => {
-        console.log("blobby");
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
         const key = `${data.user.id}/${time}.jpg`;
         console.log("blob key", key);
         const metaData = Object.assign(
           {
             "User-Id": data.user.id,
-            "File-Name": file.url,
+            "File-Name": data.fc.uri,
             "Operating-System": Platform.OS,
             Device: Constants.deviceName,
-            width: file.width,
-            height: file.height,
-            duration: file.duration,
-            lat: file.lat,
-            lng: file.lng,
+            width: (data.fc.width ?? -1).toString(),
+            height: (data.fc.height ?? -1).toString(),
+            duration: (file.duration ?? -1).toString(),
+            lat: (file.lat ?? 0.0).toString(),
+            lng: (file.lng ?? 0.0).toString(),
             timeofimage: file.timeofimage
           },
           meta
