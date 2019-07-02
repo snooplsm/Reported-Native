@@ -5,7 +5,9 @@ import { USER_KEY } from "./Auth";
 import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
 import { Platform } from "react-native";
-import { Constants, ImageManipulator } from "expo";
+import { Constants, ImageManipulator, FileSystem } from "expo";
+
+const BUCKET = "reportedcab";
 
 Amplify.configure({
   Auth: {
@@ -14,13 +16,15 @@ Amplify.configure({
   },
   Storage: {
     AWSS3: {
-      bucket: "reportedcab" //REQUIRED -  Amazon S3 bucket
+      bucket: BUCKET
     }
   }
 });
 
+const BASE_URL = "http://192.168.43.16:8084/staging/";
+
 const ax = axios.create({
-  baseURL: "http://localhost:8084/staging/"
+  baseURL: BASE_URL
 });
 
 const openAx = axios.create({
@@ -51,47 +55,39 @@ ax.interceptors.request.use(
   }
 );
 
-export const uploadFile = (file, meta, success, error) => {
-  console.log("uploadFile", file, meta, success, error);
-  const data = {};
+export const uploadFile = file => {
   return new Promise((resolve, reject) => {
+    const data = {};
     isSignedIn()
       .then(user => {
         data.user = user;
         console.log("we have user");
-        return ImageManipulator.manipulateAsync(file.url, [], {
-          compress: 0.3,
-          format: "jpg"
+        return ImageManipulator.manipulateAsync(file.url, null, {
+          compress: 0.3
         });
       })
       .then(fc => {
-        console.log(fc);
         data.fc = fc;
-        return fetch(fc.uri);
-      })
-      .then(fc => {
-        return fc.blob();
+        return urlToBlob(fc.uri);
       })
       .then(blob => {
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
         const key = `${data.user.id}/${time}.jpg`;
         console.log("blob key", key);
-        const metaData = Object.assign(
-          {
-            "User-Id": data.user.id,
-            "File-Name": data.fc.uri,
-            "Operating-System": Platform.OS,
-            Device: Constants.deviceName,
-            width: (data.fc.width ?? -1).toString(),
-            height: (data.fc.height ?? -1).toString(),
-            duration: (file.duration ?? -1).toString(),
-            lat: (file.lat ?? 0.0).toString(),
-            lng: (file.lng ?? 0.0).toString(),
-            timeofimage: file.timeofimage
-          },
-          meta
-        );
-        console.log("meta data", meta);
+        const metaData = Object.assign({
+          "User-Id": data.user.id,
+          "File-Name": data.fc.uri,
+          "Operating-System": Platform.OS,
+          Device: Constants.deviceName,
+          width: (data.fc.width ?? -1).toString(),
+          height: (data.fc.height ?? -1).toString(),
+          duration: (file.duration ?? -1).toString(),
+          lat: (file.lat ?? 0.0).toString(),
+          lng: (file.lng ?? 0.0).toString(),
+          timeofimage: file.timeofimage ?? "-1"
+        });
+        data.size = blob.size;
+        data.meta = metaData;
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
@@ -99,18 +95,17 @@ export const uploadFile = (file, meta, success, error) => {
           level: "public",
           metadata: metaData,
           contentType: "image/jpeg"
-        })
-          .then(res => {
-            console.log("success", res);
-            resolve(res);
-            success(file, res);
-          })
-          .catch(e => {
-            console.log("there was an error");
-            console.log(e);
-            reject(e);
-            error(e);
+        }).then(res => {
+          console.log("success", res);
+          resolve({
+            url: `https://${BUCKET}.s3.amazonaws.com/${res.key}`,
+            meta: data.meta,
+            width: data.fc.width,
+            height: data.fc.height,
+            duration: file.duration,
+            size: data.size
           });
+        });
       });
   });
 };
@@ -147,6 +142,20 @@ export const alpr = {
   }
 };
 
+const urlToBlob = url =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onerror = reject;
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 4) {
+        resolve(xhr.response);
+      }
+    };
+    xhr.open("GET", url);
+    xhr.responseType = "blob"; // convert type
+    xhr.send();
+  });
+
 export const api = {
   register: email => {
     return ax
@@ -157,6 +166,22 @@ export const api = {
         return new UserPromise(res);
       });
   },
+
+  // upload: (fileJson, meta) => {
+  //   console.log("upload fileJson");
+  //   FileSystem.getInfoAsync(fileJson.url, { md5: true }).then(info => {
+  //     console.log(info);
+  //     return info;
+  //   });
+  //   return urlToBlob(fileJson.url).then(file => {
+  //     console.log("fetch upload", BASE_URL);
+  //     console.log(file);
+  //     return fetch(`${BASE_URL}/upload`, {
+  //       method: "PUT",
+  //       body: file
+  //     });
+  //   });
+  // },
 
   changePassword: password => {
     return ax.post(`/change_password`, {
@@ -173,6 +198,11 @@ export const api = {
       .then(res => {
         return new UserPromise(res);
       });
+  },
+
+  report: report => {
+    console.log("put report", report);
+    return ax.put("/report", report);
   },
 
   reports: filter => {

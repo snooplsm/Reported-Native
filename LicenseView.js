@@ -40,6 +40,7 @@ export default class LicenseViewModal extends React.Component {
     const { width, height, results } = this.state.result;
     const images = results.map(result => {
       const { plate, confidence, region, candidates, coordinates } = result;
+      plate.region = region;
       const plates = candidates
         .sort((a, b) => b.confidence - a.confidence)
         .filter((thing, index) => {
@@ -60,17 +61,54 @@ export default class LicenseViewModal extends React.Component {
         parseInt((topRight.x / image.width) * image.width) - originX;
       const height =
         parseInt((bottomRight.y / image.height) * image.height) - originY;
+
+      const rotate = this.angleOf(topLeft.x, topLeft.y, topRight.x, topRight.y);
+      console.log(rotate);
+      const centerX = image.width / 2;
+      const centerY = image.height / 2;
+      const r2 = rotate;
+      const rad = this.toRadians(r2);
+      const newX =
+        Math.cos(rad) * (originX - centerX) -
+        Math.sin(rad) * (originY - centerY) +
+        centerX;
+      const newY =
+        Math.sin(rad) * (originX - centerX) +
+        Math.cos(rad) * (originY - centerY) +
+        centerY;
+      const imgW = image.width;
+      const imgH = image.height;
+
+      const transposeW = parseInt((newX / image.width) * image.width);
+      const transposeH = parseInt((newY / image.height) * image.height);
+
+      console.log({
+        rad,
+        rotate,
+        originX,
+        originY,
+        newX,
+        newY,
+        imgW,
+        imgH,
+        transposeW,
+        transposeH
+      });
       const crop = {
         originX: originX,
         originY: originY,
         width: width,
         height: height
       };
+      console.log(crop);
       //console.log("cropping",crop)
       //console.log("image ", image.width,image.height)
       return {
         plates: plates,
         imageAsync: ImageManipulator.manipulateAsync(image.url, [
+          {
+            rotate: rotate
+          },
           {
             crop: crop
           }
@@ -83,7 +121,10 @@ export default class LicenseViewModal extends React.Component {
         return new Promise((resolve, reject) => {
           x.imageAsync
             .then(image => {
-              const resp = { plates: x.plates, image: image };
+              const resp = {
+                plates: x.plates,
+                image: Object.assign(image, { url: image.uri })
+              };
               resolve(resp);
             })
             .catch(f => {
@@ -114,22 +155,41 @@ export default class LicenseViewModal extends React.Component {
     }
   }
 
+  toDegrees(rad) {
+    return rad * (180 / Math.PI);
+  }
+
+  angleOf(x1, y1, x2, y2) {
+    const deltaY = y1 - y2;
+    const deltaX = x2 - x1;
+    const result = this.toDegrees(Math.atan2(deltaY, deltaX));
+    return result;
+  }
+
+  toRadians(ang) {
+    return ang * (Math.PI / 180.0);
+  }
+
   render() {
     return (
-      <View style={{ backgroundColor: "red" }}>
+      <View>
         {this.state.plates.map((plate, index) => (
-          <Image key={index} source={plate.image} />
+          <Image
+            containerStyle={{
+              paddingLeft: 10,
+              paddingRight: 10
+            }}
+            key={index}
+            source={plate.image}
+          />
         ))}
         <Input
-          placeholder="License Number or Medallion"
+          placeholder="[T64353]"
+          autoCapitalize="characters"
           onChangeText={licensePlate =>
             this.setState({ licensePlate: licensePlate.toUpperCase() })
           }
-          label={
-            this.state.licensePlate.length == 0
-              ? ""
-              : "License Number or Medallion"
-          }
+          label={"License Plate"}
           value={this.state.licensePlate}
         />
 
