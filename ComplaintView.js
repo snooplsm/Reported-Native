@@ -1,5 +1,8 @@
 import React from "react";
-import Autocomplete from "react-native-autocomplete-input";
+import {
+  Autocomplete,
+  withKeyboardAwareScrollView
+} from "react-native-dropdown-autocomplete";
 import {
   StyleSheet,
   TouchableOpacity,
@@ -79,15 +82,21 @@ export default class ComplaintView extends React.Component {
           <Autocomplete
             data={data}
             ref={this.auto}
+            onDropDownShow={() => {}}
+            onDropDownClose={() => {}}
             style={AutoStyle.style}
+            renderIcon={() => null}
             defaultValue={this.state.query}
             hideResults={this.state.hideResults}
-            placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+            placeholder={"Add Complaint Type, Blocked Bike lane, Crosswalk"}
             onFocus={() => {
-              console.log("onPress");
-              const state = Object.assign({}, this.state);
-              state.hideResults = false;
-              this.setState(state);
+              // console.log("onPress");
+              // const state = Object.assign({}, this.state);
+              // state.hideResults = false;
+              // this.setState(state);
+            }}
+            onShowResult={() => {
+              console.log("sjhow");
             }}
             onKeyPress={key => {
               console.log("key", key);
@@ -99,9 +108,9 @@ export default class ComplaintView extends React.Component {
               this.setState(state);
             }}
             onBlur={() => {
-              const state = Object.assign({}, this.state);
-              state.hideResults = true;
-              this.setState(state);
+              // const state = Object.assign({}, this.state);
+              // state.hideResults = true;
+              // this.setState(state);
             }}
             renderItem={({ item, i }) => (
               <TouchableOpacity

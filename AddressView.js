@@ -38,7 +38,10 @@ export default class AddressView extends React.Component {
         }} // custom description render
         onPress={(data, details = null) => {
           // 'details' is provided when fetchDetails = true
-          this.props.onPress(data);
+          this.props.onPress({
+            data: data,
+            place: details
+          });
           //this.setState({ listViewDisplayed: false });
         }}
         getDefaultValue={() => ""}

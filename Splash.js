@@ -29,7 +29,7 @@ export default class Splash extends React.Component {
       <KeyboardAvoidingView style={styles.container}>
         <Video
           source={SplashMp4}
-          shouldPlay={false}
+          shouldPlay={true}
           isLooping={true}
           resizeMode="cover"
           isMuted={true}

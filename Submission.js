@@ -11,20 +11,7 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr, uploadFile } from "./Api";
-
-const promiseSerial = (funcs, error, success) => {
-  console.log("promise serial", funcs);
-  funcs.reduce(
-    (promise, func) =>
-      promise.then(result =>
-        func()
-          .then(Array.prototype.concat.bind(result))
-          .catch(e => error(e))
-      ),
-    Promise.resolve([])
-  );
-};
+import { alpr, api, uploadFile } from "./Api";
 
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -39,7 +26,7 @@ export default class Submission extends React.Component {
     this.state = {
       images: [],
       resizedImages: [],
-      datePickerVisible: true,
+      datePickerVisible: false,
       uploadedImages: {}
     };
   }
@@ -67,7 +54,7 @@ export default class Submission extends React.Component {
     this.timeofreportinterval = setInterval(() => {
       const time = this.timeofreport(this.state.timeofreport);
       this.setState({ timeofreportstr: time });
-    }, 30000);
+    }, 60000);
   }
 
   componentWillUnMount() {
@@ -85,41 +72,133 @@ export default class Submission extends React.Component {
   }
 
   submit() {
-    console.log("submit");
-    const onEachSuccess = result => {
-      console.log("success", result);
-    };
-    const onEachFailure = failure => {
-      console.log(failure);
-    };
-    const needToUpload = this.state.images
-      .filter(x => !this.state.uploadedImages[x.url])
-      .map(file => {
-        console.log("not uploaded");
-        return uploadFile(file, {}, result => {
-          console.log("file", file, "has been uploaded to", result);
+    const plateUploaded =
+      !this.state.license ||
+      this.state.uploadedImages[this.state.license.plate.image.url];
+    if (!plateUploaded) {
+      uploadFile(this.state.license.plate.image)
+        .then(uploaded => {
+          this.state.uploadedImages[
+            this.state.license.plate.image.url
+          ] = uploaded;
+          this.submit();
+        })
+        .catch(e => {
+          console.log("plate upload error");
         });
-      });
-    promiseSerial(needToUpload, onEachSuccess, onEachFailure);
+      return;
+    }
+    const needToUpload = this.state.images.filter(
+      x => !this.state.uploadedImages[x.url]
+    );
+    if (needToUpload.length > 0) {
+      const file = needToUpload[0];
+      console.log("uploadss");
+      uploadFile(file)
+        .then(uploaded => {
+          this.state.uploadedImages[file.url] = uploaded;
+          this.submit();
+        })
+        .catch(e => {
+          console.log("error upload", e);
+        });
+      return;
+    }
+
+    const license = Object.assign(
+      {
+        candidate: {
+          plate: "TEST"
+        },
+        plate: {
+          region: "NY"
+        }
+      },
+      this.state.license
+    );
+    if (!license) {
+      return;
+    }
+
+    const complaints = this.state.complaints ?? [];
+    if (
+      this.state.license &&
+      this.state.uploadedImages[this.state.license.url]
+    ) {
+      license.media = this.state.uploadedImages[this.state.license.plate.url];
+    }
+    const address = this.state.location.place.address_components;
+    console.log(address);
+
+    const finds = (address, key) => {
+      console.log("find", address, key);
+      console.log(address.filter(x => x.types.includes(key)));
+      return address
+        .filter(x => x.types.includes(key))
+        .map(x => x.short_name)
+        .shift();
+    };
+
+    const building = finds(address, "street_number");
+    const geo = this.state.location.place.geometry.location;
+    const street = finds(address, "route");
+    const city = finds(address, "locality");
+    const sublocality = finds(address, "sublocality");
+    const county = finds(address, "administrative_area_level_2");
+    const state = finds(address, "administrative_area_level_1");
+    const zip = finds(address, "postal_code");
+    console.log(this.state.location.data);
+    api.report({
+      description: "foofuckshit",
+      complaintIds: complaints.map(x => x.id),
+      license: {
+        plate: license.candidate.plate,
+        state: license.plate.region
+      },
+      address: Object.assign({
+        building,
+        street,
+        city,
+        county,
+        state,
+        zip,
+        sublocality,
+        location: geo
+      }),
+      media: this.state.images
+        .filter(x => !this.state.uploadedImages[x.url])
+        .map(x => this.state.uploadedImages[x.url])
+    });
+  }
+
+  addPhotoText() {
+    if (this.state.images && this.state.images.length > 0) {
+      return "Add Another Photo/Video";
+    } else {
+      return "Add Photo/Video";
+    }
   }
 
   render() {
     return (
       <View style={styles.container}>
-        <ComplaintView />
-        <Button onPress={this._pickImage} title={"Photo/Video"} />
+        {/*<ComplaintView
+          onComplaintsChanged={c => this.setState({ complaints: c })}
+        />*/}
+        <Button
+          type="outline"
+          buttonStyle={styles.addPhoto}
+          containerStyle={styles.addPhotoContainer}
+          onPress={this._pickImage}
+          title={this.addPhotoText()}
+        />
         <ImageCarousel entries={this.state.images} />
         {this.imageModal()}
         <LicenseView
-          onPlateSelected={plate => console.log("plate selected", plate)}
+          onPlateSelected={plate => this.setState({ license: plate })}
           images={this.state.images}
         />
-        <AddressView
-          onPress={rowData => {
-            console.log(rowData);
-            this.setState({ location: rowData });
-          }}
-        />
+
         <DateTimePicker
           mode={"datetime"}
           titleIOS={"Time of incident"}
@@ -244,6 +323,13 @@ export default class Submission extends React.Component {
 }
 
 const styles = StyleSheet.create({
+  addPhoto: {},
+  addPhotoContainer: {
+    paddingLeft: 10,
+    paddingRight: 10,
+    paddingBottom: 10,
+    paddingTop: 10
+  },
   submitButton: {
     position: "absolute",
     bottom: 0,
