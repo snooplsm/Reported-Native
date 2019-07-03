@@ -19,7 +19,6 @@ export default class SliderEntry extends Component {
       parallaxProps,
       even
     } = this.props;
-    //console.log(illustration)
     return parallax ? (
       <ParallaxImage
         source={{ uri: illustration }}
@@ -34,7 +33,11 @@ export default class SliderEntry extends Component {
         {...parallaxProps}
       />
     ) : (
-      <Image source={{ uri: illustration }} style={styles.image} />
+      <Image
+        source={{ uri: illustration }}
+        style={styles.image}
+        {...parallaxProps}
+      />
     );
   }
 
@@ -43,9 +46,13 @@ export default class SliderEntry extends Component {
       data: { title, subtitle },
       even
     } = this.props;
-
+    console.log(this.protoProps);
     return (
-      <TouchableOpacity activeOpacity={1} style={styles.slideInnerContainer}>
+      <TouchableOpacity
+        onPress={() => this.props.onItemPress()}
+        activeOpacity={1}
+        style={styles.slideInnerContainer}
+      >
         <View style={styles.shadow} />
         <View
           style={[styles.imageContainer, even ? styles.imageContainerEven : {}]}

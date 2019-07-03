@@ -28,7 +28,7 @@ export default class LicenseViewModal extends React.Component {
   componentDidUpdate(prevProps, prevState, snapshot) {
     const old = prevProps.images || [];
     const newz = this.props.images || [];
-    if (old.length !== newz.length) {
+    if (newz.length > old.length) {
       this.processImage(newz[newz.length - 1]);
       return true;
     } else {
@@ -107,9 +107,6 @@ export default class LicenseViewModal extends React.Component {
         plates: plates,
         imageAsync: ImageManipulator.manipulateAsync(image.url, [
           {
-            rotate: rotate
-          },
-          {
             crop: crop
           }
         ])
@@ -184,7 +181,7 @@ export default class LicenseViewModal extends React.Component {
           />
         ))}
         <Input
-          placeholder="[T64353]"
+          placeholder="ie: T64353"
           autoCapitalize="characters"
           onChangeText={licensePlate =>
             this.setState({ licensePlate: licensePlate.toUpperCase() })
@@ -197,36 +194,28 @@ export default class LicenseViewModal extends React.Component {
           visible={this.state.plates.length != 0 && this.state.showPlatePicker}
         >
           <View style={styles.container}>
+            <Text style={styles.header}>
+              We may have detected the license plate, please choose from the
+              following if applicable.
+            </Text>
             {this.state.plates.map((plate, index) => {
               return (
                 <View key={index}>
                   <Image style={styles.plateImage} source={plate.image} />
-                  <Text style={styles.header}>
-                    We may have detected the license plate, please choose from
-                    the following if applicable.
-                  </Text>
                   <View style={styles.plateContainer}>
                     {plate.plates.map(x => {
                       return (
                         <View key={x.plate} style={styles.plateTextContainer}>
-                          <Text style={styles.plateText}>
-                            {x.plate} ({x.confidence.toFixed(1)})
-                          </Text>
                           <Button
+                            type="outline"
+                            container={styles.buttonContainer}
                             onPress={() =>
                               this._onPlateSelected({
                                 plate: plate,
                                 candidate: x
                               })
                             }
-                            icon={
-                              <Icon
-                                name="check"
-                                size={12}
-                                type="material"
-                                color="white"
-                              />
-                            }
+                            title={`${x.plate} (${parseInt(x.confidence)}%)`}
                           />
                         </View>
                       );
@@ -259,10 +248,15 @@ const styles = StyleSheet.create({
     flexDirection: "column"
   },
   plateTextContainer: {
-    flexDirection: "row"
+    flexDirection: "row",
+    width: "100%"
   },
   plateText: {
     fontSize: 18
+  },
+  buttonContainer: {
+    paddingTop: 10,
+    width: "60%"
   },
   container: {
     flex: 1,

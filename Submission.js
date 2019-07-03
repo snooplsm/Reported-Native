@@ -2,7 +2,7 @@ import React from "react";
 import { Text, TouchableOpacity, View, StyleSheet } from "react-native";
 import ComplaintView from "./ComplaintView";
 import { ImagePicker, Permissions } from "expo";
-import { Button, Image, Input } from "react-native-elements";
+import { Button, Icon, Image, Input } from "react-native-elements";
 import { Modal } from "react-native";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { ImageManipulator } from "expo";
@@ -10,6 +10,7 @@ import AddressView from "./AddressView";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
+import { IconStyle } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr, api, uploadFile } from "./Api";
 
@@ -27,6 +28,7 @@ export default class Submission extends React.Component {
       images: [],
       resizedImages: [],
       datePickerVisible: false,
+      imageModal: false,
       uploadedImages: {}
     };
   }
@@ -35,15 +37,63 @@ export default class Submission extends React.Component {
     this.setState({ imageModal: false });
   }
 
-  imageModal() {
-    if (this.state.imageModal) {
+  removeImage(index) {
+    const { images } = this.state;
+    let newImages = [...images];
+    newImages.splice(index, 1);
+    this.setState({ images: newImages });
+  }
+
+  get imageModal() {
+    console.log("imageModal", this.state.imageModal);
+    if (this.state.imageModal !== false) {
+      console.log("showing modal");
       return (
-        <Modal visible={true} onRequestClose={() => {}} transparent={false}>
-          <ImageViewer
-            onClick={() => this.closeModal()}
-            imageUrls={this.state.images}
-          />
-        </Modal>
+        <ImageViewer
+          ref={ref => {
+            this._imageViewer = ref;
+          }}
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0
+          }}
+          onClick={() => this.closeModal()}
+          footerContainerStyle={{
+            bottom: 0,
+            left: 0,
+            right: 0,
+            position: "absolute",
+            zIndex: 9999
+          }}
+          renderFooter={index => {
+            return (
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  flexWrap: "nowrap",
+                  backgroundColor: "red",
+                  justifyContent: "flex-end"
+                }}
+              >
+                <Icon
+                  iconStyle={{
+                    padding: 14
+                  }}
+                  size={26}
+                  color="white"
+                  type="material"
+                  name="remove-circle-outline"
+                  onPress={() => this.removeImage(index)}
+                />
+              </View>
+            );
+          }}
+          imageUrls={this.state.images}
+        />
       );
     } else {
       return <></>;
@@ -181,53 +231,72 @@ export default class Submission extends React.Component {
 
   render() {
     return (
-      <View style={styles.container}>
-        {/*<ComplaintView
+      <>
+        <View style={styles.container}>
+          {/*<ComplaintView
           onComplaintsChanged={c => this.setState({ complaints: c })}
         />*/}
-        <Button
-          type="outline"
-          buttonStyle={styles.addPhoto}
-          containerStyle={styles.addPhotoContainer}
-          onPress={this._pickImage}
-          title={this.addPhotoText()}
-        />
-        <ImageCarousel entries={this.state.images} />
-        {this.imageModal()}
-        <LicenseView
-          onPlateSelected={plate => this.setState({ license: plate })}
-          images={this.state.images}
-        />
+          <Button
+            type="outline"
+            buttonStyle={styles.addPhoto}
+            containerStyle={styles.addPhotoContainer}
+            onPress={this._pickImage}
+            title={this.addPhotoText()}
+          />
+          <ImageCarousel
+            onItemPressed={({ item, index }) => {
+              console.log("index", index);
+              this.setState({ imageModal: index });
+            }}
+            entries={this.state.images}
+          />
+          <LicenseView
+            onPlateSelected={plate => this.setState({ license: plate })}
+            images={this.state.images}
+          />
 
-        <DateTimePicker
-          mode={"datetime"}
-          titleIOS={"Time of incident"}
-          isVisible={this.state.datePickerVisible}
-          date={this.state.timeofreport}
-          onConfirm={date => {
-            this.setState({
-              timeofreport: date,
-              timeofreportstr: this.timeofreport(date),
-              datePickerVisible: false
-            });
-          }}
-          onCancel={() => {
-            this.setState({ datePickerVisible: false });
-          }}
-        />
-        <View>
-          <Input
-            onFocus={x => this.setState({ datePickerVisible: true })}
-            label={"When incident occurred"}
-            value={this.state.timeofreportstr}
+          <DateTimePicker
+            mode={"datetime"}
+            titleIOS={"Time of incident"}
+            isVisible={this.state.datePickerVisible}
+            date={this.state.timeofreport}
+            onConfirm={date => {
+              this.setState({
+                timeofreport: date,
+                timeofreportstr: this.timeofreport(date),
+                datePickerVisible: false
+              });
+            }}
+            onCancel={() => {
+              this.setState({ datePickerVisible: false });
+            }}
+          />
+          <View>
+            <Input
+              onFocus={x => this.setState({ datePickerVisible: true })}
+              label={"When Incident Occurred"}
+              value={this.state.timeofreportstr}
+            />
+          </View>
+          <View>
+            <Input
+              label={"Incident Description (optional)"}
+              onChange={v => this.setState({ description: v })}
+              multiline={true}
+              numberOfLines={3}
+              textAlignVertical={"top"}
+              value={this.state.description}
+            />
+          </View>
+          <Button
+            onPress={() => this.submit()}
+            title="Submit"
+            buttonStyle={styles.submitButtonStyle}
+            containerStyle={styles.submitButton}
           />
         </View>
-        <Button
-          onPress={() => this.submit()}
-          title="Submit"
-          containerStyle={styles.submitButton}
-        />
-      </View>
+        {this.imageModal}
+      </>
     );
   }
 
@@ -330,10 +399,15 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingTop: 10
   },
+  submitButtonStyle: {
+    borderRadius: 0,
+    padding: 10
+  },
   submitButton: {
     position: "absolute",
     bottom: 0,
-    right: 0
+    right: 0,
+    width: "100%"
   },
   button: {
     width: "30%",
