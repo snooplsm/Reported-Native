@@ -10,15 +10,47 @@ import { ImageManipulator } from "expo";
 export default class ImageCarousel extends React.Component {
   constructor(props) {
     super(props);
+    this.state = {};
   }
 
   _renderItem({ item, index }) {
     return (
       <SliderEntry
+        onItemPress={() => {
+          console.log(item, index);
+          this.props.onItemPressed({ item, index });
+        }}
         key={item.url}
-        onPress={x => this.props.onItemPress(item, index)}
         data={item}
         even={(index + 1) % 2 === 0}
+      />
+    );
+  }
+
+  get pagination() {
+    const { entries } = this.props;
+    const { activeSlide } = this.state;
+    return (
+      <Pagination
+        dotsLength={entries.length}
+        activeDotIndex={activeSlide ?? 0}
+        carouselRef={this._carousel}
+        containerStyle={{ backgroundColor: "rgba(255, 255, 255, 1)" }}
+        dotStyle={{
+          width: 10,
+          height: 10,
+          borderRadius: 5,
+          marginHorizontal: 8,
+          backgroundColor: "rgba(0, 0, 0, 0.72)"
+        }}
+        tappableDots={true}
+        inactiveDotStyle={
+          {
+            // Define styles for inactive dots here
+          }
+        }
+        inactiveDotOpacity={0.4}
+        inactiveDotScale={0.6}
       />
     );
   }
@@ -37,10 +69,15 @@ export default class ImageCarousel extends React.Component {
               subtitle: ""
             };
           })}
+          onSnapToItem={index => this.setState({ activeSlide: index })}
           renderItem={this._renderItem.bind(this)}
           sliderWidth={sliderWidth}
           itemWidth={itemWidth}
+          onPress={() => {
+            console.log("onpresszi");
+          }}
         />
+        {this.pagination}
       </View>
     );
   }
