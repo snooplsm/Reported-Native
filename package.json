@@ -15,6 +15,7 @@
     "moment-js": "^1.1.15",
     "react": "16.8.0",
     "react-native": "https://github.com/expo/react-native/archive/sdk-32.0.0.tar.gz",
+    "react-native-autocomplete-input": "^4.1.0",
     "react-native-autolink": "^1.8.1",
     "react-native-device-info": "^2.1.1",
     "react-native-dropdown-autocomplete": "^1.0.10",

@@ -1,9 +1,10 @@
 import React from "react";
 import { Text, TouchableOpacity, View, StyleSheet } from "react-native";
 import ComplaintView from "./ComplaintView";
+import { categories } from "./Categories.js";
 import { ImagePicker, Permissions } from "expo";
-import { Button, Icon, Image, Input } from "react-native-elements";
-import { Modal } from "react-native";
+import { Button, Icon, Image, Input, Overlay } from "react-native-elements";
+import { Modal, Picker } from "react-native";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { ImageManipulator } from "expo";
 import AddressView from "./AddressView";
@@ -28,6 +29,7 @@ export default class Submission extends React.Component {
       images: [],
       resizedImages: [],
       datePickerVisible: false,
+      complaints: [],
       imageModal: false,
       uploadedImages: {}
     };
@@ -42,6 +44,33 @@ export default class Submission extends React.Component {
     let newImages = [...images];
     newImages.splice(index, 1);
     this.setState({ images: newImages });
+  }
+
+  get complaintModal() {
+    if (this.state.showComplaintModal) {
+      console.log("show");
+      return (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            backgroundColor: "white"
+          }}
+        >
+          <ComplaintView
+            onComplaintsChanged={c => {
+              this.setState({ showComplaintModal: false, complaints: c });
+            }}
+          />
+        </View>
+      );
+    } else {
+      return <></>;
+    }
   }
 
   get imageModal() {
@@ -160,9 +189,7 @@ export default class Submission extends React.Component {
         candidate: {
           plate: "TEST"
         },
-        plate: {
-          region: "NY"
-        }
+        region: "NY"
       },
       this.state.license
     );
@@ -250,6 +277,15 @@ export default class Submission extends React.Component {
             }}
             entries={this.state.images}
           />
+
+          <View>
+            <Input
+              onFocus={x => this.setState({ showComplaintModal: true })}
+              label={"Complaint"}
+              placeholder={"Blocked the Bike Lane, Honked Horn"}
+            />
+          </View>
+
           <LicenseView
             onPlateSelected={plate => this.setState({ license: plate })}
             images={this.state.images}
@@ -296,6 +332,7 @@ export default class Submission extends React.Component {
           />
         </View>
         {this.imageModal}
+        {this.complaintModal}
       </>
     );
   }
