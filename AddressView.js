@@ -47,7 +47,7 @@ export default class AddressView extends React.Component {
         getDefaultValue={() => ""}
         query={{
           // available options: https://developers.google.com/places/web-service/autocomplete
-          key: "AIzaSyCPS7aPvvOaPmtkJqdzsixlh4iIGeuHRnA",
+          key: "AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM",
           language: "en" // language of the results
         }}
         styles={{
