@@ -20,7 +20,7 @@ export default class ComplaintView extends React.Component {
       query: "",
       complaintTypes: complaints,
       complaints: props.complaints ?? [],
-      hideResults: true
+      hideResults: false
     };
   }
 
