@@ -63,6 +63,8 @@ export default class Submission extends React.Component {
         >
           <ComplaintView
             onComplaintsChanged={c => {
+              console.log(c);
+              this._complaint.blur();
               this.setState({ showComplaintModal: false, complaints: c });
             }}
           />
@@ -279,11 +281,19 @@ export default class Submission extends React.Component {
           />
 
           <View>
-            <Input
-              onFocus={x => this.setState({ showComplaintModal: true })}
-              label={"Complaint"}
-              placeholder={"Blocked the Bike Lane, Honked Horn"}
-            />
+            <TouchableOpacity
+              onPress={() => this.setState({ showComplaintModal: true })}
+            >
+              <Input
+                ref={r => (this._complaint = r)}
+                caretHidden={true}
+                autoFocus={false}
+                onFocus={x => this.setState({ showComplaintModal: true })}
+                label={"Complaint"}
+                placeholder={"Blocked the Bike Lane, Honked Horn"}
+                value={this.state.complaints.map(x => x.name).join(", ")}
+              />
+            </TouchableOpacity>
           </View>
 
           <LicenseView
