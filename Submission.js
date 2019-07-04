@@ -1,5 +1,11 @@
 import React from "react";
-import { Text, TouchableOpacity, View, StyleSheet } from "react-native";
+import {
+  Text,
+  TouchableOpacity,
+  View,
+  StyleSheet,
+  ScrollView
+} from "react-native";
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
 import { ImagePicker, Permissions } from "expo";
@@ -44,6 +50,51 @@ export default class Submission extends React.Component {
     let newImages = [...images];
     newImages.splice(index, 1);
     this.setState({ images: newImages });
+  }
+
+  get addressString() {
+    const { location } = this.state;
+    if (!location) {
+      return null;
+    }
+    const { place } = location;
+    if (!place) {
+      return null;
+    }
+    const { address_components: address } = place;
+    const finds = this.finds;
+    const building = finds(address, "street_number");
+    const street = finds(address, "route");
+    return [building, street].join(" ");
+  }
+
+  get addressModal() {
+    if (this.state.showAddressModal) {
+      return (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            backgroundColor: "white"
+          }}
+        >
+          <AddressView
+            onPress={({ data, place }) => {
+              this._address.blur();
+              this.setState({
+                showAddressModal: false,
+                location: { place }
+              });
+              console.log(place);
+            }}
+          />
+        </View>
+      );
+    }
   }
 
   get complaintModal() {
@@ -152,6 +203,15 @@ export default class Submission extends React.Component {
     return "";
   }
 
+  finds(address, key) {
+    console.log("find", address, key);
+    console.log(address.filter(x => x.types.includes(key)));
+    return address
+      .filter(x => x.types.includes(key))
+      .map(x => x.short_name)
+      .shift();
+  }
+
   submit() {
     const plateUploaded =
       !this.state.license ||
@@ -209,17 +269,10 @@ export default class Submission extends React.Component {
     const address = this.state.location.place.address_components;
     console.log(address);
 
-    const finds = (address, key) => {
-      console.log("find", address, key);
-      console.log(address.filter(x => x.types.includes(key)));
-      return address
-        .filter(x => x.types.includes(key))
-        .map(x => x.short_name)
-        .shift();
-    };
+    const finds = this.finds;
 
-    const building = finds(address, "street_number");
     const geo = this.state.location.place.geometry.location;
+    const building = finds(address, "street_number");
     const street = finds(address, "route");
     const city = finds(address, "locality");
     const sublocality = finds(address, "sublocality");
@@ -261,88 +314,128 @@ export default class Submission extends React.Component {
   render() {
     return (
       <>
-        <View style={styles.container}>
-          {/*<ComplaintView
+        <ScrollView>
+          <View style={styles.container}>
+            {/*<ComplaintView
           onComplaintsChanged={c => this.setState({ complaints: c })}
         />*/}
-          <Button
-            type="outline"
-            buttonStyle={styles.addPhoto}
-            containerStyle={styles.addPhotoContainer}
-            onPress={this._pickImage}
-            title={this.addPhotoText()}
-          />
-          <ImageCarousel
-            onItemPressed={({ item, index }) => {
-              console.log("index", index);
-              this.setState({ imageModal: index });
-            }}
-            entries={this.state.images}
-          />
+            <Button
+              type="outline"
+              buttonStyle={styles.addPhoto}
+              containerStyle={styles.addPhotoContainer}
+              onPress={this._pickImage}
+              title={this.addPhotoText()}
+            />
+            <ImageCarousel
+              onItemPressed={({ item, index }) => {
+                console.log("index", index);
+                this.setState({ imageModal: index });
+              }}
+              entries={this.state.images}
+            />
 
-          <View>
-            <TouchableOpacity
-              onPress={() => this.setState({ showComplaintModal: true })}
-            >
+            <View>
+              <TouchableOpacity
+                onPress={() => this.setState({ showComplaintModal: true })}
+              >
+                <Input
+                  ref={r => (this._complaint = r)}
+                  caretHidden={true}
+                  autoFocus={false}
+                  onFocus={x => this.setState({ showComplaintModal: true })}
+                  label={"Complaint"}
+                  placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                  value={this.state.complaints.map(x => x.name).join(", ")}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View>
+              <TouchableOpacity
+                onPress={() => this.setState({ showAddressModal: true })}
+              >
+                <Input
+                  ref={r => (this._address = r)}
+                  caretHidden={true}
+                  autoFocus={false}
+                  onFocus={x => this.setState({ showAddressModal: true })}
+                  label={"Address"}
+                  placeholder={"Where you observed infraction"}
+                  value={this.addressString}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <LicenseView
+              onPlateSelected={plate => this.setState({ license: plate })}
+              images={this.state.images}
+            />
+
+            <DateTimePicker
+              mode={"datetime"}
+              titleIOS={"Time of incident"}
+              isVisible={this.state.datePickerVisible}
+              date={this.state.timeofreport}
+              onConfirm={date => {
+                this._datePick.blur();
+                this.setState({
+                  timeofreport: date,
+                  timeofreportstr: this.timeofreport(date),
+                  datePickerVisible: false
+                });
+              }}
+              onCancel={() => {
+                this.setState({ datePickerVisible: false });
+              }}
+            />
+            <View>
               <Input
-                ref={r => (this._complaint = r)}
+                ref={r => {
+                  this._datePick = r;
+                }}
                 caretHidden={true}
                 autoFocus={false}
-                onFocus={x => this.setState({ showComplaintModal: true })}
-                label={"Complaint"}
-                placeholder={"Blocked the Bike Lane, Honked Horn"}
-                value={this.state.complaints.map(x => x.name).join(", ")}
+                onFocus={x => this.setState({ datePickerVisible: true })}
+                label={"When Incident Occurred"}
+                placeholder={"Time you observed infraction"}
+                value={this.state.timeofreportstr}
               />
-            </TouchableOpacity>
+            </View>
+            <View>
+              <Input
+                label={"Incident Description (optional)"}
+                onChange={v => this.setState({ description: v })}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={"Add any additional details to provide to 311"}
+                textAlignVertical={"top"}
+                value={this.state.description}
+              />
+            </View>
+            <View>
+              <Input
+                label={"Notes (optional and private)"}
+                onChange={v => this.setState({ notes: v })}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={
+                  "Notes that only you will see and will not be sent to 311"
+                }
+                textAlignVertical={"top"}
+                value={this.state.description}
+              />
+            </View>
           </View>
-
-          <LicenseView
-            onPlateSelected={plate => this.setState({ license: plate })}
-            images={this.state.images}
-          />
-
-          <DateTimePicker
-            mode={"datetime"}
-            titleIOS={"Time of incident"}
-            isVisible={this.state.datePickerVisible}
-            date={this.state.timeofreport}
-            onConfirm={date => {
-              this.setState({
-                timeofreport: date,
-                timeofreportstr: this.timeofreport(date),
-                datePickerVisible: false
-              });
-            }}
-            onCancel={() => {
-              this.setState({ datePickerVisible: false });
-            }}
-          />
-          <View>
-            <Input
-              onFocus={x => this.setState({ datePickerVisible: true })}
-              label={"When Incident Occurred"}
-              value={this.state.timeofreportstr}
-            />
-          </View>
-          <View>
-            <Input
-              label={"Incident Description (optional)"}
-              onChange={v => this.setState({ description: v })}
-              multiline={true}
-              numberOfLines={3}
-              textAlignVertical={"top"}
-              value={this.state.description}
-            />
-          </View>
-          <Button
-            onPress={() => this.submit()}
-            title="Submit"
-            buttonStyle={styles.submitButtonStyle}
-            containerStyle={styles.submitButton}
-          />
-        </View>
+        </ScrollView>
+        <Button
+          onPress={() => this.submit()}
+          title="Submit"
+          buttonStyle={styles.submitButtonStyle}
+          containerStyle={styles.submitButton}
+        />
         {this.imageModal}
         {this.complaintModal}
+        {this.addressModal}
       </>
     );
   }
@@ -462,7 +555,10 @@ const styles = StyleSheet.create({
   },
   container: {
     width: "100%",
-    height: "100%"
+    height: "100%",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    marginTop: 10
   },
   imageViewer: {
     backgroundColor: "yellow",

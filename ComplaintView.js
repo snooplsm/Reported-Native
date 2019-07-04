@@ -76,56 +76,62 @@ export default class ComplaintView extends React.Component {
             console.log("on prezzz");
           }}
         >
-          <Autocomplete
-            data={data}
-            ref={this.auto}
-            style={AutoStyle.style}
-            defaultValue={this.state.query}
-            hideResults={this.state.hideResults}
-            placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-            onFocus={() => {
-              console.log("onPress");
-              const state = Object.assign({}, this.state);
-              state.hideResults = false;
-              this.setState(state);
+          <View
+            style={{
+              padding: 10
             }}
-            onKeyPress={key => {
-              console.log("key", key);
-            }}
-            onChangeText={text => {
-              const state = Object.assign({}, this.state);
-              state.query = text;
-              state.hideResults = false;
-              this.setState(state);
-            }}
-            onBlur={() => {
-              const state = Object.assign({}, this.state);
-              state.hideResults = true;
-              this.setState(state);
-            }}
-            renderItem={({ item, i }) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.renderItem}
-                onPress={() => {
-                  const state = Object.assign({}, this.state);
-                  state.hideResults = true;
-                  state.query = "";
-                  const complaints = [...state.complaints, item];
-                  state.complaints = complaints.filter(
-                    (x, index) => complaints.indexOf(x) == index
-                  );
-                  this.setState(state);
-                  this.auto.current.blur();
-                  let onComplaintsChanged =
-                    this.props.onComplaintsChanged ?? (() => {});
-                  onComplaintsChanged(complaints);
-                }}
-              >
-                <Text style={styles.text}>{item.name}</Text>
-              </TouchableOpacity>
-            )}
-          />
+          >
+            <Autocomplete
+              data={data}
+              ref={this.auto}
+              style={AutoStyle.style}
+              defaultValue={this.state.query}
+              hideResults={this.state.hideResults}
+              placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+              onFocus={() => {
+                console.log("onPress");
+                const state = Object.assign({}, this.state);
+                state.hideResults = false;
+                this.setState(state);
+              }}
+              onKeyPress={key => {
+                console.log("key", key);
+              }}
+              onChangeText={text => {
+                const state = Object.assign({}, this.state);
+                state.query = text;
+                state.hideResults = false;
+                this.setState(state);
+              }}
+              onBlur={() => {
+                const state = Object.assign({}, this.state);
+                state.hideResults = true;
+                this.setState(state);
+              }}
+              renderItem={({ item, i }) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.renderItem}
+                  onPress={() => {
+                    const state = Object.assign({}, this.state);
+                    state.hideResults = true;
+                    state.query = "";
+                    const complaints = [...state.complaints, item];
+                    state.complaints = complaints.filter(
+                      (x, index) => complaints.indexOf(x) == index
+                    );
+                    this.setState(state);
+                    this.auto.current.blur();
+                    let onComplaintsChanged =
+                      this.props.onComplaintsChanged ?? (() => {});
+                    onComplaintsChanged(complaints);
+                  }}
+                >
+                  <Text style={styles.text}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
         </TouchableWithoutFeedback>
       </>
     );
@@ -151,7 +157,6 @@ const styles = StyleSheet.create({
     margin: 1
   },
   button: {
-    backgroundColor: "#ec682c",
     borderRadius: 2,
     borderWidth: 1
   },

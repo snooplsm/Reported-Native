@@ -66,8 +66,6 @@ export const IconStyle = StyleSheet.create({
 
 export const AutoStyle = StyleSheet.create({
   style: {
-    borderColor: "#ec682c",
-    padding: 10,
-    borderWidth: 1
+    padding: 10
   }
 });
