@@ -42,13 +42,27 @@ export default class SubmissionFilter extends React.Component {
 
   _when() {
     const { when } = this.state;
-    console.log(when, "when");
     if (when) {
-      console.log("all possible");
       return when.allPossibleDates;
     } else {
-      return "When";
+      return null;
     }
+  }
+
+  get addressString() {
+    const { location } = this.state;
+    if (!location) {
+      return null;
+    }
+    const { place } = location;
+    if (!place) {
+      return null;
+    }
+    const { address_components: address } = place;
+    const finds = this.finds;
+    const building = finds(address, "street_number");
+    const street = finds(address, "route");
+    return [building, street].join(" ");
   }
 
   get complaintModal() {
@@ -79,6 +93,15 @@ export default class SubmissionFilter extends React.Component {
     }
   }
 
+  finds(address, key) {
+    console.log("find", address, key);
+    console.log(address.filter(x => x.types.includes(key)));
+    return address
+      .filter(x => x.types.includes(key))
+      .map(x => x.short_name)
+      .shift();
+  }
+
   get addressModal() {
     if (this.state.showAddressModal) {
       return (
@@ -94,9 +117,9 @@ export default class SubmissionFilter extends React.Component {
           }}
         >
           <AddressView
-            onPress={address => {
+            onPress={({ data, place }) => {
               this._address.blur();
-              this.setState({ address, showAddressModal: false });
+              this.setState({ location: { place }, showAddressModal: false });
             }}
             onFocus={() =>
               this.setState({ addressStyle: styles.addressStyleNotBlur })
@@ -149,6 +172,7 @@ export default class SubmissionFilter extends React.Component {
           >
             <Input
               pointerEvents="none"
+              label="Incident date"
               value={this.state.whenText}
               editable={false}
               placeholder={this._when()}

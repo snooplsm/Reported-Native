@@ -102,8 +102,8 @@ export default class Submissions extends React.Component {
   render() {
     return (
       <>
+        {this.submissionsFilter}
         <View>
-          {this.submissionsFilter}
           <FlatList
             data={this.state.reports}
             renderItem={({ item }) => {
