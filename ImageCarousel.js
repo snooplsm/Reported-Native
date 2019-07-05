@@ -11,6 +11,7 @@ export default class ImageCarousel extends React.Component {
   constructor(props) {
     super(props);
     this.state = {};
+    this._carousel = React.createRef();
   }
 
   _renderItem({ item, index }) {
@@ -59,9 +60,7 @@ export default class ImageCarousel extends React.Component {
     return (
       <View>
         <Carousel
-          ref={c => {
-            this._carousel = c;
-          }}
+          ref={this._carousel}
           data={this.props.entries.map(x => {
             return {
               illustration: x.url,
