@@ -21,6 +21,9 @@ export default class Submissions extends React.Component {
       headerRight: (
         <Icon
           onPress={navigation.getParam("filterPressed")}
+          iconStyle={{
+            padding: 10
+          }}
           name="filter-list"
           title="Filter"
         />
@@ -41,10 +44,19 @@ export default class Submissions extends React.Component {
     };
   }
 
-  submissionsFilter() {
+  get submissionsFilter() {
     if (this.state.submissionsFilter) {
       return (
         <SubmissionFilter
+          style={{
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            position: "absolute",
+            backgroundColor: "white",
+            zIndex: 9999
+          }}
           filter={this.state.filter}
           onFilterPressed={filter => {
             console.log(filter);
@@ -89,16 +101,18 @@ export default class Submissions extends React.Component {
 
   render() {
     return (
-      <View>
-        <FlatList
-          data={this.state.reports}
-          renderItem={({ item }) => {
-            const { report, address } = item;
-            return <ReportView key={report.id} report={item} />;
-          }}
-        />
-        {this.submissionsFilter()}
-      </View>
+      <>
+        <View>
+          {this.submissionsFilter}
+          <FlatList
+            data={this.state.reports}
+            renderItem={({ item }) => {
+              const { report, address } = item;
+              return <ReportView key={report.id} report={item} />;
+            }}
+          />
+        </View>
+      </>
     );
   }
 }

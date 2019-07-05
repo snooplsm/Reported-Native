@@ -21,7 +21,7 @@ Amplify.configure({
   }
 });
 
-const BASE_URL = "http://192.168.43.16:8084/staging/";
+const BASE_URL = "http://192.168.1.222:8084/staging/";
 
 const ax = axios.create({
   baseURL: BASE_URL
