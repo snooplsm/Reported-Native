@@ -29,8 +29,14 @@ const SignedOutNavigator = createStackNavigator(
 );
 
 const UserHomeStack = createStackNavigator({
-  Submissions: {
+  Submission: {
     screen: Submission
+  }
+});
+
+const SubmissionsStack = createStackNavigator({
+  Submissions: {
+    screen: Submissions
   }
 });
 
@@ -41,6 +47,15 @@ const SignedInNavigator = createBottomTabNavigator({
       tabBarLabel: "Home",
       tabBarIcon: ({ tintColor }) => (
         <Icon name="home" type="material" size={30} color={tintColor} />
+      )
+    }
+  },
+  Submissions: {
+    screen: SubmissionsStack,
+    navigationOptions: {
+      tabBarLabel: "My Reports",
+      tabBarIcon: ({ tintColor }) => (
+        <Icon name="list" type="material" size={30} color={tintColor} />
       )
     }
   },

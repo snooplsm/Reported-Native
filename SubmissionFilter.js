@@ -23,7 +23,7 @@ export default class SubmissionFilter extends React.Component {
       addressStyle: styles.addressStyleBlur,
       when: when,
       near: near,
-      complaints: complaints,
+      complaints: complaints ?? [],
       keywords: keywords
     };
   }
@@ -51,90 +51,165 @@ export default class SubmissionFilter extends React.Component {
     }
   }
 
-  render() {
-    return (
-      <View style={styles.container}>
-        <View style={styles.HorizontalStyle}>
-          <Icon
-            containerStyle={styles.close}
-            onPress={() => this.props.onCloseClicked()}
-            name="close"
-          />
-        </View>
-        <Input
-          placeholder={"Keywords"}
-          value={this.state.keywords}
-          onChangeText={keywords => {
-            this.setState({ keywords });
-          }}
-        />
-        {
-          <ComplaintView
-            style={styles.element}
-            complaints={this.state.complaints}
-            onComplaintsChanged={complaints => {
-              this.setState({ complaints });
-            }}
-          />
-        }
-        <TouchableOpacity
-          onPress={() => {
-            this.setState({ showWhen: true });
+  get complaintModal() {
+    if (this.state.showComplaintModal) {
+      console.log("show complaint");
+      return (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            backgroundColor: "white"
           }}
         >
-          <Input
-            pointerEvents="none"
-            value={this.state.whenText}
-            editable={false}
-            placeholder={this._when()}
+          <ComplaintView
+            complaints={this.state.complaints}
+            onComplaintsChanged={complaints => {
+              this.setState({ complaints, showComplaintModal: false });
+            }}
           />
-        </TouchableOpacity>
-        {
-          <Button
-            buttonStyle={styles.button}
-            containerStyle={[styles.button]}
-            onPress={() => this.filterPressed()}
-            title="Filter"
-          />
-        }
-        {
+        </View>
+      );
+    } else {
+      return <></>;
+    }
+  }
+
+  get addressModal() {
+    if (this.state.showAddressModal) {
+      return (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            backgroundColor: "white"
+          }}
+        >
           <AddressView
             onPress={address => {
-              this.setState({ address });
+              this._address.blur();
+              this.setState({ address, showAddressModal: false });
             }}
             onFocus={() =>
               this.setState({ addressStyle: styles.addressStyleNotBlur })
             }
-            onBlur={() =>
-              this.setState({ addressStyle: styles.addressStyleBlur })
-            }
             placeholder={"Near Address"}
           />
-        }
+        </View>
+      );
+    }
+  }
 
-        <Modal
-          visible={this.state.showWhen}
-          style={[
-            {
-              backgroundColor: "red"
-            }
-          ]}
-        >
-          <CalendarView
-            onClose={() => {
-              this.setState({ showWhen: false });
-            }}
-            onValidDate={valid => {
-              this.setState({ showWhen: false, when: valid });
-            }}
-            onInValidDate={invalid => {
-              console.log(invalid.allPossibleDates);
-              const when = invalid.allPossibleDates == null ? null : invalid;
-              this.setState({ showWhen: false, when: when });
+  render() {
+    return (
+      <>
+        <View style={styles.container}>
+          <View style={styles.HorizontalStyle}>
+            <Icon
+              containerStyle={styles.close}
+              onPress={() => this.props.onCloseClicked()}
+              name="close"
+            />
+          </View>
+          <Input
+            placeholder={""}
+            label="Keywords"
+            value={this.state.keywords}
+            onChangeText={keywords => {
+              this.setState({ keywords });
             }}
           />
-        </Modal>
-      </View>
+          <View>
+            <TouchableOpacity
+              onPress={() => this.setState({ showComplaintModal: true })}
+            >
+              <Input
+                ref={r => (this._complaint = r)}
+                caretHidden={true}
+                autoFocus={false}
+                onFocus={x => this.setState({ showComplaintModal: true })}
+                label={"Complaint"}
+                placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                value={this.state.complaints.map(x => x.name).join(", ")}
+              />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            onPress={() => {
+              this.setState({ showWhen: true });
+            }}
+          >
+            <Input
+              pointerEvents="none"
+              value={this.state.whenText}
+              editable={false}
+              placeholder={this._when()}
+            />
+          </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              onPress={() => this.setState({ showAddressModal: true })}
+            >
+              <Input
+                ref={r => (this._address = r)}
+                caretHidden={true}
+                autoFocus={false}
+                onFocus={x => this.setState({ showAddressModal: true })}
+                label={"Address"}
+                placeholder={"Where you observed infraction"}
+                value={this.addressString}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <Modal
+            visible={this.state.showWhen}
+            style={[
+              {
+                backgroundColor: "red"
+              }
+            ]}
+          >
+            <CalendarView
+              onClose={() => {
+                this.setState({ showWhen: false });
+              }}
+              onValidDate={valid => {
+                this.setState({ showWhen: false, when: valid });
+              }}
+              onInValidDate={invalid => {
+                console.log(invalid.allPossibleDates);
+                const when = invalid.allPossibleDates == null ? null : invalid;
+                this.setState({ showWhen: false, when: when });
+              }}
+            />
+          </Modal>
+        </View>
+        <Button
+          buttonStyle={{
+            borderRadius: 0,
+            padding: 20
+          }}
+          containerStyle={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: "100%"
+          }}
+          onPress={() => this.filterPressed()}
+          title="Filter"
+        />
+        {this.complaintModal}
+        {this.addressModal}
+      </>
     );
   }
 }
@@ -168,8 +243,12 @@ const styles = StyleSheet.create({
   button: {
     minHeight: 80
   },
-  element: {
-    //minHeight: 50
+  elementModal: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0
   },
   highOrderElement: {
     zIndex: 2

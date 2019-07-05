@@ -9,7 +9,14 @@ import {
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
 import { ImagePicker, Permissions } from "expo";
-import { Button, Icon, Image, Input, Overlay } from "react-native-elements";
+import {
+  Badge,
+  Button,
+  Icon,
+  Image,
+  Input,
+  Overlay
+} from "react-native-elements";
 import { Modal, Picker } from "react-native";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { ImageManipulator } from "expo";
@@ -456,6 +463,7 @@ export default class Submission extends React.Component {
                 value={this.state.description}
               />
             </View>
+            <View style={{ height: 100 }} />
           </View>
         </ScrollView>
         <Button
@@ -572,7 +580,7 @@ const styles = StyleSheet.create({
   },
   submitButtonStyle: {
     borderRadius: 0,
-    padding: 10
+    padding: 20
   },
   submitButton: {
     position: "absolute",
