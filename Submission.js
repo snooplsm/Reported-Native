@@ -25,7 +25,14 @@ export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
       headerTitle: "Report",
-      headerLeft: <Button title="+1" color="#000" />
+      headerLeft: (
+        <Icon
+          onPress={navigation.getParam("onBackPressed")}
+          containerStyle={{ padding: 10 }}
+          name="arrow-back"
+          color="#000"
+        />
+      )
     };
   };
 
@@ -40,6 +47,30 @@ export default class Submission extends React.Component {
       uploadedImages: {}
     };
   }
+
+  componentDidMount() {
+    this.props.navigation.setParams({ onBackPressed: this.onBackPressed });
+  }
+
+  onBackPressed = () => {
+    console.log("on back pressed");
+    if (!this.state) {
+      console.log("null state");
+      return;
+    }
+    if (this.state.imageModal) {
+      this.setState({ imageModal: false });
+    }
+    if (this.state.datePickerVisible) {
+      this.setState({ datePickerVisible: false });
+    }
+    if (this.state.showAddressModal) {
+      this.setState({ showAddressModal: false });
+    }
+    if (this.state.showComplaintModal) {
+      this.setState({ showComplaintModal: false });
+    }
+  };
 
   closeModal() {
     this.setState({ imageModal: false });
