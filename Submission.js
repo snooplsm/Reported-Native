@@ -58,7 +58,7 @@ export default class Submission extends React.Component {
       console.log("null state");
       return;
     }
-    if (this.state.imageModal) {
+    if (this.state.imageModal !== false) {
       this.setState({ imageModal: false });
     }
     if (this.state.datePickerVisible) {
