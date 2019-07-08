@@ -40,6 +40,12 @@ const SubmissionsStack = createStackNavigator({
   }
 });
 
+const ProfileStack = createStackNavigator({
+  Profile: {
+    screen: Profile
+  }
+});
+
 const SignedInNavigator = createBottomTabNavigator({
   Home: {
     screen: UserHomeStack,
@@ -60,7 +66,7 @@ const SignedInNavigator = createBottomTabNavigator({
     }
   },
   Profile: {
-    screen: Profile,
+    screen: ProfileStack,
     navigationOptions: {
       tabBarLabel: "Profile",
       tabBarIcon: ({ tintColor }) => (
