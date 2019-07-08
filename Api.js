@@ -21,7 +21,21 @@ Amplify.configure({
   }
 });
 
-const BASE_URL = "http://192.168.1.222:8084/staging/";
+const apiUrl = {
+  dev: "http://192.168.1.222:8084/staging/",
+  staging: "https://reported-stats.herokuapp.com/staging/",
+  prod: "https://reported-stats.herokuapp.com/prod/"
+};
+
+function getApiUrl() {
+  console.log(apiUrl);
+  const channel = Constants.manifest.releaseChannel;
+  if (channel === undefined) return apiUrl.dev;
+  if (channel.indexOf("prod")) return apiUrl.prod;
+  if (channel.indexOf("staging")) return apiUrl.staging;
+}
+
+const BASE_URL = getApiUrl();
 
 const ax = axios.create({
   baseURL: BASE_URL
