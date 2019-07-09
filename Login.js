@@ -89,6 +89,7 @@ export default class Login extends React.Component {
         <Input
           label={"Email"}
           autoCapitalize={"none"}
+          autoFocus={true}
           keyboardType="email-address"
           ref={this.email}
           containerStyle={styles.email}
@@ -96,7 +97,6 @@ export default class Login extends React.Component {
           errorMessage={this.state.emailError}
           onChangeText={email => this.onEmailChange(email)}
           onBlur={() => this.onEmailBlur()}
-          leftIcon={<Icon type="material-community" name="email" />}
         />
         <Input
           label="Password"
@@ -104,7 +104,6 @@ export default class Login extends React.Component {
           containerStyle={styles.field}
           errorStyle={ErrorStyle.style}
           onChangeText={password => this.setState({ password })}
-          leftIcon={<Icon type="material-community" name="lock" />}
         />
         <TouchableOpacity
           style={styles.forgotPassword}
@@ -119,7 +118,12 @@ export default class Login extends React.Component {
             onPress={() => {
               this.submitLogin();
             }}
-            buttonStyle={ButtonStyle.primary}
+            buttonStyle={Object.assign(
+              {
+                padding: 20
+              },
+              Button.primary
+            )}
             title="Login"
           />
         </View>
@@ -137,7 +141,7 @@ const styles = StyleSheet.create({
   },
   email: {},
   field: {
-    marginTop: 30
+    marginTop: 40
   },
   forgotPassword: {
     marginTop: 125,
