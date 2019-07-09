@@ -1,14 +1,11 @@
 {
   "expo": {
     "name": "Reported",
-    "slug": "Reported-Native",
+    "slug": "reported",
     "privacy": "public",
     "sdkVersion": "32.0.0",
-    "platforms": [
-      "ios",
-      "android"
-    ],
-    "version": "1.0.0",
+    "platforms": ["ios", "android"],
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -16,12 +13,20 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "ios": {
+      "bundleIdentifier": "com.reported.reported",
+      "buildNumber": "3.0.0",
+      "appStoreUrl": "http://apple.co/2E4auup"
+    },
+    "android": {
+      "package": "cab.reported.nyc",
+      "versionCode": 44,
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
+    },
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true
     }

@@ -37,6 +37,8 @@ function getApiUrl() {
 
 const BASE_URL = getApiUrl();
 
+console.log(BASE_URL);
+
 const ax = axios.create({
   baseURL: BASE_URL
 });
