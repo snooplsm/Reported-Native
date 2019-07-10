@@ -16,7 +16,8 @@
     "ios": {
       "bundleIdentifier": "com.reported.reported",
       "buildNumber": "3.0.0",
-      "appStoreUrl": "http://apple.co/2E4auup"
+      "appStoreUrl": "http://apple.co/2E4auup",
+      "supportsTablet": true
     },
     "android": {
       "package": "cab.reported.nyc",
@@ -26,9 +27,6 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"],
-    "ios": {
-      "supportsTablet": true
-    }
+    "assetBundlePatterns": ["**/*"]
   }
 }
