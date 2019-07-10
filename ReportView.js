@@ -1,0 +1,87 @@
+import React from "react";
+
+import { StyleSheet, Text, View } from "react-native";
+import { Card } from "react-native-elements";
+import Autolink from "react-native-autolink";
+import { HorizontalStyle, ButtonStyle } from "./Styles";
+import ImageCarousel from "./ImageCarousel";
+import moment from "moment";
+
+export default class ReportView extends React.Component {
+  constructor(props) {
+    super(props);
+  }
+  carousel() {
+    const { report: rpt } = this.props;
+    const { report, address } = rpt;
+    if (report.media && report.media.length > 0) {
+      return (
+        <ImageCarousel
+          onItemPress={x => {
+            //console.log(x);
+            alert("ok");
+          }}
+          entries={report.media.map(x => {
+            return { url: x };
+          })}
+        />
+      );
+    } else {
+      return <></>;
+    }
+  }
+
+  closeModal() {
+    this.setState({ imageModalImages: false });
+  }
+
+  imageModal() {
+    if (this.state.imageModalImages) {
+      return (
+        <Modal visible={true} onRequestClose={() => {}} transparent={false}>
+          <ImageViewer
+            onClick={() => this.closeModal()}
+            imageUrls={this.state.imageModalImages}
+          />
+        </Modal>
+      );
+    } else {
+      return <></>;
+    }
+  }
+  render() {
+    const { report: rpt } = this.props;
+    const { report, address } = rpt;
+    const time = moment(report.timeofincident);
+    return (
+      <Card title={report.complaint}>
+        <View
+          style={[
+            HorizontalStyle.style,
+            {
+              paddingBottom: 10
+            }
+          ]}
+        >
+          <Text>
+            {address.building} {address.street}
+          </Text>
+          <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
+        </View>
+        {this.carousel()}
+        <Autolink text={report.description} />
+        <View
+          style={[
+            HorizontalStyle.style,
+            {
+              paddingTop: 10
+            }
+          ]}
+        >
+          <Text>{`${time.format("M-d-YY h:mm A")}  ${time.fromNow()}`}</Text>
+          <Text style={ButtonStyle.orangeText}>{`#CB${address.cb}`}</Text>
+        </View>
+      </Card>
+    );
+  }
+}

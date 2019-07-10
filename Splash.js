@@ -5,15 +5,16 @@ import {
   KeyboardAvoidingView,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 import { Button } from "react-native-elements";
 import SplashMp4 from "./assets/splash.mp4";
 import { ButtonContainerStyle, ButtonStyle } from "./Styles";
+import { uploadFile } from "./Api";
 
 export default class Splash extends React.Component {
   static navigationOptions = {
-    header: null,
+    header: null
   };
   constructor(props) {
     super(props);
@@ -21,15 +22,15 @@ export default class Splash extends React.Component {
 
   render() {
     const {
-      navigation: { navigate },
+      navigation: { navigate }
     } = this.props;
 
     return (
       <KeyboardAvoidingView style={styles.container}>
         <Video
           source={SplashMp4}
-          shouldPlay={false}
-          isLooping={false}
+          shouldPlay={true}
+          isLooping={true}
           resizeMode="cover"
           isMuted={true}
           style={styles.fullScreen}
@@ -52,6 +53,7 @@ export default class Splash extends React.Component {
             type="outline"
           />
           <Button
+            onPress={() => navigate("Submission")}
             containerStyle={styles.button}
             titleStyle={ButtonStyle.whiteText}
             title="Skip"
@@ -66,23 +68,23 @@ export default class Splash extends React.Component {
 const styles = StyleSheet.create({
   button: {
     width: "60%",
-    height: 60,
+    height: 60
   },
   container: {
     position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
-    right: 0,
+    right: 0
   },
   fullScreen: {
     position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
-    right: 0,
+    right: 0
   },
   dimmer: {
-    backgroundColor: "#00000088",
-  },
+    backgroundColor: "#00000088"
+  }
 });

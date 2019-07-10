@@ -5,14 +5,15 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Button, Input, Icon } from "react-native-elements";
+import { api } from "./Api";
 
 export default class Login extends React.Component {
   static navigationOptions = {
-    title: "Login",
+    title: "Login"
   };
 
   constructor(props) {
@@ -21,7 +22,7 @@ export default class Login extends React.Component {
     this.state = {
       email: "",
       password: "",
-      loading: false,
+      loading: false
     };
   }
 
@@ -54,6 +55,28 @@ export default class Login extends React.Component {
     }
   }
 
+  submitLogin() {
+    const {
+      navigation: { navigate }
+    } = this.props;
+
+    const { email, password } = this.state;
+    api
+      .login(email, password)
+      .then(res => {
+        navigate("Home");
+      })
+      .catch(x => {
+        console.log(x);
+      });
+  }
+
+  isSubmitEnabled() {
+    return (
+      this.validateEmail(this.state.email) && this.state.password.length > 2
+    );
+  }
+
   validateEmail(email) {
     var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     return re.test(email);
@@ -62,9 +85,11 @@ export default class Login extends React.Component {
   render() {
     return (
       <KeyboardAvoidingView style={styles.container}>
+        <View style={{ marginTop: "20%" }} />
         <Input
           label={"Email"}
           autoCapitalize={"none"}
+          autoFocus={true}
           keyboardType="email-address"
           ref={this.email}
           containerStyle={styles.email}
@@ -72,14 +97,13 @@ export default class Login extends React.Component {
           errorMessage={this.state.emailError}
           onChangeText={email => this.onEmailChange(email)}
           onBlur={() => this.onEmailBlur()}
-          leftIcon={<Icon type="material-community" name="email" />}
         />
         <Input
           label="Password"
           secureTextEntry={true}
           containerStyle={styles.field}
           errorStyle={ErrorStyle.style}
-          leftIcon={<Icon type="material-community" name="lock" />}
+          onChangeText={password => this.setState({ password })}
         />
         <TouchableOpacity
           style={styles.forgotPassword}
@@ -89,9 +113,17 @@ export default class Login extends React.Component {
         </TouchableOpacity>
         <View style={styles.field}>
           <Button
+            disabled={!this.isSubmitEnabled()}
             loading={this.state.loading}
-            onPress={() => {}}
-            buttonStyle={ButtonStyle.primary}
+            onPress={() => {
+              this.submitLogin();
+            }}
+            buttonStyle={Object.assign(
+              {
+                padding: 20
+              },
+              Button.primary
+            )}
             title="Login"
           />
         </View>
@@ -105,16 +137,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     flex: 1,
     width: "100%",
-    height: "100%",
+    height: "100%"
   },
-  email: {
-    top: "20%",
-  },
+  email: {},
   field: {
-    marginTop: 30,
+    marginTop: 40
   },
   forgotPassword: {
     marginTop: 125,
-    alignItems: "center",
-  },
+    alignItems: "center"
+  }
 });
