@@ -39,10 +39,17 @@ export default class Profile extends React.Component {
     };
   };
 
+  logoutPressed = () => {
+    signOut().then(r => {
+      this.props.navigation.navigate("Auth");
+    });
+  };
+
   constructor(props) {
     super(props);
     this.state = {};
   }
+
   componentDidMount() {
     isSignedIn().then(user => {
       if (user) {
@@ -55,6 +62,8 @@ export default class Profile extends React.Component {
         });
       }
     });
+    this.props.navigation.setParams({ logoutPressed: this.logoutPressed });
+    this.props.navigation.setParams({ editPressed: this.editPressed });
   }
 
   onEmailChange(email) {

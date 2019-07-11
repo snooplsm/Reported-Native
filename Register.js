@@ -5,14 +5,14 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Button, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
   static navigationOptions = {
-    title: "Register",
+    title: "Register"
   };
 
   constructor(props) {
@@ -24,7 +24,7 @@ export default class Register extends React.Component {
       lastName: "",
       password: "",
       phone: "",
-      loading: false,
+      loading: false
     };
   }
 
@@ -177,7 +177,12 @@ export default class Register extends React.Component {
           <Button
             onPress={() => {}}
             loading={this.state.loading}
-            buttonStyle={ButtonStyle.primary}
+            buttonStyle={Object.assign(
+              {
+                padding: 20
+              },
+              Button.primary
+            )}
             title="Register"
           />
         </View>
@@ -191,16 +196,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     flex: 1,
     width: "100%",
-    height: "100%",
+    height: "100%"
   },
   email: {
-    top: "20%",
+    top: "20%"
   },
   field: {
-    marginTop: 30,
+    marginTop: 30
   },
   alreadyRegistered: {
     marginTop: 30,
-    alignItems: "center",
-  },
+    alignItems: "center"
+  }
 });

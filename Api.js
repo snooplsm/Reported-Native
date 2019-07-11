@@ -22,7 +22,7 @@ Amplify.configure({
 });
 
 const apiUrl = {
-  dev: "http://192.168.1.222:8084/staging/",
+  dev: "http://localhost:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };

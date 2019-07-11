@@ -7,8 +7,13 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
-import { Button, Input, Icon } from "react-native-elements";
+import {
+  ErrorStyle,
+  HorizontalStyle,
+  ButtonContainerStyle,
+  ButtonStyle
+} from "./Styles";
+import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
 
 export default class Login extends React.Component {
@@ -56,18 +61,32 @@ export default class Login extends React.Component {
   }
 
   submitLogin() {
+    if (this.state.loading) {
+      return;
+    }
     const {
       navigation: { navigate }
     } = this.props;
-
+    this.setState({ loading: true, error: null });
     const { email, password } = this.state;
     api
       .login(email, password)
       .then(res => {
+        this.setState({ loading: false });
         navigate("Home");
       })
       .catch(x => {
-        console.log(x);
+        this.setState({ loading: false });
+        let message = "";
+        if (x.response) {
+          message = x.response.data.message;
+        } else if (x.request) {
+          message = "Server was unresponsive";
+        } else {
+          messaage = "Unknown error";
+        }
+        this.setState({ error: message });
+        console.log("error logging in ", x);
       });
   }
 
@@ -85,7 +104,19 @@ export default class Login extends React.Component {
   render() {
     return (
       <KeyboardAvoidingView style={styles.container}>
-        <View style={{ marginTop: "20%" }} />
+        <View style={{ marginTop: "10%" }} />
+        <View
+          style={{
+            opacity: this.state.error ? 100 : 0,
+            justifyContent: "center",
+            alignItems: "center",
+            flexDirection: "row"
+          }}
+        >
+          <Badge status="error" />
+          <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+        </View>
+        <View style={{ marginTop: "10%" }} />
         <Input
           label={"Email"}
           autoCapitalize={"none"}
