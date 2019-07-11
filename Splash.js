@@ -52,13 +52,6 @@ export default class Splash extends React.Component {
             title="Register"
             type="outline"
           />
-          <Button
-            onPress={() => navigate("Submission")}
-            containerStyle={styles.button}
-            titleStyle={ButtonStyle.whiteText}
-            title="Skip"
-            type="clear"
-          />
         </View>
       </KeyboardAvoidingView>
     );

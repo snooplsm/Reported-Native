@@ -21,6 +21,11 @@
     },
     "android": {
       "package": "cab.reported.nyc",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android/ic_launcher_foreground.png",
+        "backgroundColor": "#ffffff"
+      },
+      "icon": "./assets/android/android_icon_round.png",
       "versionCode": 44,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
