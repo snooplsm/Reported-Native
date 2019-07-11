@@ -232,9 +232,10 @@ export default class Submission extends React.Component {
   }
 
   timeofreport(timeofreport) {
-    console.log(timeofreport);
+    if (!timeofreport) {
+      return "";
+    }
     const momy = moment(timeofreport);
-    console.log(momy);
     if (momy.isValid()) {
       return `${momy.fromNow()} @ ${momy.format("M/d h:mm a")}`;
     }
@@ -532,7 +533,6 @@ export default class Submission extends React.Component {
       } = exif;
 
       if (timeofreport) {
-        console.log("we have a time of report");
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
         console.log(datetime);
         this.setState({
