@@ -99,16 +99,19 @@ export default class Submissions extends React.Component {
       });
   }
 
+  _keyExtractor = (item, index) => item.report.id;
+
   render() {
     return (
       <>
         {this.submissionsFilter}
         <View>
           <FlatList
+            keyExtractor={this._keyExtractor}
             data={this.state.reports}
             renderItem={({ item }) => {
               const { report, address } = item;
-              return <ReportView key={report.id} report={item} />;
+              return <ReportView report={item} />;
             }}
           />
         </View>

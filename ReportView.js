@@ -78,8 +78,12 @@ export default class ReportView extends React.Component {
             }
           ]}
         >
-          <Text>{`${time.format("M-d-YY h:mm A")}  ${time.fromNow()}`}</Text>
-          <Text style={ButtonStyle.orangeText}>{`#CB${address.cb}`}</Text>
+          <Text>{` ${time.fromNow()} \n ${time.format(
+            "M/d/YY h:mm A"
+          )} `}</Text>
+          <Text style={ButtonStyle.orangeText}>
+            {address.cb ? `#CB${address.cb}` : ""}
+          </Text>
         </View>
       </Card>
     );
