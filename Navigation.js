@@ -16,18 +16,6 @@ import {
   createSwitchNavigator
 } from "react-navigation";
 
-const SignedOutNavigator = createStackNavigator(
-  {
-    Splash: Splash,
-    Login: Login,
-    Register: Register,
-    Submission: Submission
-  },
-  {
-    initialRouteName: "Splash"
-  }
-);
-
 const UserHomeStack = createStackNavigator({
   Submission: {
     screen: Submission
@@ -39,6 +27,18 @@ const SubmissionsStack = createStackNavigator({
     screen: Submissions
   }
 });
+
+const SignedOutNavigator = createStackNavigator(
+  {
+    Splash: Splash,
+    Login: Login,
+    Register: Register,
+    Submission: Submissions
+  },
+  {
+    initialRouteName: "Splash"
+  }
+);
 
 const ProfileStack = createStackNavigator({
   Profile: {
