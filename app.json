@@ -16,7 +16,7 @@
     "ios": {
       "bundleIdentifier": "com.reported.reported",
       "buildNumber": "3.0.0",
-      "appStoreUrl": "http://apple.co/2E4auup",
+      "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true
     },
     "android": {
