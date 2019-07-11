@@ -244,13 +244,14 @@ export default class Profile extends React.Component {
         <Button
           containerStyle={{
             bottom: 0,
+            opacity: this.state.editable ? 100 : 0,
             width: "100%",
             position: "absolute"
           }}
           buttonStyle={{
             padding: 20
           }}
-          title="Update"
+          title="Save"
           onPress={() => {
             signOut().then(f => {
               navigate("Auth");
