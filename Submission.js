@@ -227,7 +227,7 @@ export default class Submission extends React.Component {
     }, 60000);
   }
 
-  componentWillUnMount() {
+  componentWillUnount() {
     clearInterval(this.timeofreportinterval);
   }
 
