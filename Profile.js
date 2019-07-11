@@ -20,7 +20,6 @@ export default class Profile extends React.Component {
         <TouchableOpacity
           onPress={navigation.getParam("logoutPressed")}
           style={{ padding: 10 }}
-          name="arrow-back"
           color="#000"
         >
           <Text>LOGOUT</Text>
@@ -33,7 +32,7 @@ export default class Profile extends React.Component {
           name="arrow-back"
           color="#000"
         >
-          <Text>EDIT</Text>
+          <Text>{navigation.getParam("editText")}</Text>
         </TouchableOpacity>
       )
     };
@@ -45,25 +44,47 @@ export default class Profile extends React.Component {
     });
   };
 
+  editPressed = () => {
+    const { editable } = this.state;
+    console.log(editable, !editable);
+    this.setState({ editable: !editable });
+    if (editable) {
+      this.setData(this.state.user);
+    }
+    const editMessage = editable ? "EDIT" : "CANCEL";
+    this.props.navigation.setParams({
+      editText: editMessage
+    });
+  };
+
   constructor(props) {
     super(props);
-    this.state = {};
+    this.state = {
+      editable: false
+    };
+  }
+
+  setData(user) {
+    this.setState({
+      user,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      email: user.email
+    });
   }
 
   componentDidMount() {
     isSignedIn().then(user => {
       if (user) {
-        this.setState({
-          user,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phone: user.phone,
-          email: user.email
-        });
+        this.setData(user);
       }
     });
-    this.props.navigation.setParams({ logoutPressed: this.logoutPressed });
-    this.props.navigation.setParams({ editPressed: this.editPressed });
+    this.props.navigation.setParams({
+      logoutPressed: this.logoutPressed,
+      editPressed: this.editPressed,
+      editText: "EDIT"
+    });
   }
 
   onEmailChange(email) {
@@ -86,7 +107,7 @@ export default class Profile extends React.Component {
 
   onFirstNameBlur() {
     const state = Object.assign({}, this.state);
-    if (this.state.firstName.length != 0) {
+    if (this.state.firstName.length == 0) {
       state.firstNameError = "First Name required";
     } else {
       state.firstNameError = null;
@@ -96,7 +117,7 @@ export default class Profile extends React.Component {
 
   onLastNameBlur() {
     const state = Object.assign({}, this.state);
-    if (this.state.lastName.length != 0) {
+    if (this.state.lastName.length == 0) {
       state.lastNameError = "First Name required";
     } else {
       state.lastNameError = null;
@@ -125,7 +146,7 @@ export default class Profile extends React.Component {
 
   onLastNameBlur() {
     const state = Object.assign({}, this.state);
-    if (this.state.lastName.length != 0) {
+    if (this.state.lastName.length == 0) {
       state.lastNameError = "Last Name required";
     } else {
       state.lastNameError = null;
