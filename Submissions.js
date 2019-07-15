@@ -106,8 +106,14 @@ export default class Submissions extends React.Component {
     api
       .deleteReport(report.id)
       .then(cancelled => {
+        console.log("deleted");
+        const reports = this.state.reports.filter(x => {
+          console.log(x);
+          console.log(report.id);
+          return x.report.id != report.id;
+        });
         this.setState({
-          reports: this.state.reports.filter(x => x.report.id != report.id)
+          reports: reports
         });
       })
       .catch(e => {

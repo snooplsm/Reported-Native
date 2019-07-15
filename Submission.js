@@ -269,6 +269,18 @@ export default class Submission extends React.Component {
         });
       return;
     }
+    if (!this.state.location) {
+      return;
+    }
+    if (!this.state.timeofreport) {
+      return;
+    }
+    if (this.state.complaints.length < 1) {
+      return;
+    }
+    if (!this.state.timeofreport) {
+      return;
+    }
     const needToUpload = this.state.images.filter(
       x => !this.state.uploadedImages[x.url]
     );
@@ -341,6 +353,7 @@ export default class Submission extends React.Component {
           sublocality,
           location: geo
         }),
+        timeofincident: this.state.timeofreport,
         media: this.state.images
           .filter(x => !this.state.uploadedImages[x.url])
           .map(x => this.state.uploadedImages[x.url])
@@ -489,6 +502,7 @@ export default class Submission extends React.Component {
         <Button
           onPress={() => this.submit()}
           title="Submit"
+          loading={this.state.submitting}
           buttonStyle={styles.submitButtonStyle}
           containerStyle={styles.submitButton}
         />
