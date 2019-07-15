@@ -51,7 +51,8 @@ export default class Submission extends React.Component {
       datePickerVisible: false,
       complaints: [],
       imageModal: false,
-      uploadedImages: {}
+      uploadedImages: {},
+      submitting: false
     };
   }
 
@@ -290,7 +291,9 @@ export default class Submission extends React.Component {
         candidate: {
           plate: "TEST"
         },
-        region: "NY"
+        plate: {
+          region: "NY"
+        }
       },
       this.state.license
     );
@@ -319,27 +322,36 @@ export default class Submission extends React.Component {
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     console.log(this.state.location.data);
-    api.report({
-      description: "foofuckshit",
-      complaintIds: complaints.map(x => x.id),
-      license: {
-        plate: license.candidate.plate,
-        state: license.plate.region
-      },
-      address: Object.assign({
-        building,
-        street,
-        city,
-        county,
-        state,
-        zip,
-        sublocality,
-        location: geo
-      }),
-      media: this.state.images
-        .filter(x => !this.state.uploadedImages[x.url])
-        .map(x => this.state.uploadedImages[x.url])
-    });
+    this.setState({ submitting: true });
+    api
+      .report({
+        description: "foofuckshit",
+        complaintIds: complaints.map(x => x.id),
+        license: {
+          plate: license.candidate.plate,
+          state: license.plate.region
+        },
+        address: Object.assign({
+          building,
+          street,
+          city,
+          county,
+          state,
+          zip,
+          sublocality,
+          location: geo
+        }),
+        media: this.state.images
+          .filter(x => !this.state.uploadedImages[x.url])
+          .map(x => this.state.uploadedImages[x.url])
+      })
+      .then(x => {
+        alert("success");
+        this.setState({ submitting: false });
+      })
+      .catch(e => {
+        this.setState({ submitting: false });
+      });
   }
 
   addPhotoText() {
@@ -428,17 +440,24 @@ export default class Submission extends React.Component {
               }}
             />
             <View>
-              <Input
-                ref={r => {
-                  this._datePick = r;
+              <TouchableOpacity
+                onPress={() => {
+                  console.log("datepickers");
+                  this.setState({ datePickerVisible: true });
                 }}
-                caretHidden={true}
-                autoFocus={false}
-                onFocus={x => this.setState({ datePickerVisible: true })}
-                label={"When Incident Occurred"}
-                placeholder={"Time you observed infraction"}
-                value={this.state.timeofreportstr}
-              />
+              >
+                <Input
+                  ref={r => {
+                    this._datePick = r;
+                  }}
+                  pointerEvents="none"
+                  caretHidden={true}
+                  autoFocus={false}
+                  label={"When Incident Occurred"}
+                  placeholder={"Time you observed infraction"}
+                  value={this.state.timeofreportstr}
+                />
+              </TouchableOpacity>
             </View>
             <View>
               <Input

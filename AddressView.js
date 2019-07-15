@@ -16,7 +16,7 @@ export default class AddressView extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      listViewDisplayed: false
+      listViewDisplayed: true
     };
   }
 
@@ -27,7 +27,7 @@ export default class AddressView extends React.Component {
         getDefaultValue={() => ""}
         placeholder={this.props.placeholder ?? "Street Address of Complaint"}
         minLength={3} // minimum length of text to search
-        autoFocus={false}
+        autoFocus={true}
         returnKeyType={"search"} // Can be left out for default return key https://facebook.github.io/react-native/docs/textinput.html#returnkeytype
         keyboardAppearance={"light"} // Can be left out for default keyboardAppearance https://facebook.github.io/react-native/docs/textinput.html#keyboardappearance
         listViewDisplayed={this.state.listViewDisplayed} // true/false/undefined
