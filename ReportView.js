@@ -1,7 +1,7 @@
 import React from "react";
 
 import { StyleSheet, Text, View } from "react-native";
-import { Card } from "react-native-elements";
+import { Card, Icon } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
 import ImageCarousel from "./ImageCarousel";
@@ -49,6 +49,18 @@ export default class ReportView extends React.Component {
       return <></>;
     }
   }
+
+  get status() {
+    const { report: rpt } = this.props;
+    const { report, address } = rpt;
+    if (report.status <= 0) {
+      return (
+        <View>
+          <Text>[PENDING]</Text>
+        </View>
+      );
+    }
+  }
   render() {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
@@ -79,7 +91,7 @@ export default class ReportView extends React.Component {
           ]}
         >
           <Text>{` ${time.fromNow()} \n ${time.format(
-            "M/d/YY h:mm A"
+            "M/D/YY h:mm A"
           )} `}</Text>
           <Text style={ButtonStyle.orangeText}>
             {address.cb ? `#CB${address.cb}` : ""}

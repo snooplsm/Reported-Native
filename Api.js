@@ -221,6 +221,11 @@ export const api = {
     return ax.put("/report", report);
   },
 
+  deleteReport: reportId => {
+    console.log("delete report", reportId);
+    return ax.delete(`/report/delete/${reportId}`, {});
+  },
+
   reports: filter => {
     if (filter == null) {
       return ax.get("/reports");

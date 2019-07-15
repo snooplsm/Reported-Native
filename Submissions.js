@@ -1,12 +1,14 @@
 import React from "react";
 
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
   SafeAreaView,
   FlatList,
-  Button
+  Button,
+  TouchableOpacity
 } from "react-native";
 import { Icon } from "react-native-elements";
 import { api, uploadFile } from "./Api";
@@ -88,14 +90,29 @@ export default class Submissions extends React.Component {
         const reports = [...res.data.reports].map((report, index) => {
           return {
             report: report,
-            address: addressMap[report.addressId] ?? { street: "unknown" }
+            address: addressMap[report.addressId] ?? { street: "" }
           };
         });
+        console.log(reports);
         this.setState({ reports });
       })
       .catch(err => {
         console.log(err);
         alert("An error occurred");
+      });
+  }
+
+  deleteReport(report) {
+    api
+      .deleteReport(report.id)
+      .then(cancelled => {
+        this.setState({
+          reports: this.state.reports.filter(x => x.report.id != report.id)
+        });
+      })
+      .catch(e => {
+        console.log(e);
+        alert("There was a problem.");
       });
   }
 
@@ -111,7 +128,22 @@ export default class Submissions extends React.Component {
             data={this.state.reports}
             renderItem={({ item }) => {
               const { report, address } = item;
-              return <ReportView report={item} />;
+              return (
+                <TouchableOpacity
+                  onLongPress={() => {
+                    Alert.alert(
+                      "Confirm Delete?",
+                      "Are you sure you want to delete this report?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Ok", onPress: () => this.deleteReport(report) }
+                      ]
+                    );
+                  }}
+                >
+                  <ReportView report={item} />
+                </TouchableOpacity>
+              );
             }}
           />
         </View>
