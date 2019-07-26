@@ -18,6 +18,7 @@ import {
   Overlay
 } from "react-native-elements";
 import { Modal, Picker } from "react-native";
+import * as MediaLibrary from "expo-media-library";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { ImageManipulator } from "expo";
 import AddressView from "./AddressView";
@@ -46,12 +47,12 @@ export default class Submission extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      images: [],
+      media: [],
       resizedImages: [],
       datePickerVisible: false,
       complaints: [],
       imageModal: false,
-      uploadedImages: {},
+      uploadedMedia: {},
       submitting: false
     };
   }
@@ -86,7 +87,7 @@ export default class Submission extends React.Component {
 
   removeImage(index) {
     const { images } = this.state;
-    let newImages = [...images];
+    let newImages = [...media];
     newImages.splice(index, 1);
     this.setState({ images: newImages });
   }
@@ -213,7 +214,7 @@ export default class Submission extends React.Component {
               </View>
             );
           }}
-          imageUrls={this.state.images}
+          imageUrls={this.state.media}
         />
       );
     } else {
@@ -255,11 +256,11 @@ export default class Submission extends React.Component {
   submit() {
     const plateUploaded =
       !this.state.license ||
-      this.state.uploadedImages[this.state.license.plate.image.url];
+      this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
       uploadFile(this.state.license.plate.image)
         .then(uploaded => {
-          this.state.uploadedImages[
+          this.state.uploadedMedia[
             this.state.license.plate.image.url
           ] = uploaded;
           this.submit();
@@ -281,15 +282,15 @@ export default class Submission extends React.Component {
     if (!this.state.timeofreport) {
       return;
     }
-    const needToUpload = this.state.images.filter(
-      x => !this.state.uploadedImages[x.url]
+    const needToUpload = this.state.media.filter(
+      x => !this.state.uploadedMedia[x.url]
     );
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
       console.log("uploadss");
       uploadFile(file)
         .then(uploaded => {
-          this.state.uploadedImages[file.url] = uploaded;
+          this.state.uploadedMedia[file.url] = uploaded;
           this.submit();
         })
         .catch(e => {
@@ -316,9 +317,9 @@ export default class Submission extends React.Component {
     const complaints = this.state.complaints ?? [];
     if (
       this.state.license &&
-      this.state.uploadedImages[this.state.license.url]
+      this.state.uploadedMedia[this.state.license.url]
     ) {
-      license.media = this.state.uploadedImages[this.state.license.plate.url];
+      license.media = this.state.uploadedMedia[this.state.license.plate.url];
     }
     const address = this.state.location.place.address_components;
     console.log(address);
@@ -354,9 +355,9 @@ export default class Submission extends React.Component {
           location: geo
         }),
         timeofincident: this.state.timeofreport,
-        media: this.state.images
-          .filter(x => !this.state.uploadedImages[x.url])
-          .map(x => this.state.uploadedImages[x.url])
+        media: this.state.media
+          .filter(x => !this.state.uploadedMedia[x.url])
+          .map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
         alert("success");
@@ -368,7 +369,7 @@ export default class Submission extends React.Component {
   }
 
   addPhotoText() {
-    if (this.state.images && this.state.images.length > 0) {
+    if (this.state.media && this.state.media.length > 0) {
       return "Add Another Photo/Video";
     } else {
       return "Add Photo/Video";
@@ -395,7 +396,7 @@ export default class Submission extends React.Component {
                 console.log("index", index);
                 this.setState({ imageModal: index });
               }}
-              entries={this.state.images}
+              entries={this.state.media}
             />
 
             <View>
@@ -432,7 +433,7 @@ export default class Submission extends React.Component {
 
             <LicenseView
               onPlateSelected={plate => this.setState({ license: plate })}
-              images={this.state.images}
+              images={this.state.media}
             />
 
             <DateTimePicker
@@ -514,7 +515,7 @@ export default class Submission extends React.Component {
   }
 
   resizeImages = async () => {
-    const resizeAsync = this.state.images.map(x => {
+    const resizeAsync = this.state.media.map(x => {
       let crop = null;
       if (x.width < x.height) {
         crop = {
@@ -556,14 +557,28 @@ export default class Submission extends React.Component {
       if (result.cancelled) {
         return;
       }
+      if (result.type == "video") {
+        console.log("returning");
+        console.log(result.uri);
+        MediaLibrary.getAssetInfoAsync({ uri: uri })
+          .then(metadata => {
+            console.log(metadata);
+          })
+          .catch(err => {
+            console.error(err);
+          });
+        return;
+      }
+      const { width, height, uri, type, duration } = result;
       const { exif } = result;
-      const { width, height, uri, type } = result;
-      const {
-        DateTimeOriginal: timeofreport,
-        GPSAltitude: altitude,
-        GPSLatitude: lat,
-        GPSLongitude: lng
-      } = exif;
+      if (exif) {
+        const {
+          DateTimeOriginal: timeofreport,
+          GPSAltitude: altitude,
+          GPSLatitude: lat,
+          GPSLongitude: lng
+        } = exif;
+      }
 
       if (timeofreport) {
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
@@ -573,16 +588,21 @@ export default class Submission extends React.Component {
           timeofreportstr: this.timeofreport(datetime)
         });
       }
+      let location = null;
+      if (exif && lat && lng) {
+        location = {
+          lat: lat,
+          lng: lng
+        };
+      }
       const image = {
         url: uri,
         width: width,
         height: height,
-        exif: exif,
-        lat: lat,
-        lng: lng,
-        timeofimage: timeofreport
+        location,
+        taken_at: timeofreport
       };
-      const images = [...this.state.images, image];
+      const images = [...this.state.media, image];
       this.setState({ images: images });
       this.resizeImages()
         .then(x => {
