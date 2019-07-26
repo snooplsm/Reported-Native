@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Button, Input, Icon } from "react-native-elements";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
+import { api } from "./Api";
 import { signOut, isSignedIn } from "./Auth";
 
 export default class Profile extends React.Component {
@@ -88,80 +89,75 @@ export default class Profile extends React.Component {
   }
 
   onEmailChange(email) {
-    const state = Object.assign({}, this.state);
-    state.email = email;
-    this.setState(state);
+    this.setState({ email });
   }
 
   onFirstNameChange(firstName) {
-    const state = Object.assign({}, this.state);
-    state.firstName = firstName;
-    this.setState(state);
+    this.setState({ firstName });
   }
 
   onLastNameChange(lastName) {
-    const state = Object.assign({}, this.state);
-    state.lastName = lastName;
-    this.setState(state);
+    this.setState({ lastName });
   }
 
   onFirstNameBlur() {
-    const state = Object.assign({}, this.state);
+    let firstNameError = null;
     if (this.state.firstName.length == 0) {
-      state.firstNameError = "First Name required";
+      firstNameError = "First Name required";
     } else {
-      state.firstNameError = null;
+      firstNameError = null;
     }
-    this.setState(state);
+    this.setState({ firstNameError });
   }
 
   onLastNameBlur() {
-    const state = Object.assign({}, this.state);
+    let lastNameError = null;
     if (this.state.lastName.length == 0) {
-      state.lastNameError = "First Name required";
+      lastNameError = "First Name required";
     } else {
-      state.lastNameError = null;
+      lastNameError = null;
     }
-    this.setState(state);
+    this.setState({ lastNameError });
   }
 
   onPhoneChange(phone) {
-    const state = Object.assign({}, this.state);
-    state.phone = phone;
-    this.setState(state);
+    console.log(phone);
+    this.setState({ phone });
   }
 
   onPhoneBlur() {
-    const state = Object.assign({}, this.state);
+    const state = this.state;
     const phone = this.state.phone.replace(/\D/g, "");
+    let phoneError = "";
     if (phone.length == 0) {
-      state.phoneError = "Phone required";
+      phoneError = "Phone required";
     } else if (phone.length !== 10) {
-      state.phoneError = "Phone invalid";
+      phoneError = "Phone invalid";
     } else {
-      state.phoneError = "";
+      phoneError = "";
     }
-    this.setState(state);
+    this.setState({ phoneError });
   }
 
   onLastNameBlur() {
-    const state = Object.assign({}, this.state);
+    const state = this.state;
+    let lastNameError = null;
     if (this.state.lastName.length == 0) {
-      state.lastNameError = "Last Name required";
+      lastNameError = "Last Name required";
     } else {
-      state.lastNameError = null;
+      lastNameError = null;
     }
-    this.setState(state);
+    this.setState({ lastNameError });
   }
 
   onEmailBlur() {
-    const state = Object.assign({}, this.state);
+    let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
-      state.emailError = "Invalid Email";
+      emailError = "Invalid Email";
     } else {
-      state.emailError = null;
+      emailError = null;
     }
-    this.setState(state);
+    this.setState({ emailError });
   }
 
   validateEmail(email) {
@@ -233,6 +229,35 @@ export default class Profile extends React.Component {
     );
   }
 
+  updateUser() {
+    const user = {};
+    const { email, phone, firstName, lastName } = this.state;
+    console.log(phone);
+    const { email: e, phone: p, firstName: f, lastName: l } = this.state.user;
+    if (email != e) {
+      user.email = email;
+    }
+    if (phone != p) {
+      user.phone = phone;
+    }
+    if (firstName != f) {
+      user.firstName = firstName;
+    }
+    if (lastName != l) {
+      user.lastName = lastName;
+    }
+    console.log(user);
+    api
+      .updateUser(user)
+      .then(success => {
+        console.log(success);
+        this.setData(success);
+      })
+      .catch(e => {
+        console.log(e);
+      });
+  }
+
   render() {
     const {
       navigation: { navigate }
@@ -253,9 +278,7 @@ export default class Profile extends React.Component {
           }}
           title="Save"
           onPress={() => {
-            signOut().then(f => {
-              navigate("Auth");
-            });
+            this.updateUser();
           }}
         />
       </>

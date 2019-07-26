@@ -22,7 +22,7 @@ Amplify.configure({
 });
 
 const apiUrl = {
-  dev: "http://localhost:8084/staging/",
+  dev: "http://10.135.115.0:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -203,6 +203,10 @@ export const api = {
     return ax.post(`/change_password`, {
       password: password
     });
+  },
+
+  updateUser: user => {
+    return ax.put("/user/update", user);
   },
 
   login: (username, password) => {
