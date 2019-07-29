@@ -19,7 +19,6 @@ export default class LicenseViewModal extends React.Component {
     super(props);
     this.state = {
       licenses: [],
-      result: result,
       plates: [],
       licensePlate: "",
       showPlatePicker: true
@@ -29,7 +28,7 @@ export default class LicenseViewModal extends React.Component {
   componentDidUpdate(prevProps, prevState, snapshot) {
     const old = prevProps.images || [];
     const newz = this.props.images || [];
-    if (newz.length > old.length) {
+    if (newz.length > old.length && this.props.alprResult) {
       this.processImage(newz[newz.length - 1]);
       return true;
     } else {
@@ -38,7 +37,7 @@ export default class LicenseViewModal extends React.Component {
   }
 
   processAlpr(image) {
-    const { width, height, results } = this.state.result;
+    const { results } = this.props.alprResult;
     const images = results.map(result => {
       const { plate, confidence, region, candidates, coordinates } = result;
       plate.region = region;

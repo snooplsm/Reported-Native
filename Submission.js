@@ -113,7 +113,6 @@ export default class Submission extends React.Component {
         lambda();
       }
     });
-    console.log("sttting state");
   }
 
   closeModal() {
@@ -164,7 +163,6 @@ export default class Submission extends React.Component {
                 showAddressModal: false,
                 location: { place }
               });
-              console.log(place);
             }}
           />
         </View>
@@ -202,7 +200,6 @@ export default class Submission extends React.Component {
   }
 
   get imageModal() {
-    console.log("imageModal", this.state.imageModal);
     if (this.state.imageModal !== false) {
       console.log("showing modal");
       return (
@@ -280,8 +277,6 @@ export default class Submission extends React.Component {
   }
 
   finds(address, key) {
-    console.log("find", address, key);
-    console.log(address.filter(x => x.types.includes(key)));
     return address
       .filter(x => x.types.includes(key))
       .map(x => x.short_name)
@@ -289,10 +284,12 @@ export default class Submission extends React.Component {
   }
 
   submit() {
+    console.log(this.state);
     const plateUploaded =
       !this.state.license ||
       this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
+      this.setState({ submitting: true });
       uploadFile(this.state.license.plate.image)
         .then(uploaded => {
           this.state.uploadedMedia[
@@ -301,10 +298,12 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
+          this.setState({ submitting: false });
           console.log("plate upload error");
         });
       return;
     }
+    this.setState({ submitting: false });
     if (!this.state.location) {
       return;
     }
@@ -357,7 +356,6 @@ export default class Submission extends React.Component {
       license.media = this.state.uploadedMedia[this.state.license.plate.url];
     }
     const address = this.state.location.place.address_components;
-    console.log(address);
 
     const finds = this.finds;
 
@@ -470,7 +468,8 @@ export default class Submission extends React.Component {
 
             <LicenseView
               onPlateSelected={plate => this.setState({ license: plate })}
-              images={this.state.media}
+              images={this.state.alprImages}
+              alprResult={this.state.alprResult}
             />
 
             <DateTimePicker
@@ -515,7 +514,10 @@ export default class Submission extends React.Component {
             <View>
               <Input
                 label={"Incident Description (optional)"}
-                onChange={v => this.setState({ description: v })}
+                onChangeText={v => {
+                  console.log(v);
+                  this.setState({ description: v.trim() });
+                }}
                 multiline={true}
                 numberOfLines={3}
                 placeholder={"Add any additional details to provide to 311"}
@@ -526,14 +528,14 @@ export default class Submission extends React.Component {
             <View>
               <Input
                 label={"Notes (optional and private)"}
-                onChange={v => this.setState({ notes: v })}
+                onChangeText={v => this.setState({ notes: v.trim() })}
                 multiline={true}
                 numberOfLines={3}
                 placeholder={
                   "Notes that only you will see and will not be sent to 311"
                 }
                 textAlignVertical={"top"}
-                value={this.state.description}
+                value={this.state.notes}
               />
             </View>
             <View style={{ height: 100 }} />
@@ -609,7 +611,6 @@ export default class Submission extends React.Component {
         type: type
       };
       if (exif) {
-        console.log(exif);
         const {
           DateTimeOriginal: timeofreport,
           GPSAltitude: altitude,
@@ -633,6 +634,25 @@ export default class Submission extends React.Component {
             .then(places => {
               //console.log(places.results[0]);
               this.setState({ location: { place: places.results[0] } });
+            })
+            .catch(e => console.log(e));
+        }
+        if (!this.state.license) {
+          let resize = null;
+          if (width > height) {
+            resize = { width: Math.min(1200, parseInt(width)) };
+          } else {
+            reize = { height: Math.min(1200, parseInt(height)) };
+          }
+          ImageManipulator.manipulateAsync(image.url, resize)
+            .then(alpr.recognize)
+            .then(result => result.json())
+            .then(result => {
+              console.log(result);
+              this.setState({
+                alprImages: [image],
+                alprResult: result
+              });
             })
             .catch(e => console.log(e));
         }

@@ -150,7 +150,12 @@ export const alpr = {
     const url =
       "https://api.openalpr.com/v2/recognize?country=us&secret_key=sk_63c7b9750e41acfadc721f90";
     const form = new FormData();
-    form.append("image", file);
+    form.append("image", {
+      name: "image",
+      type: "image/jpeg",
+      uri:
+        Platform.OS === "android" ? file.uri : file.uri.replace("file://", "")
+    });
     let options = {
       method: "POST",
       body: form,
@@ -178,7 +183,6 @@ const urlToBlob = url =>
   });
 
 export const reverseGeocode = location => {
-  console.log("reverseGeocode");
   const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM
     &latlng=${location.lat},${location.lng}&rankby=distance`;
   return fetch(url).then(res => res.json());
