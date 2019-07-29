@@ -8,7 +8,8 @@ import {
   Modal
 } from "react-native";
 import { Button, Icon, Input, Image } from "react-native-elements";
-import { ImageManipulator, ImagePicker, Permissions } from "expo";
+import * as ImageManipulator from "expo-image-manipulator";
+import { ImagePicker, Permissions } from "expo";
 import { AutoStyle } from "./Styles";
 import { alpr } from "./Api";
 import { result } from "./alpr";
@@ -141,7 +142,7 @@ export default class LicenseViewModal extends React.Component {
   }
 
   _onPlateSelected(selected) {
-    //console.log(selected)
+    console.log("selected", selected);
     this.setState({
       selected: selected,
       licensePlate: selected.candidate.plate,

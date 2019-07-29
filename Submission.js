@@ -8,7 +8,10 @@ import {
 } from "react-native";
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
-import { ImagePicker, Permissions } from "expo";
+import * as ImagePicker from "expo-image-picker";
+import * as Permissions from "expo-permissions";
+import * as FileSystem from "expo-file-system";
+import * as ImageManipulator from "expo-image-manipulator";
 import {
   Badge,
   Button,
@@ -18,35 +21,39 @@ import {
   Overlay
 } from "react-native-elements";
 import { Modal, Picker } from "react-native";
-import * as MediaLibrary from "expo-media-library";
 import ImageViewer from "react-native-image-zoom-viewer";
-import { ImageManipulator } from "expo";
 import AddressView from "./AddressView";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 import { IconStyle } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr, api, uploadFile } from "./Api";
+import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
       headerTitle: "Report",
-      headerLeft: (
-        <Icon
-          onPress={navigation.getParam("onBackPressed")}
-          containerStyle={{ padding: 10 }}
-          name="arrow-back"
-          color="#000"
-        />
-      )
+      headerLeft: () => {
+        if (navigation.getParam("canGoBack")) {
+          return (
+            <Icon
+              onPress={navigation.getParam("onBackPressed")}
+              isVisible={navigation.getParam("canGoBack") === true}
+              containerStyle={{ padding: 10 }}
+              name="arrow-back"
+              color="#000"
+            />
+          );
+        } else {
+          return null;
+        }
+      }
     };
   };
 
-  constructor(props) {
-    super(props);
-    this.state = {
+  get initialState() {
+    return {
       media: [],
       resizedImages: [],
       datePickerVisible: false,
@@ -57,8 +64,16 @@ export default class Submission extends React.Component {
     };
   }
 
+  constructor(props) {
+    super(props);
+    this.state = this.initialState;
+  }
+
   componentDidMount() {
-    this.props.navigation.setParams({ onBackPressed: this.onBackPressed });
+    this.props.navigation.setParams({
+      onBackPressed: this.onBackPressed,
+      canGoBack: false
+    });
   }
 
   onBackPressed = () => {
@@ -79,17 +94,37 @@ export default class Submission extends React.Component {
     if (this.state.showComplaintModal) {
       this.setState({ showComplaintModal: false });
     }
+    this.props.navigation.setParams({ canGoBack: false });
   };
+
+  setState(state, lambda) {
+    super.setState(state, () => {
+      if (
+        this.state.imageModal ||
+        this.state.datePickerVisible ||
+        this.state.showAddressModal ||
+        this.state.showComplaintModal
+      ) {
+        this.props.navigation.setParams({ canGoBack: true });
+      } else {
+        this.props.navigation.setParams({ canGoBack: false });
+      }
+      if (lambda) {
+        lambda();
+      }
+    });
+    console.log("sttting state");
+  }
 
   closeModal() {
     this.setState({ imageModal: false });
   }
 
   removeImage(index) {
-    const { images } = this.state;
+    const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
-    this.setState({ images: newImages });
+    this.setState({ media: newImages });
   }
 
   get addressString() {
@@ -239,7 +274,7 @@ export default class Submission extends React.Component {
     }
     const momy = moment(timeofreport);
     if (momy.isValid()) {
-      return `${momy.fromNow()} @ ${momy.format("M/d h:mm a")}`;
+      return `${momy.fromNow()} @ ${momy.format("M/D h:mm a")}`;
     }
     return "";
   }
@@ -338,7 +373,8 @@ export default class Submission extends React.Component {
     this.setState({ submitting: true });
     api
       .report({
-        description: "foofuckshit",
+        description: this.state.description,
+        notes: this.state.notes,
         complaintIds: complaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
@@ -360,8 +396,9 @@ export default class Submission extends React.Component {
           .map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
-        alert("success");
-        this.setState({ submitting: false });
+        this.setState(this.initialState, () => {
+          this.forceUpdate();
+        });
       })
       .catch(e => {
         this.setState({ submitting: false });
@@ -457,7 +494,9 @@ export default class Submission extends React.Component {
               <TouchableOpacity
                 onPress={() => {
                   console.log("datepickers");
-                  this.setState({ datePickerVisible: true });
+                  this.setState({
+                    datePickerVisible: true
+                  });
                 }}
               >
                 <Input
@@ -549,6 +588,9 @@ export default class Submission extends React.Component {
 
   _pickImage = async () => {
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
+    // const permission2 = await Permissions.getAsync(
+    //   Permissions.WRITE_EXTERNAL_STORAGE
+    // );
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
       mediaTypes: ImagePicker.MediaTypeOptions.All
@@ -557,28 +599,47 @@ export default class Submission extends React.Component {
       if (result.cancelled) {
         return;
       }
-      if (result.type == "video") {
-        console.log("returning");
-        console.log(result.uri);
-        MediaLibrary.getAssetInfoAsync({ uri: uri })
-          .then(metadata => {
-            console.log(metadata);
-          })
-          .catch(err => {
-            console.error(err);
-          });
-        return;
-      }
       const { width, height, uri, type, duration } = result;
       const { exif } = result;
+      const image = {
+        url: uri,
+        width: width,
+        height: height,
+        duration: duration,
+        type: type
+      };
       if (exif) {
+        console.log(exif);
         const {
           DateTimeOriginal: timeofreport,
           GPSAltitude: altitude,
           GPSLatitude: lat,
           GPSLongitude: lng
         } = exif;
+
+        const lats = lat ?? 40.746;
+        const lngs = lng ?? -73.984;
+
+        //console.log(lats, lngs);
+
+        Object.assign(image, {
+          timeofreport: timeofreport,
+          altitude: altitude,
+          location: { lat: lats, lng: lngs }
+        });
+
+        if (!this.state.location) {
+          reverseGeocode(image.location)
+            .then(places => {
+              //console.log(places.results[0]);
+              this.setState({ location: { place: places.results[0] } });
+            })
+            .catch(e => console.log(e));
+        }
       }
+
+      const { timeofreport } = image;
+      console.log("time of report", timeofreport);
 
       if (timeofreport) {
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
@@ -588,34 +649,28 @@ export default class Submission extends React.Component {
           timeofreportstr: this.timeofreport(datetime)
         });
       }
-      let location = null;
-      if (exif && lat && lng) {
-        location = {
-          lat: lat,
-          lng: lng
-        };
-      }
-      const image = {
-        url: uri,
-        width: width,
-        height: height,
-        location,
-        taken_at: timeofreport
-      };
-      const images = [...this.state.media, image];
-      this.setState({ images: images });
+
+      const media = [...this.state.media, image];
+      this.setState({ media: media });
       this.resizeImages()
         .then(x => {
           this.setState({ resizedImages: x });
         })
+        .then(r => {})
         .catch(x => {
           console.error(x);
         });
     };
+    console.log(permission.status);
     if (permission.status !== "granted") {
       const newPermission = await Permissions.askAsync(Permissions.CAMERA_ROLL);
       if (newPermission.status === "granted") {
+        // const newPermission2 = await Permissions.askAsync(
+        //   Permissions.PERMISSIONS.WRITE_EXTERNAL_STORAGE
+        // );
+        // if (newPermission2.status === "granted") {
         imageLaunch.then(success);
+        // }
       }
     } else {
       imageLaunch.then(success);
