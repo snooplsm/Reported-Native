@@ -5,7 +5,9 @@ import { USER_KEY } from "./Auth";
 import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
 import { Platform } from "react-native";
-import { Constants, ImageManipulator, FileSystem } from "expo";
+import Constants from "expo-constants";
+import * as ImageManipulator from "expo-image-manipulator";
+import { FileSystem } from "expo";
 
 const BUCKET = "reportedcab";
 
@@ -22,7 +24,7 @@ Amplify.configure({
 });
 
 const apiUrl = {
-  dev: "http://10.135.115.0:8084/staging/",
+  dev: "http://localhost:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -59,6 +61,9 @@ ax.interceptors.request.use(
           if (user) {
             config.headers.common["X-User-Id"] = user.id;
             config.headers.common["X-Session-Token"] = user.sessionToken;
+            config.headers.common["X-Operating-System"] = Platform.OS;
+            config.headers.comming["X-Build-Number"] =
+              Constants.nativeBuildVersion;
           }
           resolve(config);
         })
@@ -171,6 +176,13 @@ const urlToBlob = url =>
     xhr.responseType = "blob"; // convert type
     xhr.send();
   });
+
+export const reverseGeocode = location => {
+  console.log("reverseGeocode");
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM
+    &latlng=${location.lat},${location.lng}&rankby=distance`;
+  return fetch(url).then(res => res.json());
+};
 
 export const api = {
   register: email => {
