@@ -42,7 +42,8 @@ export default class Submissions extends React.Component {
     this.state = {
       reports: [],
       count: 0,
-      filter: null
+      filter: null,
+      refreshing: true
     };
   }
 
@@ -80,9 +81,11 @@ export default class Submissions extends React.Component {
   }
 
   fetchReports() {
+    this.setState({ refreshing: true });
     api
       .reports(this.state.filter)
       .then(res => {
+        this.setState({ refreshing: false });
         const addressMap = res.data.addresses.reduce((map, x) => {
           map[x.id] = x;
           return map;
@@ -97,6 +100,7 @@ export default class Submissions extends React.Component {
         this.setState({ reports });
       })
       .catch(err => {
+        this.setState({ refreshing: false });
         console.log(err);
         alert("An error occurred");
       });
@@ -124,6 +128,10 @@ export default class Submissions extends React.Component {
 
   _keyExtractor = (item, index) => item.report.id;
 
+  _onRefresh = () => {
+    this.fetchReports();
+  };
+
   render() {
     return (
       <>
@@ -131,6 +139,8 @@ export default class Submissions extends React.Component {
         <View>
           <FlatList
             keyExtractor={this._keyExtractor}
+            onRefresh={this._onRefresh}
+            refreshing={this.state.refreshing}
             data={this.state.reports}
             renderItem={({ item }) => {
               const { report, address } = item;
