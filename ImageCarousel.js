@@ -62,6 +62,7 @@ export default class ImageCarousel extends React.Component {
         <Carousel
           ref={this._carousel}
           data={this.props.entries.map(x => {
+            console.log("entry", x);
             return {
               illustration: x.url,
               title: "",

@@ -22,7 +22,24 @@ export default class ReportView extends React.Component {
             alert("ok");
           }}
           entries={report.media.map(x => {
-            return { url: x };
+            const img = {};
+            console.log("media", x);
+            if (x.type === "YOUTUBE") {
+              const thumb = x.thumbnails[0];
+              img.url = thumb.url;
+              img.width = thumb.width;
+              img.height = thumb.height;
+            } else {
+              const thumb =
+                x.thumbnails.filter(x => {
+                  return x.width === x.height && x.width == 512;
+                })[0] ?? {};
+              img.url = x.url;
+              img.width = x.width;
+              img.height = x.height;
+            }
+            console.log("using", img);
+            return img;
           })}
         />
       );
@@ -63,6 +80,7 @@ export default class ReportView extends React.Component {
   }
   render() {
     const { report: rpt } = this.props;
+    console.log(report);
     const { report, address } = rpt;
     const time = moment(report.timeofincident);
     return (

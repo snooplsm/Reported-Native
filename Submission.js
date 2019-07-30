@@ -60,7 +60,10 @@ export default class Submission extends React.Component {
       complaints: [],
       imageModal: false,
       uploadedMedia: {},
-      submitting: false
+      submitting: false,
+      description: null,
+      notes: null,
+      license: null
     };
   }
 
@@ -516,7 +519,7 @@ export default class Submission extends React.Component {
                 label={"Incident Description (optional)"}
                 onChangeText={v => {
                   console.log(v);
-                  this.setState({ description: v.trim() });
+                  this.setState({ description: v });
                 }}
                 multiline={true}
                 numberOfLines={3}
@@ -528,7 +531,7 @@ export default class Submission extends React.Component {
             <View>
               <Input
                 label={"Notes (optional and private)"}
-                onChangeText={v => this.setState({ notes: v.trim() })}
+                onChangeText={v => this.setState({ notes: v })}
                 multiline={true}
                 numberOfLines={3}
                 placeholder={
