@@ -99,8 +99,8 @@ export default class ReportView extends React.Component {
           <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
         </View>
         {this.carousel()}
-        <Autolink text={report.description} />
-        <Autolink text={report.notes} />
+        <Autolink text={report.description ?? ""} />
+        <Autolink text={report.notes ?? ""} />
         <View
           style={[
             HorizontalStyle.style,
