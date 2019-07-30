@@ -9,20 +9,6 @@ import Constants from "expo-constants";
 import * as ImageManipulator from "expo-image-manipulator";
 import { FileSystem } from "expo";
 
-const BUCKET = "reportedcab";
-
-Amplify.configure({
-  Auth: {
-    identityPoolId: "us-east-1:ccbbb41a-4490-4b85-af8d-a047aabeec5d", //REQUIRED - Amazon Cognito Identity Pool ID
-    region: "us-east-1" // REQUIRED - Amazon Cognito Region
-  },
-  Storage: {
-    AWSS3: {
-      bucket: BUCKET
-    }
-  }
-});
-
 const apiUrl = {
   dev: "http://localhost:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
@@ -37,7 +23,29 @@ function getApiUrl() {
   if (channel.indexOf("staging")) return apiUrl.staging;
 }
 
+function getBucketUrl() {
+  console.log(apiUrl);
+  const channel = Constants.manifest.releaseChannel;
+  if (channel === undefined) return "reportedcab-stg";
+  if (channel.indexOf("prod")) return "reportedcab";
+  if (channel.indexOf("staging")) return "reportedcab-std";
+}
+
 const BASE_URL = getApiUrl();
+
+const BUCKET = getBucketUrl();
+
+Amplify.configure({
+  Auth: {
+    identityPoolId: "us-east-1:ccbbb41a-4490-4b85-af8d-a047aabeec5d", //REQUIRED - Amazon Cognito Identity Pool ID
+    region: "us-east-1" // REQUIRED - Amazon Cognito Region
+  },
+  Storage: {
+    AWSS3: {
+      bucket: BUCKET
+    }
+  }
+});
 
 console.log(BASE_URL);
 
