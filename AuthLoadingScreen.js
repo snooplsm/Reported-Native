@@ -1,7 +1,6 @@
 import React from "react";
 
 import { StyleSheet, Text, View } from "react-native";
-import { AppContainer } from "./Navigation";
 import { isSignedIn } from "./Auth";
 
 export default class AuthLoadingScreen extends React.Component {

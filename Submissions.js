@@ -137,6 +137,9 @@ export default class Submissions extends React.Component {
               return (
                 <TouchableOpacity
                   onLongPress={() => {
+                    if (report.status > 0) {
+                      return;
+                    }
                     Alert.alert(
                       "Confirm Delete?",
                       "Are you sure you want to delete this report?",
