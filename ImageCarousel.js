@@ -19,7 +19,9 @@ export default class ImageCarousel extends React.Component {
       <SliderEntry
         onItemPress={() => {
           console.log(item, index);
-          this.props.onItemPressed({ item, index });
+          if (this.props.onItemPressed) {
+            this.props.onItemPressed({ item, index });
+          }
         }}
         key={item.url}
         data={item}
