@@ -254,12 +254,12 @@ export const api = {
     return ax.delete(`/report/delete/${reportId}`, {});
   },
 
-  reports: filter => {
+  reports: (filter, _skip) => {
+    const skip = _skip ?? 0;
     if (filter == null) {
-      return ax.get("/reports");
+      return ax.get(`/reports?skip=${skip}`);
     } else {
-      console.log("reports?", JSON.stringify(filter));
-      return ax.get(`/reports?filter=${JSON.stringify(filter)}`);
+      return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(filter)}`);
     }
   }
 };

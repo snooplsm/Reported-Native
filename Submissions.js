@@ -43,7 +43,8 @@ export default class Submissions extends React.Component {
       reports: [],
       count: 0,
       filter: null,
-      refreshing: true
+      refreshing: true,
+      lastResultEmpty: false
     };
   }
 
@@ -80,10 +81,10 @@ export default class Submissions extends React.Component {
     this.fetchReports();
   }
 
-  fetchReports() {
+  fetchReports(offset) {
     this.setState({ refreshing: true });
     api
-      .reports(this.state.filter)
+      .reports(this.state.filter, offset)
       .then(res => {
         this.setState({ refreshing: false });
         const addressMap = res.data.addresses.reduce((map, x) => {
@@ -97,7 +98,11 @@ export default class Submissions extends React.Component {
           };
         });
         console.log(reports);
-        this.setState({ reports });
+        const lastResultEmpty = reports.length < 100;
+        this.setState({
+          reports: this.state.reports.concat(reports),
+          lastResultEmpty
+        });
       })
       .catch(err => {
         this.setState({ refreshing: false });
@@ -132,6 +137,20 @@ export default class Submissions extends React.Component {
     this.fetchReports();
   };
 
+  _onEndReached = info => {
+    if (this.state.refreshing) {
+      return;
+    }
+    if (this.state.reports.length == 0) {
+      return;
+    }
+    if (this.state.lastResultEmpty) {
+      return;
+    }
+    alert(this.state.reports.length);
+    this.fetchReports(this.state.reports.length);
+  };
+
   render() {
     return (
       <>
@@ -142,6 +161,7 @@ export default class Submissions extends React.Component {
             onRefresh={this._onRefresh}
             refreshing={this.state.refreshing}
             data={this.state.reports}
+            onEndReached={this._onEndReached}
             renderItem={({ item }) => {
               const { report, address } = item;
               return (
