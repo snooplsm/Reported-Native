@@ -395,9 +395,10 @@ export default class Submission extends React.Component {
           location: geo
         }),
         timeofincident: this.state.timeofreport,
-        media: this.state.media.map(x => uploadedMedia[x.url])
+        media: this.state.media.map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
+        alert("success");
         this.setState(this.initialState, () => {
           this.forceUpdate();
         });

@@ -101,12 +101,19 @@ export const uploadFile = file => {
         data.user = user;
         console.log("we have user");
         return ImageManipulator.manipulateAsync(file.url, null, {
-          compress: 1.0
+          compress: 1.0,
+          format: ImageManipulator.SaveFormat.JPEG
         });
       })
       .then(fc => {
         data.fc = fc;
-        return urlToBlob(fc.uri);
+        return FileSystem.getInfoAsync(fc.uri, {
+          md5: true
+        });
+      })
+      .then(fc => {
+        data.fc.md5 = fc.md5;
+        return urlToBlob(data.fc.uri);
       })
       .then(blob => {
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
@@ -126,13 +133,19 @@ export const uploadFile = file => {
         });
         data.size = blob.size;
         data.meta = metaData;
+        let contentType = null;
+        if (data.type === "image") {
+          contentType = "image/jpeg";
+        } else {
+          contentType = "video/mp4";
+        }
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
           },
           level: "public",
           metadata: metaData,
-          contentType: "image/jpeg"
+          contentType: contentType
         }).then(res => {
           console.log("success", res);
           resolve({
@@ -141,6 +154,7 @@ export const uploadFile = file => {
             width: data.fc.width,
             height: data.fc.height,
             duration: file.duration,
+            etag: data.fc.md5,
             size: data.size
           });
         });
