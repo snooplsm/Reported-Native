@@ -287,7 +287,7 @@ export default class Submission extends React.Component {
   }
 
   submit() {
-    console.log(this.state);
+    console.log(this.state.media);
     const plateUploaded =
       !this.state.license ||
       this.state.uploadedMedia[this.state.license.plate.image.url];
@@ -295,6 +295,7 @@ export default class Submission extends React.Component {
       this.setState({ submitting: true });
       uploadFile(this.state.license.plate.image)
         .then(uploaded => {
+          uploaded.type = "S3_IMAGE_LICENSE";
           this.state.uploadedMedia[
             this.state.license.plate.image.url
           ] = uploaded;
@@ -306,17 +307,14 @@ export default class Submission extends React.Component {
         });
       return;
     }
-    this.setState({ submitting: false });
-    if (!this.state.location) {
-      return;
-    }
-    if (!this.state.timeofreport) {
-      return;
-    }
-    if (this.state.complaints.length < 1) {
-      return;
-    }
-    if (!this.state.timeofreport) {
+    console.log("mediaaaaa", this.state.uploadedMedia);
+    if (
+      !this.state.location ||
+      !this.state.timeofreport ||
+      this.state.complaints.length < 1 ||
+      !this.state.timeofreport
+    ) {
+      this.setState({ submitting: false });
       return;
     }
     const needToUpload = this.state.media.filter(
@@ -327,10 +325,16 @@ export default class Submission extends React.Component {
       console.log("uploadss");
       uploadFile(file)
         .then(uploaded => {
+          if (file.type == "image") {
+            uploaded.type = "S3_IMAGE";
+          } else {
+            uploaded.type = "S3_VIDEO";
+          }
           this.state.uploadedMedia[file.url] = uploaded;
           this.submit();
         })
         .catch(e => {
+          this.setState({ submitting: false });
           console.log("error upload", e);
         });
       return;
@@ -370,7 +374,6 @@ export default class Submission extends React.Component {
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
-    console.log(this.state.location.data);
     this.setState({ submitting: true });
     api
       .report({
@@ -392,9 +395,7 @@ export default class Submission extends React.Component {
           location: geo
         }),
         timeofincident: this.state.timeofreport,
-        media: this.state.media
-          .filter(x => !this.state.uploadedMedia[x.url])
-          .map(x => this.state.uploadedMedia[x.url])
+        media: this.state.media.map(x => uploadedMedia[x.url])
       })
       .then(x => {
         this.setState(this.initialState, () => {
@@ -402,6 +403,7 @@ export default class Submission extends React.Component {
         });
       })
       .catch(e => {
+        console.log(e);
         this.setState({ submitting: false });
       });
   }
@@ -621,8 +623,8 @@ export default class Submission extends React.Component {
           GPSLongitude: lng
         } = exif;
 
-        const lats = lat ?? 40.746;
-        const lngs = lng ?? -73.984;
+        const lats = lat;
+        const lngs = lng;
 
         //console.log(lats, lngs);
 
@@ -651,7 +653,6 @@ export default class Submission extends React.Component {
             .then(alpr.recognize)
             .then(result => result.json())
             .then(result => {
-              console.log(result);
               this.setState({
                 alprImages: [image],
                 alprResult: result
@@ -662,11 +663,9 @@ export default class Submission extends React.Component {
       }
 
       const { timeofreport } = image;
-      console.log("time of report", timeofreport);
 
       if (timeofreport) {
         var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
-        console.log(datetime);
         this.setState({
           timeofreport: datetime,
           timeofreportstr: this.timeofreport(datetime)

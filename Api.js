@@ -10,25 +10,34 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { FileSystem } from "expo";
 
 const apiUrl = {
-  dev: "http://localhost:8084/staging/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
 
 function getApiUrl() {
-  console.log(apiUrl);
-  const channel = Constants.manifest.releaseChannel;
-  if (channel === undefined) return apiUrl.dev;
-  if (channel.indexOf("prod")) return apiUrl.prod;
-  if (channel.indexOf("staging")) return apiUrl.staging;
+  return apiUrl.staging;
+  // console.log(apiUrl);
+  // const channel = Constants.manifest.releaseChannel;
+  // if (channel === undefined) return apiUrl.dev;
+  // if (channel.indexOf("prod")) return apiUrl.prod;
+  // if (channel.indexOf("staging")) return apiUrl.staging;
 }
 
 function getBucketUrl() {
-  console.log(apiUrl);
-  const channel = Constants.manifest.releaseChannel;
-  if (channel === undefined) return "reportedcab-stg";
-  if (channel.indexOf("prod")) return "reportedcab";
-  if (channel.indexOf("staging")) return "reportedcab-std";
+  return "reportedcab-stg";
+  // console.log(channel);
+  // console.log(apiUrl);
+  // const channel = Constants.manifest.releaseChannel;
+  // console.log(channel);
+  // console.log(channel);
+  // console.log(channel);
+  // console.log(channel);
+  // console.log(channel);
+  // console.log(channel);
+  // if (channel === undefined) return "reportedcab-stg";
+  // if (channel.indexOf("prod")) return "reportedcab";
+  // if (channel.indexOf("staging")) return "reportedcab-stg";
 }
 
 const BASE_URL = getApiUrl();
@@ -92,7 +101,7 @@ export const uploadFile = file => {
         data.user = user;
         console.log("we have user");
         return ImageManipulator.manipulateAsync(file.url, null, {
-          compress: 0.3
+          compress: 1.0
         });
       })
       .then(fc => {
