@@ -382,7 +382,8 @@ export default class Submission extends React.Component {
         complaintIds: complaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
-          state: license.plate.region
+          state: license.plate.region,
+          media: license.media
         },
         address: Object.assign({
           building,
