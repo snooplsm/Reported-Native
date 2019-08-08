@@ -7,7 +7,7 @@ import moment from "moment";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import * as ImageManipulator from "expo-image-manipulator";
-import { FileSystem } from "expo";
+import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
   dev: "https://reported-stats.herokuapp.com/staging/",
@@ -16,28 +16,23 @@ const apiUrl = {
 };
 
 function getApiUrl() {
-  return apiUrl.staging;
-  // console.log(apiUrl);
-  // const channel = Constants.manifest.releaseChannel;
-  // if (channel === undefined) return apiUrl.dev;
-  // if (channel.indexOf("prod")) return apiUrl.prod;
-  // if (channel.indexOf("staging")) return apiUrl.staging;
+  if (__DEV__) {
+    return apiUrl.dev;
+  }
+  const channel = Constants.manifest.releaseChannel;
+  if (channel === undefined) return apiUrl.dev;
+  if (channel.indexOf("prod")) return apiUrl.prod;
+  if (channel.indexOf("staging")) return apiUrl.staging;
 }
 
 function getBucketUrl() {
-  return "reportedcab-stg";
-  // console.log(channel);
-  // console.log(apiUrl);
-  // const channel = Constants.manifest.releaseChannel;
-  // console.log(channel);
-  // console.log(channel);
-  // console.log(channel);
-  // console.log(channel);
-  // console.log(channel);
-  // console.log(channel);
-  // if (channel === undefined) return "reportedcab-stg";
-  // if (channel.indexOf("prod")) return "reportedcab";
-  // if (channel.indexOf("staging")) return "reportedcab-stg";
+  if (__DEV__) {
+    return "reportedcab-stg";
+  }
+  const channel = Constants.manifest.releaseChannel;
+  if (channel === undefined) return "reportedcab-stg";
+  if (channel.indexOf("prod")) return "reportedcab";
+  if (channel.indexOf("staging")) return "reportedcab-stg";
 }
 
 const BASE_URL = getApiUrl();
@@ -129,7 +124,7 @@ export const uploadFile = file => {
           duration: (file.duration ?? -1).toString(),
           lat: (file.lat ?? 0.0).toString(),
           lng: (file.lng ?? 0.0).toString(),
-          timeofimage: file.timeofimage ?? "-1"
+          timeofimage: (file.takenAt && file.takenAt.toString()) ?? "-1"
         });
         data.size = blob.size;
         data.meta = metaData;
@@ -149,13 +144,14 @@ export const uploadFile = file => {
         }).then(res => {
           console.log("success", res);
           resolve({
-            url: `https://${BUCKET}.s3.amazonaws.com/${res.key}`,
+            url: `https://${BUCKET}.s3.amazonaws.com/uploads/${res.key}`,
             meta: data.meta,
             width: data.fc.width,
             height: data.fc.height,
             duration: file.duration,
             etag: data.fc.md5,
-            size: data.size
+            size: data.size,
+            takenAt: file.takenAt
           });
         });
       });

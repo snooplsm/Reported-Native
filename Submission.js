@@ -630,8 +630,12 @@ export default class Submission extends React.Component {
 
         //console.log(lats, lngs);
 
+        const timeof =
+          timeofreport && moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
+
         Object.assign(image, {
-          timeofreport: timeofreport,
+          timeofreport: timeof,
+          takenAt: timeof,
           altitude: altitude,
           location: { lat: lats, lng: lngs }
         });
