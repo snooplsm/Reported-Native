@@ -8,7 +8,6 @@ import {
   View
 } from "react-native";
 import { Button, Icon } from "react-native-elements";
-import { AutoStyle } from "./Styles";
 import { categories } from "./Categories.js";
 
 export default class ComplaintView extends React.Component {
@@ -77,14 +76,16 @@ export default class ComplaintView extends React.Component {
           }}
         >
           <View
-            style={{
-              padding: 10
-            }}
+            style={[
+              {
+                padding: 0
+              },
+              styles.autocompleteContainer
+            ]}
           >
             <Autocomplete
               data={data}
               ref={this.auto}
-              style={AutoStyle.style}
               defaultValue={this.state.query}
               hideResults={this.state.hideResults}
               placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
@@ -142,6 +143,14 @@ const styles = StyleSheet.create({
   container: {
     flexWrap: "wrap",
     flexDirection: "row"
+  },
+  autocompleteContainer: {
+    flex: 1,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 1
   },
   text: {},
   renderItem: {

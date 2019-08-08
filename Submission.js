@@ -475,8 +475,7 @@ export default class Submission extends React.Component {
 
             <LicenseView
               onPlateSelected={plate => this.setState({ license: plate })}
-              images={this.state.alprImages}
-              alprResult={this.state.alprResult}
+              alpr={this.state.alpr}
             />
 
             <DateTimePicker
@@ -580,6 +579,7 @@ export default class Submission extends React.Component {
           height: x.height
         };
       }
+      console.log("crop", crop);
       return ImageManipulator.manipulateAsync(x.url, [
         {
           crop: crop
@@ -653,15 +653,23 @@ export default class Submission extends React.Component {
           if (width > height) {
             resize = { width: Math.min(1200, parseInt(width)) };
           } else {
-            reize = { height: Math.min(1200, parseInt(height)) };
+            resize = { height: Math.min(1200, parseInt(height)) };
           }
-          ImageManipulator.manipulateAsync(image.url, resize)
-            .then(alpr.recognize)
+          console.log("manipulate", resize);
+          const data = {
+            original: image
+          };
+          ImageManipulator.manipulateAsync(image.url, [{ resize }])
+            .then(r => {
+              data.resized = r;
+              return alpr.recognize(r);
+            })
             .then(result => result.json())
             .then(result => {
+              data.alprResult = result;
+              data.images = [image];
               this.setState({
-                alprImages: [image],
-                alprResult: result
+                alpr: data
               });
             })
             .catch(e => console.log(e));
@@ -680,14 +688,14 @@ export default class Submission extends React.Component {
 
       const media = [...this.state.media, image];
       this.setState({ media: media });
-      this.resizeImages()
-        .then(x => {
-          this.setState({ resizedImages: x });
-        })
-        .then(r => {})
-        .catch(x => {
-          console.error(x);
-        });
+      // this.resizeImages()
+      //   .then(x => {
+      //     this.setState({ resizedImages: x });
+      //   })
+      //   .then(r => {})
+      //   .catch(x => {
+      //     console.error(x);
+      //   });
     };
     console.log(permission.status);
     if (permission.status !== "granted") {
