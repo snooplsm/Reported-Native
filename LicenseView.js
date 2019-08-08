@@ -26,9 +26,9 @@ export default class LicenseViewModal extends React.Component {
   }
 
   componentDidUpdate(prevProps, prevState, snapshot) {
-    const old = prevProps.images || [];
-    const newz = this.props.images || [];
-    if (newz.length > old.length && this.props.alprResult) {
+    const old = (prevProps.alpr && prevProps.alpr.images) || [];
+    const newz = (this.props.alpr && this.props.alpr.images) || [];
+    if (newz.length > old.length && this.props.alpr) {
       this.processImage(newz[newz.length - 1]);
       return true;
     } else {
@@ -37,7 +37,8 @@ export default class LicenseViewModal extends React.Component {
   }
 
   processAlpr(image) {
-    const { results } = this.props.alprResult;
+    alert(this.props.alpr);
+    const { results } = this.props.alpr.alprResult;
     const images = results.map(result => {
       const { plate, confidence, region, candidates, coordinates } = result;
       plate.region = region;
@@ -94,13 +95,15 @@ export default class LicenseViewModal extends React.Component {
         transposeW,
         transposeH
       });
+      console.log(results);
+      console.log(image);
       const crop = {
         originX: originX,
         originY: originY,
         width: width,
         height: height
       };
-      console.log(crop);
+      console.log("crop", crop);
       //console.log("cropping",crop)
       //console.log("image ", image.width,image.height)
       return {

@@ -63,9 +63,3 @@ export const IconStyle = StyleSheet.create({
     zIndex: 2
   }
 });
-
-export const AutoStyle = StyleSheet.create({
-  style: {
-    padding: 10
-  }
-});
