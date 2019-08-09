@@ -1,6 +1,14 @@
 import React from "react";
 
-import { StyleSheet, Text, View } from "react-native";
+import {
+  Image,
+  ImageBackground,
+  StyleSheet,
+  Linking,
+  Text,
+  View,
+  TouchableOpacity
+} from "react-native";
 import { Card, Icon } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
@@ -15,6 +23,49 @@ export default class ReportView extends React.Component {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
+      const first = report.media[0];
+      if (report.media.length == 1) {
+        const image = first.url;
+        const thumb = first.thumbnails.reduce((prev, curr) => {
+          return Math.abs(curr.width - 512) < Math.abs(prev.width - 512)
+            ? curr
+            : prev;
+        });
+        return (
+          <TouchableOpacity onPress={() => Linking.openURL(first.url)}>
+            <ImageBackground
+              source={{ uri: thumb.url }}
+              style={{
+                width: "100%",
+                height: 256,
+                resizeMode: "cover"
+              }}
+            />
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                justifyContent: "center",
+                alignItems: "center"
+              }}
+            >
+              <View
+                style={{
+                  position: "absolute",
+                  width: 80,
+                  height: 80,
+                  borderRadius: 80 / 2,
+                  backgroundColor: "#FFFFFF99"
+                }}
+              />
+              <Icon name="play-circle-outline" type="material" size="100" />
+            </View>
+          </TouchableOpacity>
+        );
+      }
       return (
         <ImageCarousel
           onItemPress={x => {
@@ -23,7 +74,6 @@ export default class ReportView extends React.Component {
           }}
           entries={report.media.map(x => {
             const img = {};
-            console.log("media", x);
             if (x.type === "YOUTUBE") {
               const thumb = x.thumbnails[0];
               img.url = thumb.url;
