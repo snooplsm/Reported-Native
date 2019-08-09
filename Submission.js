@@ -20,7 +20,7 @@ import {
   Input,
   Overlay
 } from "react-native-elements";
-import { Modal, Picker } from "react-native";
+import { BackHandler, Modal, Picker } from "react-native";
 import ImageViewer from "react-native-image-zoom-viewer";
 import AddressView from "./AddressView";
 import LicenseView from "./LicenseView";
@@ -73,6 +73,10 @@ export default class Submission extends React.Component {
   }
 
   componentDidMount() {
+    this.backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      this.onBackPressed
+    );
     this.props.navigation.setParams({
       onBackPressed: this.onBackPressed,
       canGoBack: false
@@ -83,19 +87,23 @@ export default class Submission extends React.Component {
     console.log("on back pressed");
     if (!this.state) {
       console.log("null state");
-      return;
+      return false;
     }
     if (this.state.imageModal !== false) {
       this.setState({ imageModal: false });
+      return true;
     }
     if (this.state.datePickerVisible) {
       this.setState({ datePickerVisible: false });
+      return true;
     }
     if (this.state.showAddressModal) {
       this.setState({ showAddressModal: false });
+      return true;
     }
     if (this.state.showComplaintModal) {
       this.setState({ showComplaintModal: false });
+      return true;
     }
     this.props.navigation.setParams({ canGoBack: false });
   };
@@ -265,6 +273,7 @@ export default class Submission extends React.Component {
   }
 
   componentWillUnount() {
+    this.backHandler.remove();
     clearInterval(this.timeofreportinterval);
   }
 
@@ -399,7 +408,6 @@ export default class Submission extends React.Component {
         media: this.state.media.map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
-        alert("success");
         this.setState(this.initialState, () => {
           this.forceUpdate();
         });
@@ -667,7 +675,7 @@ export default class Submission extends React.Component {
             .then(result => result.json())
             .then(result => {
               data.alprResult = result;
-              data.images = [image];
+              data.images = [data.resized];
               this.setState({
                 alpr: data
               });

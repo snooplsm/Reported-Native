@@ -14,7 +14,7 @@ import { AutoStyle } from "./Styles";
 import { alpr } from "./Api";
 import { result } from "./alpr";
 
-export default class LicenseViewModal extends React.Component {
+export default class LicenseView extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
@@ -29,15 +29,19 @@ export default class LicenseViewModal extends React.Component {
     const old = (prevProps.alpr && prevProps.alpr.images) || [];
     const newz = (this.props.alpr && this.props.alpr.images) || [];
     if (newz.length > old.length && this.props.alpr) {
-      this.processImage(newz[newz.length - 1]);
+      this.processImage({
+        image: newz[newz.length - 1],
+        original: this.props.alpr.original
+      });
       return true;
     } else {
       return false;
     }
   }
 
-  processAlpr(image) {
-    alert(this.props.alpr);
+  processAlpr({ image, original }) {
+    console.log("image:", image);
+    console.log("original:", original);
     const { results } = this.props.alpr.alprResult;
     const images = results.map(result => {
       const { plate, confidence, region, candidates, coordinates } = result;
@@ -56,59 +60,28 @@ export default class LicenseViewModal extends React.Component {
       const topRight = coordinates[1];
       const bottomLeft = coordinates[2];
       const bottomRight = coordinates[3];
-      const originX = parseInt((topLeft.x / image.width) * image.width);
-      const originY = parseInt((topLeft.y / image.height) * image.height);
+
+      const originX = parseInt((topLeft.x / image.width) * original.width);
+      const originY = parseInt((topLeft.y / image.height) * original.height);
       const width =
-        parseInt((topRight.x / image.width) * image.width) - originX;
+        parseInt((topRight.x / image.width) * original.width) - originX;
       const height =
-        parseInt((bottomRight.y / image.height) * image.height) - originY;
+        parseInt((bottomRight.y / image.height) * original.height) - originY;
 
-      const rotate = this.angleOf(topLeft.x, topLeft.y, topRight.x, topRight.y);
-      console.log(rotate);
-      const centerX = image.width / 2;
-      const centerY = image.height / 2;
-      const r2 = rotate;
-      const rad = this.toRadians(r2);
-      const newX =
-        Math.cos(rad) * (originX - centerX) -
-        Math.sin(rad) * (originY - centerY) +
-        centerX;
-      const newY =
-        Math.sin(rad) * (originX - centerX) +
-        Math.cos(rad) * (originY - centerY) +
-        centerY;
-      const imgW = image.width;
-      const imgH = image.height;
-
-      const transposeW = parseInt((newX / image.width) * image.width);
-      const transposeH = parseInt((newY / image.height) * image.height);
-
-      console.log({
-        rad,
-        rotate,
+      const crop = {
         originX,
         originY,
-        newX,
-        newY,
-        imgW,
-        imgH,
-        transposeW,
-        transposeH
-      });
-      console.log(results);
-      console.log(image);
-      const crop = {
-        originX: originX,
-        originY: originY,
-        width: width,
-        height: height
+        width,
+        height
       };
-      console.log("crop", crop);
-      //console.log("cropping",crop)
-      //console.log("image ", image.width,image.height)
+      //
+      // console.log(coordinates);
+      // console.log(crop);
+      // console.log(image);
+      // console.log(original);
       return {
         plates: plates,
-        imageAsync: ImageManipulator.manipulateAsync(image.url, [
+        imageAsync: ImageManipulator.manipulateAsync(original.url, [
           {
             crop: crop
           }
@@ -139,8 +112,16 @@ export default class LicenseViewModal extends React.Component {
       .catch(ex => {});
   }
 
-  processImage(image) {
-    this.processAlpr(image);
+  clear() {
+    this.setState({
+      selected: null,
+      licensePlate: null,
+      showPlatePicker: false
+    });
+  }
+
+  processImage({ image, original }) {
+    this.processAlpr({ image, original });
   }
 
   _onPlateSelected(selected) {
