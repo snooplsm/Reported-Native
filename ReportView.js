@@ -15,22 +15,25 @@ import { HorizontalStyle, ButtonStyle } from "./Styles";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 
+const reduce512 = (prev, curr) => {
+  return Math.abs(curr.width - 512) < Math.abs(prev.width - 512) ? curr : prev;
+};
+
 export default class ReportView extends React.Component {
   constructor(props) {
     super(props);
   }
+
   carousel() {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
       const first = report.media[0];
-      if (report.media.length == 1) {
+      if (report.media.length === 1) {
         const image = first.url;
-        const thumb = first.thumbnails.reduce((prev, curr) => {
-          return Math.abs(curr.width - 512) < Math.abs(prev.width - 512)
-            ? curr
-            : prev;
-        });
+        // console.log("before reduce", first);
+        const thumb = first.thumbnails.reduce(reduce512);
+        // console.log("thumb is thumb", thumb);
         return (
           <TouchableOpacity onPress={() => Linking.openURL(first.url)}>
             <ImageBackground
@@ -41,31 +44,35 @@ export default class ReportView extends React.Component {
                 resizeMode: "cover"
               }}
             />
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                justifyContent: "center",
-                alignItems: "center"
-              }}
-            >
+            {first.type === "YOUTUBE" && (
               <View
+                isVisible={first.type === "YOUTUBE"}
                 style={{
                   position: "absolute",
-                  width: 80,
-                  height: 80,
-                  borderRadius: 80 / 2,
-                  backgroundColor: "#FFFFFF99"
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  justifyContent: "center",
+                  alignItems: "center"
                 }}
-              />
-              <Icon name="play-circle-outline" type="material" size="100" />
-            </View>
+              >
+                <View
+                  style={{
+                    position: "absolute",
+                    width: 80,
+                    height: 80,
+                    borderRadius: 80 / 2,
+                    backgroundColor: "#FFFFFF99"
+                  }}
+                />
+                <Icon name="play-circle-outline" type="material" size={100} />
+              </View>
+            )}
           </TouchableOpacity>
         );
       }
+      console.log("OH NOOO");
       return (
         <ImageCarousel
           onItemPress={x => {
@@ -74,20 +81,10 @@ export default class ReportView extends React.Component {
           }}
           entries={report.media.map(x => {
             const img = {};
-            if (x.type === "YOUTUBE") {
-              const thumb = x.thumbnails[0];
-              img.url = thumb.url;
-              img.width = thumb.width;
-              img.height = thumb.height;
-            } else {
-              const thumb =
-                x.thumbnails.filter(x => {
-                  return x.width === x.height && x.width == 512;
-                })[0] ?? {};
-              img.url = x.url;
-              img.width = x.width;
-              img.height = x.height;
-            }
+            const thumb = x.thumbnails.reduce(reduce512);
+            img.url = thumb.url;
+            img.width = thumb.width;
+            img.height = thumb.height;
             console.log("using", img);
             return img;
           })}

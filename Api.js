@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/staging/",
+  dev: "http://localhost:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -172,10 +172,20 @@ class UserPromise extends Promise {
   }
 }
 
+const CHAR_CODE = Constants.installationId.charCodeAt(0);
+
+function getKey() {
+  if (CHAR_CODE < 57) {
+    return "sk_63c7b9750e41acfadc721f90";
+  }
+  return "sk_9d99ad00460f1109de48c8ad";
+}
+
+const ALPR_KEY = getKey();
+
 export const alpr = {
   recognize: file => {
-    const url =
-      "https://api.openalpr.com/v2/recognize?country=us&secret_key=sk_63c7b9750e41acfadc721f90";
+    const url = `https://api.openalpr.com/v2/recognize?country=us&secret_key=${ALPR_KEY}`;
     const form = new FormData();
     form.append("image", {
       name: "image",
