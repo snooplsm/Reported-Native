@@ -53,8 +53,7 @@ export default class Submission extends React.Component {
       headerRight: () => {
         return (
           <Icon
-            isVisible={false}
-            containerStyle={{ padding: 10 }}
+            containerStyle={{ padding: 10, opacity: 0 }}
             name="arrow-back"
             color="#000"
           />
