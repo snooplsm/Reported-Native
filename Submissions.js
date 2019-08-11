@@ -11,6 +11,7 @@ import {
   TouchableOpacity
 } from "react-native";
 import { Icon } from "react-native-elements";
+import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
 import { colors } from "./Styles";
 import ReportView from "./ReportView";
@@ -19,7 +20,17 @@ import SubmissionFilter from "./SubmissionFilter";
 export default class Submissions extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
-      title: "Reported",
+      headerTitle: <LogoTitle />,
+      headerLeft: () => {
+        return (
+          <Icon
+            isVisible={false}
+            containerStyle={{ padding: 10, opacity: 0 }}
+            name="arrow-back"
+            color="#000"
+          />
+        );
+      },
       headerRight: (
         <Icon
           onPress={navigation.getParam("filterPressed")}
