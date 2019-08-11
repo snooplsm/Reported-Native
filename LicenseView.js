@@ -17,11 +17,16 @@ import { result } from "./alpr";
 export default class LicenseView extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {
+    this.state = this.initialState;
+  }
+
+  get initialState() {
+    return {
       licenses: [],
       plates: [],
       licensePlate: "",
-      showPlatePicker: true
+      showPlatePicker: true,
+      alpr: null
     };
   }
 
@@ -113,11 +118,7 @@ export default class LicenseView extends React.Component {
   }
 
   clear() {
-    this.setState({
-      selected: null,
-      licensePlate: null,
-      showPlatePicker: false
-    });
+    this.setState(this.initialState);
   }
 
   processImage({ image, original }) {

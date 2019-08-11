@@ -25,6 +25,7 @@ import ImageViewer from "react-native-image-zoom-viewer";
 import AddressView from "./AddressView";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
+import LogoTitle from "./LogoTitle";
 import moment from "moment";
 import { IconStyle } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
@@ -33,7 +34,7 @@ import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
-      headerTitle: "Report",
+      headerTitle: <LogoTitle />,
       headerLeft: () => {
         if (navigation.getParam("canGoBack")) {
           return (
@@ -48,6 +49,16 @@ export default class Submission extends React.Component {
         } else {
           return null;
         }
+      },
+      headerRight: () => {
+        return (
+          <Icon
+            isVisible={false}
+            containerStyle={{ padding: 10 }}
+            name="arrow-back"
+            color="#000"
+          />
+        );
       }
     };
   };
@@ -57,13 +68,16 @@ export default class Submission extends React.Component {
       media: [],
       resizedImages: [],
       datePickerVisible: false,
+      timeofreport: undefined,
       complaints: [],
       imageModal: false,
       uploadedMedia: {},
       submitting: false,
       description: null,
       notes: null,
-      license: null
+      license: null,
+      alpr: undefined,
+      location: undefined
     };
   }
 
@@ -105,13 +119,12 @@ export default class Submission extends React.Component {
       this.setState({ showComplaintModal: false });
       return true;
     }
-    this.props.navigation.setParams({ canGoBack: false });
   };
 
   setState(state, lambda) {
     super.setState(state, () => {
       if (
-        this.state.imageModal ||
+        this.state.imageModal === true ||
         this.state.datePickerVisible ||
         this.state.showAddressModal ||
         this.state.showComplaintModal
@@ -408,9 +421,8 @@ export default class Submission extends React.Component {
         media: this.state.media.map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
-        this.setState(this.initialState, () => {
-          this.forceUpdate();
-        });
+        this._license.clear();
+        this.setState(this.initialState, () => {});
       })
       .catch(e => {
         console.log(e);
@@ -482,6 +494,7 @@ export default class Submission extends React.Component {
             </View>
 
             <LicenseView
+              ref={r => (this._license = r)}
               onPlateSelected={plate => this.setState({ license: plate })}
               alpr={this.state.alpr}
             />
