@@ -236,6 +236,10 @@ export const api = {
       });
   },
 
+  forgotPassword: forgot => {
+    return ax.post("/forgot_password", forgot);
+  },
+
   // upload: (fileJson, meta) => {
   //   console.log("upload fileJson");
   //   FileSystem.getInfoAsync(fileJson.url, { md5: true }).then(info => {
