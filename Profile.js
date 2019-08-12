@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView
 } from "react-native";
 import { Button, Input, Icon } from "react-native-elements";
+import LogoTitle from "./LogoTitle";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { api } from "./Api";
 import { signOut, isSignedIn } from "./Auth";
@@ -16,7 +17,7 @@ import { signOut, isSignedIn } from "./Auth";
 export default class Profile extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
-      headerTitle: "Profile",
+      headerTitle: <LogoTitle title={"PROFILE"} />,
       headerRight: (
         <TouchableOpacity
           onPress={navigation.getParam("logoutPressed")}

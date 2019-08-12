@@ -47,18 +47,16 @@ export default class Submission extends React.Component {
             />
           );
         } else {
-          return null;
+          return <></>;
         }
       },
-      headerRight: () => {
-        return (
-          <Icon
-            containerStyle={{ padding: 10, opacity: 0 }}
-            name="arrow-back"
-            color="#000"
-          />
-        );
-      }
+      headerRight: (
+        <Icon
+          containerStyle={{ padding: 10, opacity: 0 }}
+          name="arrow-back"
+          color="#000"
+        />
+      )
     };
   };
 

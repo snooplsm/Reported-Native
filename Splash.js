@@ -78,6 +78,6 @@ const styles = StyleSheet.create({
     right: 0
   },
   dimmer: {
-    backgroundColor: "#00000088"
+    backgroundColor: "#00000011"
   }
 });

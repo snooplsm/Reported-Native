@@ -30,7 +30,7 @@ export default class Submission extends React.Component {
             letterSpacing: 1.0
           }}
         >
-          REPORTED
+          {this.props.title || "REPORTED"}
         </Text>
       </View>
     );

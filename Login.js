@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -57,6 +58,15 @@ export default class Login extends React.Component {
         message = `Your email address '${email}' is invalid.  Update it to change the password.`;
       }
       Alert.alert("Invalid Email", message);
+    } else {
+      api
+        .forgotPassword({ email })
+        .then(fun => {
+          Alert.alert("", "Password reset email has been sent.");
+        })
+        .catch(e => {
+          Alert.alert("", "There was an error.");
+        });
     }
   }
 
@@ -103,61 +113,65 @@ export default class Login extends React.Component {
 
   render() {
     return (
-      <KeyboardAvoidingView style={styles.container}>
-        <View style={{ marginTop: "10%" }} />
-        <View
-          style={{
-            opacity: this.state.error ? 100 : 0,
-            justifyContent: "center",
-            alignItems: "center",
-            flexDirection: "row"
-          }}
-        >
-          <Badge status="error" />
-          <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
-        </View>
-        <View style={{ marginTop: "10%" }} />
-        <Input
-          label={"Email"}
-          autoCapitalize={"none"}
-          autoFocus={true}
-          keyboardType="email-address"
-          ref={this.email}
-          containerStyle={styles.email}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.emailError}
-          onChangeText={email => this.onEmailChange(email)}
-          onBlur={() => this.onEmailBlur()}
-        />
-        <Input
-          label="Password"
-          secureTextEntry={true}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          onChangeText={password => this.setState({ password })}
-        />
-        <TouchableOpacity
-          style={styles.forgotPassword}
-          onPress={() => this.onForgotPassword()}
-        >
-          <Text>Forgot Password?</Text>
-        </TouchableOpacity>
-        <View style={styles.field}>
-          <Button
-            disabled={!this.isSubmitEnabled()}
-            loading={this.state.loading}
-            onPress={() => {
-              this.submitLogin();
+      <KeyboardAvoidingView behavior="padding" style={styles.container}>
+        <ScrollView style={styles.scrollView}>
+          <View style={{ marginTop: "10%" }} />
+          <View
+            style={{
+              opacity: this.state.error ? 100 : 0,
+              justifyContent: "center",
+              alignItems: "center",
+              flexDirection: "row"
             }}
-            buttonStyle={Object.assign(
-              {
-                padding: 20
-              },
-              Button.primary
-            )}
-            title="Login"
+          >
+            <Badge status="error" />
+            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+          </View>
+          <View style={{ marginTop: "10%" }} />
+          <Input
+            label={"Email"}
+            autoCapitalize={"none"}
+            autoFocus={true}
+            keyboardType="email-address"
+            ref={this.email}
+            containerStyle={styles.email}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.emailError}
+            onChangeText={email => this.onEmailChange(email)}
+            onBlur={() => this.onEmailBlur()}
           />
-        </View>
+          <Input
+            label="Password"
+            secureTextEntry={true}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            onChangeText={password => this.setState({ password })}
+          />
+          <TouchableOpacity
+            style={styles.forgotPassword}
+            onPress={() => this.onForgotPassword()}
+          >
+            <Text>Forgot Password?</Text>
+          </TouchableOpacity>
+        </ScrollView>
+        <Button
+          disabled={!this.isSubmitEnabled()}
+          loading={this.state.loading}
+          onPress={() => {
+            this.submitLogin();
+          }}
+          containerStyle={{
+            marginBottom: 88
+          }}
+          buttonStyle={Object.assign(
+            {
+              padding: 20,
+              borderRadius: 0
+            },
+            Button.primary
+          )}
+          title="Login"
+        />
       </KeyboardAvoidingView>
     );
   }
@@ -165,10 +179,10 @@ export default class Login extends React.Component {
 
 const styles = StyleSheet.create({
   container: {
-    position: "absolute",
-    flex: 1,
-    width: "100%",
-    height: "100%"
+    flex: 1
+  },
+  scrollView: {
+    paddingHorizontal: 20
   },
   email: {},
   field: {
