@@ -16,17 +16,35 @@ import {
   createSwitchNavigator
 } from "react-navigation";
 
-const UserHomeStack = createStackNavigator({
-  Submission: {
-    screen: Submission
+const defaultNavigationOptions = {
+  headerStyle: {
+    elevation: 0,
+    shadowOpacity: 0
   }
-});
+};
 
-const SubmissionsStack = createStackNavigator({
-  Submissions: {
-    screen: Submissions
+const UserHomeStack = createStackNavigator(
+  {
+    Submission: {
+      screen: Submission
+    }
+  },
+
+  {
+    defaultNavigationOptions
   }
-});
+);
+
+const SubmissionsStack = createStackNavigator(
+  {
+    Submissions: {
+      screen: Submissions
+    }
+  },
+  {
+    defaultNavigationOptions
+  }
+);
 
 const SignedOutNavigator = createStackNavigator(
   {
@@ -36,45 +54,56 @@ const SignedOutNavigator = createStackNavigator(
     Submission: Submissions
   },
   {
-    initialRouteName: "Splash"
+    initialRouteName: "Splash",
+    defaultNavigationOptions
   }
 );
 
-const ProfileStack = createStackNavigator({
-  Profile: {
-    screen: Profile
+const ProfileStack = createStackNavigator(
+  {
+    Profile: {
+      screen: Profile
+    }
+  },
+  {
+    defaultNavigationOptions
   }
-});
+);
 
-const SignedInNavigator = createBottomTabNavigator({
-  Home: {
-    screen: UserHomeStack,
-    navigationOptions: {
-      tabBarLabel: "Home",
-      tabBarIcon: ({ tintColor }) => (
-        <Icon name="home" type="material" size={30} color={tintColor} />
-      )
+const SignedInNavigator = createBottomTabNavigator(
+  {
+    Home: {
+      screen: UserHomeStack,
+      navigationOptions: {
+        tabBarLabel: "Home",
+        tabBarIcon: ({ tintColor }) => (
+          <Icon name="home" type="material" size={30} color={tintColor} />
+        )
+      }
+    },
+    Submissions: {
+      screen: SubmissionsStack,
+      navigationOptions: {
+        tabBarLabel: "My Reports",
+        tabBarIcon: ({ tintColor }) => (
+          <Icon name="list" type="material" size={30} color={tintColor} />
+        )
+      }
+    },
+    Profile: {
+      screen: ProfileStack,
+      navigationOptions: {
+        tabBarLabel: "Profile",
+        tabBarIcon: ({ tintColor }) => (
+          <Icon name="face" type="material" size={30} color={tintColor} />
+        )
+      }
     }
   },
-  Submissions: {
-    screen: SubmissionsStack,
-    navigationOptions: {
-      tabBarLabel: "My Reports",
-      tabBarIcon: ({ tintColor }) => (
-        <Icon name="list" type="material" size={30} color={tintColor} />
-      )
-    }
-  },
-  Profile: {
-    screen: ProfileStack,
-    navigationOptions: {
-      tabBarLabel: "Profile",
-      tabBarIcon: ({ tintColor }) => (
-        <Icon name="face" type="material" size={30} color={tintColor} />
-      )
-    }
+  {
+    defaultNavigationOptions
   }
-});
+);
 
 export const AppNavigator = createSwitchNavigator({
   AuthLoading: AuthLoadingScreen,

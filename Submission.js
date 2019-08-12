@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Alert,
   Text,
   TouchableOpacity,
   View,
@@ -11,6 +12,7 @@ import { categories } from "./Categories.js";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
 import * as FileSystem from "expo-file-system";
+import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
 import {
   Badge,
@@ -158,9 +160,14 @@ export default class Submission extends React.Component {
     }
     const { address_components: address } = place;
     const finds = this.finds;
+    const premise = finds(address, "premise");
     const building = finds(address, "street_number");
     const street = finds(address, "route");
-    return [building, street].join(" ");
+    if (premise) {
+      return premise;
+    } else {
+      return [building, street].join(" ");
+    }
   }
 
   get addressModal() {
@@ -179,6 +186,7 @@ export default class Submission extends React.Component {
         >
           <AddressView
             onPress={({ data, place }) => {
+              console.log(place);
               this._address.blur();
               this.setState({
                 showAddressModal: false,
@@ -305,10 +313,61 @@ export default class Submission extends React.Component {
       .shift();
   }
 
+  validatePlate() {
+    console.log(this.state.license);
+    const okPlate =
+      this.state.license &&
+      this.state.license.candidate &&
+      this.state.license.candidate.plate &&
+      this.state.license.candidate.plate.length > 1;
+    if (!okPlate) {
+      return false;
+    }
+    const plate = this.state.license.candidate.plate.toUpperCase();
+    if (plate.charAt(0) === "T") {
+      if (plate.charAt(plate.length - 1) !== "C") {
+        return false;
+      }
+      const tlcRegex = /^T\d{6}C$/g;
+      console.log(tlcRegex);
+      console.log(plate.match(tlcRegex));
+      const match = plate.match(tlcRegex);
+      return match && match.length == 1;
+    }
+  }
+
+  alrt(title, message) {
+    this.setState({ submitting: false });
+    Alert.alert(title, message);
+  }
+
   submit() {
-    console.log(this.state.media);
+    if (this.state.complaints.length < 1) {
+      this.alrt(
+        "Missing Complaint",
+        "Select a complaint type: Blocked Bike Lane, Crosswalk, etc."
+      );
+      return;
+    }
+    if (!this.state.location) {
+      this.alrt("Address Missing", "Location of incident is missing.");
+      return;
+    }
+    if (!this.state.timeofreport) {
+      this.alrt(
+        "Incident Time Missing",
+        "Time you observed infraction is missing."
+      );
+      return;
+    }
+    const okPlate = this.validatePlate();
+    if (!okPlate) {
+      this.alrt("Invalid Plate", "Mke sure the license plate is valid.");
+      return;
+    }
+    const plateNeedsUploading = okPlate && this.state.license.plate.image;
     const plateUploaded =
-      !this.state.license ||
+      !plateNeedsUploading ||
       this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
       this.setState({ submitting: true });
@@ -321,19 +380,8 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          this.setState({ submitting: false });
-          console.log("plate upload error");
+          this.alrt("Error uploading image", "Image upload failed.");
         });
-      return;
-    }
-    console.log("mediaaaaa", this.state.uploadedMedia);
-    if (
-      !this.state.location ||
-      !this.state.timeofreport ||
-      this.state.complaints.length < 1 ||
-      !this.state.timeofreport
-    ) {
-      this.setState({ submitting: false });
       return;
     }
     const needToUpload = this.state.media.filter(
@@ -341,7 +389,6 @@ export default class Submission extends React.Component {
     );
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
-      console.log("uploadss");
       uploadFile(file)
         .then(uploaded => {
           if (file.type == "image") {
@@ -353,7 +400,7 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          this.setState({ submitting: false });
+          this.alrt("Error uploading media", "Media upload failed.");
           console.log("error upload", e);
         });
       return;
@@ -365,14 +412,11 @@ export default class Submission extends React.Component {
           plate: "TEST"
         },
         plate: {
-          region: "NY"
+          region: ""
         }
       },
       this.state.license
     );
-    if (!license) {
-      return;
-    }
 
     const complaints = this.state.complaints ?? [];
     if (
@@ -390,6 +434,7 @@ export default class Submission extends React.Component {
     const street = finds(address, "route");
     const city = finds(address, "locality");
     const sublocality = finds(address, "sublocality");
+    const premise = finds(address, "premise");
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
@@ -405,6 +450,7 @@ export default class Submission extends React.Component {
           media: license.media
         },
         address: Object.assign({
+          premise,
           building,
           street,
           city,
@@ -422,8 +468,10 @@ export default class Submission extends React.Component {
         this.setState(this.initialState, () => {});
       })
       .catch(e => {
-        console.log(e);
-        this.setState({ submitting: false });
+        this.alrt(
+          "Problem submitting report",
+          "An error occured while submitting your report.  Please try again."
+        );
       });
   }
 
@@ -459,7 +507,7 @@ export default class Submission extends React.Component {
             />
 
             <View>
-              <TouchableOpacity
+              <TouchSpoof
                 onPress={() => this.setState({ showComplaintModal: true })}
               >
                 <Input
@@ -471,7 +519,7 @@ export default class Submission extends React.Component {
                   placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
                   value={this.state.complaints.map(x => x.name).join(", ")}
                 />
-              </TouchableOpacity>
+              </TouchSpoof>
             </View>
 
             <View>
@@ -529,6 +577,7 @@ export default class Submission extends React.Component {
                   pointerEvents="none"
                   caretHidden={true}
                   autoFocus={false}
+                  onFocus={x => this.setState({ datePickerVisible: true })}
                   label={"When Incident Occurred"}
                   placeholder={"Time you observed infraction"}
                   value={this.state.timeofreportstr}
@@ -570,7 +619,6 @@ export default class Submission extends React.Component {
           title="Submit"
           loading={this.state.submitting}
           buttonStyle={styles.submitButtonStyle}
-          containerStyle={styles.submitButton}
         />
         {this.imageModal}
         {this.complaintModal}
@@ -743,12 +791,6 @@ const styles = StyleSheet.create({
   submitButtonStyle: {
     borderRadius: 0,
     padding: 20
-  },
-  submitButton: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: "100%"
   },
   button: {
     width: "30%",

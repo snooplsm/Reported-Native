@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -168,9 +169,16 @@ export default class LicenseView extends React.Component {
         <Input
           placeholder="ie: T64353"
           autoCapitalize="characters"
-          onChangeText={licensePlate =>
-            this.setState({ licensePlate: licensePlate.toUpperCase() })
-          }
+          onChangeText={licensePlate => {
+            this.setState({ licensePlate: licensePlate.toUpperCase() });
+            this._onPlateSelected({
+              plate: { region: "" },
+              candidate: {
+                plate: licensePlate
+              },
+              media: undefined
+            });
+          }}
           label={"License Plate"}
           value={this.state.licensePlate}
         />
@@ -178,42 +186,46 @@ export default class LicenseView extends React.Component {
         <Modal
           visible={this.state.plates.length != 0 && this.state.showPlatePicker}
         >
-          <View style={styles.container}>
-            <Text style={styles.header}>
-              We may have detected the license plate, please choose from the
-              following if applicable.
-            </Text>
-            {this.state.plates.map((plate, index) => {
-              return (
-                <View key={index}>
-                  <Image style={styles.plateImage} source={plate.image} />
-                  <View style={styles.plateContainer}>
-                    {plate.plates.map(x => {
-                      return (
-                        <View key={x.plate} style={styles.plateTextContainer}>
-                          <Button
-                            type="outline"
-                            container={styles.buttonContainer}
-                            onPress={() =>
-                              this._onPlateSelected({
-                                plate: plate,
-                                candidate: x
-                              })
-                            }
-                            title={`${x.plate} (${parseInt(x.confidence)}%)`}
-                          />
-                        </View>
-                      );
-                    })}
-                    <Button
-                      onPress={() => this.setState({ showPlatePicker: false })}
-                      title="None of these match"
-                    />
+          <ScrollView>
+            <View style={styles.container}>
+              <Text style={styles.header}>
+                We may have detected the license plate, please choose from the
+                following if applicable.
+              </Text>
+              {this.state.plates.map((plate, index) => {
+                return (
+                  <View key={index}>
+                    <Image style={styles.plateImage} source={plate.image} />
+                    <View style={styles.plateContainer}>
+                      {plate.plates.map(x => {
+                        return (
+                          <View key={x.plate} style={styles.plateTextContainer}>
+                            <Button
+                              type="outline"
+                              container={styles.buttonContainer}
+                              onPress={() =>
+                                this._onPlateSelected({
+                                  plate: plate,
+                                  candidate: x
+                                })
+                              }
+                              title={`${x.plate} (${parseInt(x.confidence)}%)`}
+                            />
+                          </View>
+                        );
+                      })}
+                      <Button
+                        onPress={() =>
+                          this.setState({ showPlatePicker: false })
+                        }
+                        title="None of these match"
+                      />
+                    </View>
                   </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          </ScrollView>
         </Modal>
       </View>
     );

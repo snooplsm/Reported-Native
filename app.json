@@ -2,7 +2,7 @@
   "expo": {
     "name": "Reported",
     "slug": "reported",
-    "privacy": "private",
+    "privacy": "unlisted",
     "sdkVersion": "33.0.0",
     "platforms": ["ios", "android", "web"],
     "version": "3.0.0",
