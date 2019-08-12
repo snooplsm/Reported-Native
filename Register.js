@@ -7,12 +7,20 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import LogoTitle from "./LogoTitle";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Button, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
   static navigationOptions = {
-    title: "Register"
+    headerTitle: <LogoTitle title="REGISTER" />,
+    headerRight: (
+      <Icon
+        containerStyle={{ padding: 10, opacity: 0 }}
+        name="arrow-back"
+        color="#000"
+      />
+    )
   };
 
   constructor(props) {

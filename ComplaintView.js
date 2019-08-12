@@ -2,11 +2,12 @@ import React from "react";
 import Autocomplete from "react-native-autocomplete-input";
 import {
   StyleSheet,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
   Text,
-  View
+  View,
+  Keyboard,
+  TouchableOpacity
 } from "react-native";
+import TouchSpoof from "./TouchSpoof";
 import { Button, Icon } from "react-native-elements";
 import { categories } from "./Categories.js";
 
@@ -32,6 +33,10 @@ export default class ComplaintView extends React.Component {
         const lower = x.name.toLowerCase();
         return lower.includes(q);
       });
+  }
+
+  componentDidMount() {
+    Keyboard.dismiss();
   }
 
   render() {
@@ -70,7 +75,7 @@ export default class ComplaintView extends React.Component {
             );
           })}
         </View>
-        <TouchableWithoutFeedback
+        <TouchSpoof
           onPress={() => {
             console.log("on prezzz");
           }}
@@ -87,6 +92,8 @@ export default class ComplaintView extends React.Component {
               data={data}
               ref={this.auto}
               defaultValue={this.state.query}
+              editable={false}
+              autoFocus={false}
               hideResults={this.state.hideResults}
               placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
               onFocus={() => {
@@ -133,7 +140,7 @@ export default class ComplaintView extends React.Component {
               )}
             />
           </View>
-        </TouchableWithoutFeedback>
+        </TouchSpoof>
       </>
     );
   }

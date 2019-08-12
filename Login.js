@@ -14,12 +14,20 @@ import {
   ButtonContainerStyle,
   ButtonStyle
 } from "./Styles";
+import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
 
 export default class Login extends React.Component {
   static navigationOptions = {
-    title: "Login"
+    headerTitle: <LogoTitle title="LOGIN" />,
+    headerRight: (
+      <Icon
+        containerStyle={{ padding: 10, opacity: 0 }}
+        name="arrow-back"
+        color="#000"
+      />
+    )
   };
 
   constructor(props) {
