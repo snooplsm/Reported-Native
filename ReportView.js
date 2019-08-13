@@ -28,14 +28,10 @@ export default class ReportView extends React.Component {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
-      const first = report.media[0];
-      if (report.media.length === 1) {
-        const image = first.url;
-        // console.log("before reduce", first);
-        const thumb = first.thumbnails.reduce(reduce512);
-        // console.log("thumb is thumb", thumb);
+      return report.media.map(image => {
+        const thumb = image.thumbnails.reduce(reduce512);
         return (
-          <TouchableOpacity onPress={() => Linking.openURL(first.url)}>
+          <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
             <ImageBackground
               source={{ uri: thumb.url }}
               style={{
@@ -44,9 +40,11 @@ export default class ReportView extends React.Component {
                 resizeMode: "cover"
               }}
             />
-            {first.type === "YOUTUBE" && (
+            {image.type === "YOUTUBE" && (
               <View
-                isVisible={first.type === "YOUTUBE"}
+                isVisible={
+                  image.type === "YOUTUBE" || image.type === "S3_VIDEO"
+                }
                 style={{
                   position: "absolute",
                   top: 0,
@@ -71,25 +69,7 @@ export default class ReportView extends React.Component {
             )}
           </TouchableOpacity>
         );
-      }
-      console.log("OH NOOO");
-      return (
-        <ImageCarousel
-          onItemPress={x => {
-            //console.log(x);
-            alert("ok");
-          }}
-          entries={report.media.map(x => {
-            const img = {};
-            const thumb = x.thumbnails.reduce(reduce512);
-            img.url = thumb.url;
-            img.width = thumb.width;
-            img.height = thumb.height;
-            console.log("using", img);
-            return img;
-          })}
-        />
-      );
+      });
     } else {
       return <></>;
     }
