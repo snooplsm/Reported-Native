@@ -163,10 +163,18 @@ export default class Submission extends React.Component {
     const premise = finds(address, "premise");
     const building = finds(address, "street_number");
     const street = finds(address, "route");
-    if (premise) {
-      return premise;
+    const locality = finds(address, "locality");
+    const sublocality = finds(address, "neighborhood");
+    let toUse = null;
+    if (sublocality && sublocality !== locality) {
+      toUse = sublocality;
     } else {
-      return [building, street].join(" ");
+      toUse = locality;
+    }
+    if (premise) {
+      return [premise, toUse].filter(x => x).join(" ");
+    } else {
+      return [[building, street].join(" "), toUse].filter(x => x).join(", ");
     }
   }
 
