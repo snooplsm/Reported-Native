@@ -94,21 +94,24 @@ export const uploadFile = file => {
     isSignedIn()
       .then(user => {
         data.user = user;
-        console.log("we have user");
-        return ImageManipulator.manipulateAsync(file.url, null, {
-          compress: 1.0,
-          format: ImageManipulator.SaveFormat.JPEG
-        });
+        if (file.type == "image") {
+          return ImageManipulator.manipulateAsync(file.url, null, {
+            compress: 1.0,
+            format: ImageManipulator.SaveFormat.JPEG
+          });
+        } else {
+          return file;
+        }
       })
       .then(fc => {
         data.fc = fc;
-        return FileSystem.getInfoAsync(fc.uri, {
+        return FileSystem.getInfoAsync(fc.uri || fc.url, {
           md5: true
         });
       })
       .then(fc => {
         data.fc.md5 = fc.md5;
-        return urlToBlob(data.fc.uri);
+        return urlToBlob(data.fc.uri || data.fc.url);
       })
       .then(blob => {
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
@@ -116,7 +119,7 @@ export const uploadFile = file => {
         console.log("blob key", key);
         const metaData = Object.assign({
           "User-Id": data.user.id,
-          "File-Name": data.fc.uri,
+          "File-Name": data.fc.uri || data.fc.url,
           "Operating-System": Platform.OS,
           Device: Constants.deviceName,
           width: (data.fc.width ?? -1).toString(),
