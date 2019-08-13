@@ -325,7 +325,7 @@ export default class Submission extends React.Component {
     }
     const plate = this.state.license.candidate.plate.toUpperCase();
     if (plate.charAt(0) === "T") {
-      if (plate.charAt(plate.length - 1) !== "C") {
+      if (plate.length > 6 && plate.charAt(plate.length - 1) !== "C") {
         return false;
       }
       const tlcRegex = /^T\d{6}C$/g;
