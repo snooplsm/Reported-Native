@@ -168,6 +168,10 @@ export default class Submissions extends React.Component {
         {this.submissionsFilter}
         <View>
           <FlatList
+            style={{
+              width: "100%",
+              height: "100%"
+            }}
             keyExtractor={this._keyExtractor}
             onRefresh={this._onRefresh}
             refreshing={this.state.refreshing}
@@ -175,11 +179,6 @@ export default class Submissions extends React.Component {
             onEndReached={this._onEndReached}
             initialNumToRender={2}
             ListFooterComponent={<View style={{ height: 10 }} />}
-            ListEmptyComponent={
-              <View style={{ flex: 1 }}>
-                <Text>Thats all folks</Text>
-              </View>
-            }
             renderItem={({ item }) => {
               const { report, address } = item;
               console.log(report);
@@ -204,6 +203,23 @@ export default class Submissions extends React.Component {
               );
             }}
           />
+          {this.state.refreshing && this.state.reports.length === 0 && (
+            <View
+              style={{
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                justifyContent: "center",
+                alignItems: "center",
+                flex: 1
+              }}
+            >
+              {this.state.refreshing && <Text style>Loading...</Text>}
+              {!this.state.refreshing && this.state.reports.length === 0 && (
+                <Text>No reports found.</Text>
+              )}
+            </View>
+          )}
         </View>
       </>
     );
