@@ -75,9 +75,14 @@ const SignedInNavigator = createBottomTabNavigator(
     Home: {
       screen: UserHomeStack,
       navigationOptions: {
-        tabBarLabel: "Home",
+        tabBarLabel: "Report",
         tabBarIcon: ({ tintColor }) => (
-          <Icon name="home" type="material" size={30} color={tintColor} />
+          <Icon
+            name="library-add"
+            type="material"
+            size={30}
+            color={tintColor}
+          />
         )
       }
     },

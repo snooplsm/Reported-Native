@@ -29,7 +29,7 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
-import { IconStyle } from "./Styles";
+import { IconStyle, colors } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 
@@ -342,6 +342,7 @@ export default class Submission extends React.Component {
       const match = plate.match(tlcRegex);
       return match && match.length == 1;
     }
+    return plate.length > 1;
   }
 
   alrt(title, message) {
@@ -491,6 +492,26 @@ export default class Submission extends React.Component {
     }
   }
 
+  get percentageOpacity() {
+    let percent = 0.3;
+    if (this.validatePlate()) {
+      percent += 0.2;
+    }
+    if (this.state.complaints.length === 1) {
+      percent += 0.1;
+    }
+    if (this.state.location) {
+      percent += 0.1;
+    }
+    if (this.state.media.length > 0) {
+      percent += 0.1;
+    }
+    if (this.state.timeofreport) {
+      percent += 0.2;
+    }
+    return Math.min(1, percent);
+  }
+
   render() {
     return (
       <>
@@ -626,7 +647,12 @@ export default class Submission extends React.Component {
           onPress={() => this.submit()}
           title="Submit"
           loading={this.state.submitting}
-          buttonStyle={styles.submitButtonStyle}
+          buttonStyle={[
+            {
+              opacity: this.percentageOpacity
+            },
+            styles.submitButtonStyle
+          ]}
         />
         {this.imageModal}
         {this.complaintModal}
@@ -798,7 +824,8 @@ const styles = StyleSheet.create({
   },
   submitButtonStyle: {
     borderRadius: 0,
-    padding: 20
+    padding: 20,
+    backgroundColor: colors.orange
   },
   button: {
     width: "30%",

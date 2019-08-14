@@ -173,8 +173,16 @@ export default class Submissions extends React.Component {
             refreshing={this.state.refreshing}
             data={this.state.reports}
             onEndReached={this._onEndReached}
+            initialNumToRender={2}
+            ListFooterComponent={<View style={{ height: 10 }} />}
+            ListEmptyComponent={
+              <View style={{ flex: 1 }}>
+                <Text>Thats all folks</Text>
+              </View>
+            }
             renderItem={({ item }) => {
               const { report, address } = item;
+              console.log(report);
               return (
                 <TouchableOpacity
                   onLongPress={() => {

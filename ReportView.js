@@ -28,46 +28,52 @@ export default class ReportView extends React.Component {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
-      return report.media.map(image => {
+      return report.media.map((image, index) => {
         const thumb = image.thumbnails.reduce(reduce512);
         return (
-          <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
-            <ImageBackground
-              source={{ uri: thumb.url }}
-              style={{
-                width: "100%",
-                height: 256,
-                resizeMode: "cover"
-              }}
-            />
-            {image.type === "YOUTUBE" && (
-              <View
-                isVisible={
-                  image.type === "YOUTUBE" || image.type === "S3_VIDEO"
-                }
+          <>
+            <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
+              <ImageBackground
+                source={{ uri: thumb.url }}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  justifyContent: "center",
-                  alignItems: "center"
+                  width: "100%",
+                  height: 256,
+                  resizeMode: "cover"
                 }}
-              >
+              />
+              {image.type === "YOUTUBE" && (
                 <View
+                  isVisible={
+                    image.type === "YOUTUBE" || image.type === "S3_VIDEO"
+                  }
                   style={{
                     position: "absolute",
-                    width: 80,
-                    height: 80,
-                    borderRadius: 80 / 2,
-                    backgroundColor: "#FFFFFF99"
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    justifyContent: "center",
+                    alignItems: "center"
                   }}
-                />
-                <Icon name="play-circle-outline" type="material" size={100} />
-              </View>
+                >
+                  <View
+                    style={{
+                      position: "absolute",
+                      width: 80,
+                      height: 80,
+                      borderRadius: 80 / 2,
+                      backgroundColor: "#FFFFFF99"
+                    }}
+                  />
+                  <Icon name="play-circle-outline" type="material" size={100} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {index !== report.media.length - 1 && (
+              <View style={{ height: 10, paddingTop: 10 }}></View>
             )}
-          </TouchableOpacity>
+          </>
         );
       });
     } else {
