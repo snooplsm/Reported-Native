@@ -34,7 +34,7 @@ export default class Login extends React.Component {
     super(props);
     this.email = React.createRef();
     this.state = {
-      email: "",
+      error: undefined,
       password: "",
       loading: false
     };
@@ -97,12 +97,17 @@ export default class Login extends React.Component {
         this.setState({ loading: false });
         let message = "";
         if (x.response) {
-          message = x.response.data.message;
+          if (x.response.status == 401) {
+            message = "Credentials not found";
+          } else {
+            message = x.response.data.message;
+          }
         } else if (x.request) {
           message = "Server was unresponsive";
         } else {
           messaage = "Unknown error";
         }
+        console.log(message);
         this.setState({ error: message });
         console.log("error logging in ", x);
       });
