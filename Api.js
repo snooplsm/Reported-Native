@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/staging/",
+  dev: "https://reported-stats.herokuapp.com/prod/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -21,8 +21,8 @@ function getApiUrl() {
   }
   const channel = Constants.manifest.releaseChannel;
   if (channel === undefined) return apiUrl.dev;
-  if (channel.indexOf("prod")) return apiUrl.prod;
-  if (channel.indexOf("staging")) return apiUrl.staging;
+  if (channel.indexOf("prod") !== -1) return apiUrl.prod;
+  if (channel.indexOf("staging") !== -1) return apiUrl.staging;
 }
 
 function getBucketUrl() {
@@ -31,8 +31,8 @@ function getBucketUrl() {
   }
   const channel = Constants.manifest.releaseChannel;
   if (channel === undefined) return "reportedcab-stg";
-  if (channel.indexOf("prod")) return "reportedcab";
-  if (channel.indexOf("staging")) return "reportedcab-stg";
+  if (channel.indexOf("prod") !== -1) return "reportedcab";
+  if (channel.indexOf("staging") !== -1) return "reportedcab-stg";
 }
 
 const BASE_URL = getApiUrl();
