@@ -72,17 +72,20 @@ export default class Submission extends React.Component {
     return {
       media: [],
       resizedImages: [],
-      datePickerVisible: false,
+      datePickerVisible: undefined,
+      showComplaintModal: undefined,
+      showAddressModal: undefined,
       timeofreport: undefined,
       complaints: [],
       imageModal: false,
       uploadedMedia: {},
       submitting: false,
-      description: null,
-      notes: null,
-      license: null,
+      description: "",
+      notes: "",
+      license: undefined,
       alpr: undefined,
-      location: undefined
+      location: undefined,
+      license: undefined
     };
   }
 
@@ -125,37 +128,43 @@ export default class Submission extends React.Component {
       return false;
     }
     if (this.state.imageModal !== false) {
-      this.setState({ imageModal: false });
+      this.setState({ imageModal: undefined });
       return true;
     }
     if (this.state.datePickerVisible) {
-      this.setState({ datePickerVisible: false });
+      this.setState({ datePickerVisible: undefined });
       return true;
     }
     if (this.state.showAddressModal) {
-      this.setState({ showAddressModal: false });
+      this.setState({ showAddressModal: undefined });
       return true;
     }
     if (this.state.showComplaintModal) {
-      this.setState({ showComplaintModal: false });
+      this.setState({ showComplaintModal: undefined });
       return true;
     }
   };
 
+  get modalsShowing() {
+    const state = this.state;
+    return (
+      state.imageModal === true ||
+      state.datePickerVisible ||
+      state.showAddressModal ||
+      state.showComplaintModal
+    );
+  }
+
   setState(state, lambda) {
     super.setState(state, () => {
-      if (
-        this.state.imageModal === true ||
-        this.state.datePickerVisible ||
-        this.state.showAddressModal ||
-        this.state.showComplaintModal
-      ) {
+      if (this.modalsShowing) {
         this.props.navigation.setParams({ canGoBack: true });
       } else {
         this.props.navigation.setParams({ canGoBack: false });
       }
+      const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
-        isInitialState: isEqual(this.state, this.initialState)
+        isInitialState: this.modalsShowing || okEqual
       });
       if (lambda) {
         lambda();
@@ -510,10 +519,10 @@ export default class Submission extends React.Component {
 
   clear() {
     this._license.clear();
-    this.setState(this.initialState, () => {});
+    this.setState(this.initialState);
   }
 
-  addPhotoText() {
+  get addPhotoText() {
     if (this.state.media && this.state.media.length > 0) {
       return "Add Another Photo/Video";
     } else {
@@ -554,8 +563,9 @@ export default class Submission extends React.Component {
               buttonStyle={styles.addPhoto}
               containerStyle={styles.addPhotoContainer}
               onPress={this._pickImage}
-              title={this.addPhotoText()}
+              title={this.addPhotoText}
             />
+
             <ImageCarousel
               onItemPressed={({ item, index }) => {
                 console.log("index", index);
@@ -598,7 +608,18 @@ export default class Submission extends React.Component {
 
             <LicenseView
               ref={r => (this._license = r)}
-              onPlateSelected={plate => this.setState({ license: plate })}
+              onPlateSelected={plate => {
+                const { candidate } = plate;
+                if (
+                  candidate &&
+                  candidate.plate &&
+                  candidate.plate.length > 0
+                ) {
+                  this.setState({ license: plate });
+                } else {
+                  this.setState({ license: undefined });
+                }
+              }}
               alpr={this.state.alpr}
             />
 
@@ -612,11 +633,11 @@ export default class Submission extends React.Component {
                 this.setState({
                   timeofreport: date,
                   timeofreportstr: this.timeofreport(date),
-                  datePickerVisible: false
+                  datePickerVisible: undefined
                 });
               }}
               onCancel={() => {
-                this.setState({ datePickerVisible: false });
+                this.setState({ datePickerVisible: undefined });
               }}
             />
             <View>
@@ -646,7 +667,6 @@ export default class Submission extends React.Component {
               <Input
                 label={"Incident Description (optional)"}
                 onChangeText={v => {
-                  console.log(v);
                   this.setState({ description: v });
                 }}
                 multiline={true}
@@ -760,7 +780,7 @@ export default class Submission extends React.Component {
         //console.log(lats, lngs);
 
         const timeof =
-          timeofreport && moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
+          timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
         Object.assign(image, {
           timeofreport: timeof,
@@ -807,7 +827,7 @@ export default class Submission extends React.Component {
       const { timeofreport } = image;
 
       if (timeofreport) {
-        var datetime = moment(timeofreport, "yyyy:MM:dd HH:mm:ss").toDate();
+        var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
         this.setState({
           timeofreport: datetime,
           timeofreportstr: this.timeofreport(datetime)
@@ -843,12 +863,12 @@ export default class Submission extends React.Component {
 }
 
 const styles = StyleSheet.create({
-  addPhoto: {},
+  addPhoto: {
+    // height: 100
+    height: 55
+  },
   addPhotoContainer: {
-    paddingLeft: 10,
-    paddingRight: 10,
-    paddingBottom: 10,
-    paddingTop: 10
+    padding: 10
   },
   submitButtonStyle: {
     borderRadius: 0,
@@ -863,8 +883,8 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     justifyContent: "space-between",
-    marginBottom: 10,
-    marginTop: 10
+    marginBottom: 1,
+    marginTop: 12
   },
   imageViewer: {
     backgroundColor: "yellow",
