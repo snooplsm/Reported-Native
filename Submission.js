@@ -33,6 +33,8 @@ import { IconStyle, colors } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 
+const isEqual = require("react-fast-compare");
+
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
     return {
@@ -54,8 +56,12 @@ export default class Submission extends React.Component {
       },
       headerRight: (
         <Icon
-          containerStyle={{ padding: 10, opacity: 0 }}
-          name="arrow-back"
+          onPress={navigation.getParam("onClearPressed")}
+          containerStyle={{
+            padding: 10,
+            opacity: navigation.getParam("isInitialState") === false ? 100 : 0
+          }}
+          name="cancel"
           color="#000"
         />
       )
@@ -92,9 +98,25 @@ export default class Submission extends React.Component {
     );
     this.props.navigation.setParams({
       onBackPressed: this.onBackPressed,
-      canGoBack: false
+      canGoBack: false,
+      onClearPressed: this.onClearPressed
     });
   }
+
+  onClearPressed = () => {
+    Alert.alert("Discard Report?", "Discard report and start a new one?", [
+      {
+        text: "Cancel",
+        onPress: () => {}
+      },
+      {
+        text: "OK",
+        onPress: () => {
+          this.clear();
+        }
+      }
+    ]);
+  };
 
   onBackPressed = () => {
     console.log("on back pressed");
@@ -132,6 +154,9 @@ export default class Submission extends React.Component {
       } else {
         this.props.navigation.setParams({ canGoBack: false });
       }
+      this.props.navigation.setParams({
+        isInitialState: isEqual(this.state, this.initialState)
+      });
       if (lambda) {
         lambda();
       }
@@ -473,8 +498,7 @@ export default class Submission extends React.Component {
         media: this.state.media.map(x => this.state.uploadedMedia[x.url])
       })
       .then(x => {
-        this._license.clear();
-        this.setState(this.initialState, () => {});
+        this.clear();
       })
       .catch(e => {
         this.alrt(
@@ -482,6 +506,11 @@ export default class Submission extends React.Component {
           "An error occured while submitting your report.  Please try again."
         );
       });
+  }
+
+  clear() {
+    this._license.clear();
+    this.setState(this.initialState, () => {});
   }
 
   addPhotoText() {
@@ -764,7 +793,6 @@ export default class Submission extends React.Component {
               data.resized = r;
               return alpr.recognize(r);
             })
-            .then(result => result.json())
             .then(result => {
               data.alprResult = result;
               data.images = [data.resized];
