@@ -146,7 +146,8 @@ export default class Submission extends React.Component {
     const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
-    this.setState({ media: newImages });
+    console.log("new images size", newImages.length);
+    this.setState({ media: newImages, imageModal: newImages.length > 0 });
   }
 
   get addressString() {
@@ -238,7 +239,6 @@ export default class Submission extends React.Component {
 
   get imageModal() {
     if (this.state.imageModal !== false) {
-      console.log("showing modal");
       return (
         <ImageViewer
           ref={ref => {
