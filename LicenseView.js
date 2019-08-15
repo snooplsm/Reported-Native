@@ -80,6 +80,10 @@ export default class LicenseView extends React.Component {
         width,
         height
       };
+
+      console.log("original", original);
+      console.log("image", image);
+      console.log("crop", crop);
       //
       // console.log(coordinates);
       // console.log(crop);

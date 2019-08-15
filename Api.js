@@ -1,6 +1,6 @@
 import axios from "axios";
-import { AsyncStorage } from "react-native";
 import { isSignedIn } from "./Auth";
+import { AsyncStorage } from "react-native";
 import { USER_KEY } from "./Auth";
 import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
@@ -186,25 +186,51 @@ function getKey() {
 
 const ALPR_KEY = getKey();
 
+const ALPR_MD5 = "alpr.result";
+
 export const alpr = {
   recognize: file => {
-    const url = `https://api.openalpr.com/v2/recognize?country=us&secret_key=${ALPR_KEY}`;
-    const form = new FormData();
-    form.append("image", {
-      name: "image",
-      type: "image/jpeg",
-      uri:
-        Platform.OS === "android" ? file.uri : file.uri.replace("file://", "")
-    });
-    let options = {
-      method: "POST",
-      body: form,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "multipart/form-data"
-      }
-    };
-    return fetch(url, options);
+    const temp = {};
+
+    return FileSystem.getInfoAsync(file.uri || file.url, {
+      md5: true
+    })
+      .then(info => {
+        const { md5 } = info;
+        temp.key = `${ALPR_MD5}.${md5}`;
+        return AsyncStorage.getItem(temp.key);
+      })
+      .then(response => {
+        if (response) {
+          console.log("cache found alpr");
+          console.log(response);
+          return JSON.parse(response);
+        } else {
+          const url = `https://api.openalpr.com/v2/recognize?country=us&secret_key=${ALPR_KEY}`;
+          const form = new FormData();
+          form.append("image", {
+            name: "image",
+            type: "image/jpeg",
+            uri: file.uri || file.url
+          });
+          let options = {
+            method: "POST",
+            body: form,
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "multipart/form-data"
+            }
+          };
+          return fetch(url, options)
+            .then(result => result.json())
+            .then(json => {
+              console.log(json);
+              console.log(`saving alpr to ${temp.key}`);
+              AsyncStorage.setItem(temp.key, JSON.stringify(json));
+              return json;
+            });
+        }
+      });
   }
 };
 
