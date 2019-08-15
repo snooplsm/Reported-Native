@@ -89,6 +89,15 @@ export default class Submissions extends React.Component {
 
   componentDidMount() {
     this.props.navigation.setParams({ filterPressed: this._filterPressed });
+    this.props.navigation.addListener("didBlur", payload => {
+      console.debug("didBlur", payload);
+    });
+    this.props.navigation.addListener("willFocus", payload => {
+      console.debug("willFocus", payload);
+    });
+    this.props.navigation.addListener("didFocus", payload => {
+      console.debug("didFocus", payload);
+    });
     this.fetchReports();
   }
 
