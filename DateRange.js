@@ -9,7 +9,7 @@ export class DateRange {
 
 export class MonthDayYear {
   constructor(month, day, year) {
-    this.month = month;
+    this._month = month;
     this.day = day;
     this.year = year;
   }
@@ -69,11 +69,13 @@ export class MonthDayYear {
   }
 
   get allDates() {
+    console.log("allDates", this);
+    console.log(this.year, this.month, this.day);
     const month = this.month;
     const year = this.year;
     const day = this.day;
     if (month != null && year != null && day != null) {
-      return [DateRange(this.date)];
+      return [new DateRange(this.date)];
     }
     if (month != null && year != null) {
       const mm = moment()
@@ -81,21 +83,24 @@ export class MonthDayYear {
         .month(month);
       const monthStart = mm.startOf("month");
       const monthEnd = mm.endOf("month");
-      return [DateRange(monthStart, monthEnd)];
+      return [new DateRange(monthStart, monthEnd)];
     } else if (month != null && day != null) {
       return range(year, year - 5, -1).map(year => {
         const mm = moment()
           .year(year)
           .month(month - 1);
-        return DateRange(mm.startOf("month"), mm.endOf("month"));
+        return [new DateRange(mm.startOf("month"), mm.endOf("month"))];
       });
     } else if (month != null) {
       return [year].map(year => {
         const mm = moment().year(year);
-        return DateRange(mm.startOf("year"), mm.endOf("year"));
+        return [new DateRange(mm.startOf("year"), mm.endOf("year"))];
       });
+    } else if (year != null) {
+      const mm = moment().year(year);
+      return [new DateRange(mm.startOf("year"), mm.endOf("year"))];
     } else {
-      return [DateRange()];
+      return [new DateRange()];
     }
   }
 }

@@ -1,12 +1,5 @@
 import React from "react";
-import {
-  Alert,
-  Text,
-  TouchableOpacity,
-  View,
-  StyleSheet,
-  ScrollView
-} from "react-native";
+import { Alert, Text, TouchableOpacity, View, StyleSheet } from "react-native";
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
 import * as ImagePicker from "expo-image-picker";
@@ -29,6 +22,7 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
+import { ScrollView } from "react-navigation";
 import { IconStyle, colors } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr, api, uploadFile, reverseGeocode } from "./Api";
