@@ -132,8 +132,15 @@ export default class ReportView extends React.Component {
           <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
         </View>
         {this.carousel()}
+
         <Autolink text={report.description ?? ""} />
         <Autolink text={report.notes ?? ""} />
+        {report.searchId != null && report.searchId.length > 0 && (
+          <Autolink
+            style={ButtonStyle.orangeText}
+            text={`311# ${report.searchId}`}
+          />
+        )}
         <View
           style={[
             HorizontalStyle.style,
