@@ -30,7 +30,8 @@ export default class SubmissionFilter extends React.Component {
 
   filterPressed() {
     const onFilterPressed = this.props.onFilterPressed ?? (() => {});
-    const { keywords, address: near, complaints, when } = this.state;
+    const { keywords, address: near, complaints } = this.state;
+    const when = this.state.when && this.state.when.allDates;
     const query = {
       keywords,
       near,
@@ -207,10 +208,11 @@ export default class SubmissionFilter extends React.Component {
                 this.setState({ showWhen: false });
               }}
               onValidDate={valid => {
+                console.log("allDates:", valid.allDates);
                 this.setState({ showWhen: false, when: valid });
               }}
               onInValidDate={invalid => {
-                console.log(invalid.allPossibleDates);
+                console.log("allDates:", invalid.allDates);
                 const when = invalid.allPossibleDates == null ? null : invalid;
                 this.setState({ showWhen: false, when: when });
               }}

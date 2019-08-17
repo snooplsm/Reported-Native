@@ -6,15 +6,16 @@ import {
   Text,
   View,
   SafeAreaView,
-  FlatList,
   Button,
   TouchableOpacity
 } from "react-native";
 import { Icon } from "react-native-elements";
+import { SectionList } from "react-navigation";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
 import { colors } from "./Styles";
 import ReportView from "./ReportView";
+import moment from "moment";
 import SubmissionFilter from "./SubmissionFilter";
 
 export default class Submissions extends React.Component {
@@ -52,6 +53,7 @@ export default class Submissions extends React.Component {
     super(props);
     this.state = {
       reports: [],
+      sections: [],
       count: 0,
       filter: null,
       refreshing: true,
@@ -117,10 +119,27 @@ export default class Submissions extends React.Component {
             address: addressMap[report.addressId] ?? { street: "" }
           };
         });
-        console.log(reports);
+
         const lastResultEmpty = reports.length < 100;
+        const combinedReports = this.state.reports.concat(reports);
+        const dict = {};
+        reports.forEach(x => {
+          const date = moment(x.report.timeofincident).startOf("month");
+          const list = dict[date.valueOf()] ?? [];
+          list.push(x);
+          dict[date.valueOf()] = list;
+        });
+        sections = Object.keys(dict).map(key => {
+          const list = dict[key];
+          const date = moment(Number(key));
+          return {
+            title: date.format("MMMM YYYY"),
+            data: list
+          };
+        });
         this.setState({
-          reports: this.state.reports.concat(reports),
+          reports: combinedReports,
+          sections: sections,
           lastResultEmpty
         });
       })
@@ -176,12 +195,27 @@ export default class Submissions extends React.Component {
       <>
         {this.submissionsFilter}
         <View>
-          <FlatList
+          <SectionList
             style={{
               width: "100%",
               height: "100%"
             }}
+            renderSectionHeader={({ section: { title } }) => (
+              <Text
+                style={{
+                  width: "100%",
+                  backgroundColor: "white",
+                  textAlign: "center",
+                  fontWeight: "bold",
+                  fontSize: 19,
+                  padding: 10
+                }}
+              >
+                {title}
+              </Text>
+            )}
             keyExtractor={this._keyExtractor}
+            sections={this.state.sections}
             onRefresh={this._onRefresh}
             refreshing={this.state.refreshing}
             data={this.state.reports}
