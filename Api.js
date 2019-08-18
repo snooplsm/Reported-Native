@@ -255,14 +255,10 @@ export const reverseGeocode = location => {
 };
 
 export const api = {
-  register: email => {
-    return ax
-      .post(`/register`, {
-        email: email
-      })
-      .then(res => {
-        return new UserPromise(res);
-      });
+  register: body => {
+    return ax.post(`/register`, body).then(res => {
+      return new UserPromise(res);
+    });
   },
 
   forgotPassword: forgot => {

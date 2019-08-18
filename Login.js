@@ -35,6 +35,7 @@ export default class Login extends React.Component {
     this.email = React.createRef();
     this.state = {
       error: undefined,
+      email: "",
       password: "",
       loading: false
     };
@@ -47,13 +48,13 @@ export default class Login extends React.Component {
   }
 
   onEmailBlur() {
-    const state = Object.assign({}, this.state);
+    let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
-      state.emailError = "Invalid Email";
+      emailError = "Invalid Email";
     } else {
-      state.emailError = null;
+      emailError = null;
     }
-    this.setState(state);
+    this.setState({ emailError });
   }
 
   onForgotPassword() {

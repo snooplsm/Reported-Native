@@ -1,6 +1,8 @@
 import React from "react";
 
 import {
+  Alert,
+  Clipboard,
   Image,
   ImageBackground,
   StyleSheet,
@@ -9,6 +11,7 @@ import {
   View,
   TouchableOpacity
 } from "react-native";
+import { ToastAndroid } from "react-native";
 import { Card, Icon } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
@@ -111,6 +114,21 @@ export default class ReportView extends React.Component {
       );
     }
   }
+
+  copy(value) {
+    Clipboard.setString(report.searchId).then(f => {
+      if (Platform.OS === "ios") {
+        Alert.alert("Copied to clipboard", value);
+      } else if (Platform.OS === "android") {
+        ToastAndroid.showWithGravity(
+          `Copied to clipboard\n${value}`,
+          ToastAndroid.LONG,
+          ToastAndroid.BOTTOM
+        );
+      }
+    });
+  }
+
   render() {
     const { report: rpt } = this.props;
     console.log(report);
@@ -136,10 +154,12 @@ export default class ReportView extends React.Component {
         <Autolink text={report.description ?? ""} />
         <Autolink text={report.notes ?? ""} />
         {report.searchId != null && report.searchId.length > 0 && (
-          <Autolink
-            style={ButtonStyle.orangeText}
-            text={`311# ${report.searchId}`}
-          />
+          <TouchableOpacity onLongPress={() => this.copy(report.searchId)}>
+            <Autolink
+              style={ButtonStyle.orangeText}
+              text={`311# ${report.searchId}`}
+            />
+          </TouchableOpacity>
         )}
         <View
           style={[

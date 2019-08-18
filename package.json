@@ -34,6 +34,7 @@
     "react-native-modal": "^11.0.1",
     "react-native-modal-datetime-picker": "^7.4.0",
     "react-native-s3-upload": "0.0.11",
+    "react-native-simple-toast": "^0.1.1",
     "react-native-snap-carousel": "^3.7.5",
     "react-native-sound": "^0.10.12",
     "react-native-vector-icons": "^4.6.0",
