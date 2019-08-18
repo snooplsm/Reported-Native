@@ -5,11 +5,13 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  ScrollView,
   View
 } from "react-native";
 import LogoTitle from "./LogoTitle";
+import { api } from "./Api";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
-import { Button, Input, Icon } from "react-native-elements";
+import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
   static navigationOptions = {
@@ -32,26 +34,22 @@ export default class Register extends React.Component {
       lastName: "",
       password: "",
       phone: "",
-      loading: false
+      error: false,
+      testify: false,
+      registering: false
     };
   }
 
   onEmailChange(email) {
-    const state = Object.assign({}, this.state);
-    state.email = email;
-    this.setState(state);
+    this.setState({ email });
   }
 
   onFirstNameChange(firstName) {
-    const state = Object.assign({}, this.state);
-    state.firstName = firstName;
-    this.setState(state);
+    this.setState({ firstName });
   }
 
   onLastNameChange(lastName) {
-    const state = Object.assign({}, this.state);
-    state.lastName = lastName;
-    this.setState(state);
+    this.setState({ lastName });
   }
 
   onAlreadyRegistered() {
@@ -59,62 +57,48 @@ export default class Register extends React.Component {
   }
 
   onFirstNameBlur() {
-    const state = Object.assign({}, this.state);
-    if (this.state.firstName.length != 0) {
-      state.firstNameError = "First Name required";
-    } else {
-      state.firstNameError = null;
+    let firstNameError = null;
+    if (this.state.firstName.length == 0) {
+      firstNameError = "First Name required";
     }
-    this.setState(state);
+    this.setState({ firstNameError });
   }
 
   onLastNameBlur() {
-    const state = Object.assign({}, this.state);
-    if (this.state.lastName.length != 0) {
-      state.lastNameError = "First Name required";
-    } else {
-      state.lastNameError = null;
+    let lastNameError = null;
+    if (this.state.lastName.length == 0) {
+      lastNameError = "Last Name required";
     }
-    this.setState(state);
+    this.setState({ lastNameError });
   }
 
   onPhoneChange(phone) {
-    const state = Object.assign({}, this.state);
-    state.phone = phone;
-    this.setState(state);
+    this.setState({ phone });
   }
 
   onPhoneBlur() {
-    const state = Object.assign({}, this.state);
     const phone = this.state.phone.replace(/\D/g, "");
+    let phoneError = null;
     if (phone.length == 0) {
-      state.phoneError = "Phone required";
+      phoneError = "Phone required";
     } else if (phone.length !== 10) {
-      state.phoneError = "Phone invalid";
+      phoneError = "Phone invalid";
     } else {
-      state.phoneError = "";
+      phoneError = "";
     }
-    this.setState(state);
-  }
-
-  onLastNameBlur() {
-    const state = Object.assign({}, this.state);
-    if (this.state.lastName.length != 0) {
-      state.lastNameError = "Last Name required";
-    } else {
-      state.lastNameError = null;
-    }
-    this.setState(state);
+    this.setState({
+      phoneError
+    });
   }
 
   onEmailBlur() {
-    const state = Object.assign({}, this.state);
+    let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
-      state.emailError = "Invalid Email";
+      emailError = "Invalid Email";
     } else {
-      state.emailError = null;
+      emailError = null;
     }
-    this.setState(state);
+    this.setState({ emailError });
   }
 
   validateEmail(email) {
@@ -122,69 +106,158 @@ export default class Register extends React.Component {
     return re.test(email);
   }
 
+  submit() {
+    if (this.state.firstName.length < 1) {
+      return Alert.alert(
+        "First Name Required",
+        "Name required to comply with 311 requirements."
+      );
+    } else if (this.state.lastName.length < 1) {
+      return Alert.alert(
+        "Last Name Required",
+        "Name required to comply with 311 requirements."
+      );
+    } else if (this.state.phone.replace(/\D/g, "").length != 10) {
+      return Alert.alert(
+        "Phone number invalid",
+        "Ten digit phone number required."
+      );
+    } else if (!this.validateEmail(this.state.email)) {
+      return Alert.alert(
+        "Email invalid",
+        "Valid Email required to communicate with 311."
+      );
+    } else if (!this.state.testify) {
+      return Alert.alert(
+        "Testify required",
+        "You must be willing to testify by phone to use Reported."
+      );
+    }
+    this.setState({ registering: true });
+    const { firstName, lastName, phone, testify, email, password } = this.state;
+    api
+      .register({
+        firstName,
+        lastName,
+        phone,
+        testify,
+        email,
+        password
+      })
+      .then(success => {
+        const {
+          navigation: { navigate }
+        } = this.props;
+        this.setState({ registering: false });
+        navigate("Home");
+      })
+      .catch(e => {
+        this.setState({ registering: false });
+        let message = "";
+        if (x.response) {
+          if (x.response.status == 401) {
+            message = "Credentials not found";
+          } else {
+            message = x.response.data.message;
+          }
+        } else if (x.request) {
+          message = "Server was unresponsive";
+        } else {
+          messaage = "Unknown error";
+        }
+        console.log(message);
+        this.setState({ error: message });
+        console.log("error registering in ", x);
+      });
+  }
+
   render() {
     return (
-      <KeyboardAvoidingView style={styles.container}>
-        <Input
-          label={"First Name"}
-          ref={this.firstName}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.firstNameError}
-          onChangeText={firstName => this.onFirstNameChange(firstName)}
-          onBlur={() => this.onFirstNameBlur()}
-          leftIcon={<Icon type="material" name="person" />}
-        />
-        <Input
-          label={"Last Name"}
-          ref={this.firstName}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.lastNameError}
-          onChangeText={lastName => this.onLastNameChange(lastName)}
-          onBlur={() => this.onLastNameBlur()}
-          leftIcon={<Icon type="material" name="person" />}
-        />
-        <Input
-          label={"Phone"}
-          keyboardType={"phone-pad"}
-          ref={this.firstName}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.phoneError}
-          onChangeText={email => this.onPhoneChange(email)}
-          onBlur={() => this.onPhoneBlur()}
-          leftIcon={<Icon type="material-community" name="phone" />}
-        />
-        <Input
-          label={"Email"}
-          autoCapitalize={"none"}
-          keyboardType="email-address"
-          ref={this.field}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.emailError}
-          onChangeText={email => this.onEmailChange(email)}
-          onBlur={() => this.onEmailBlur()}
-          leftIcon={<Icon type="material-community" name="email" />}
-        />
-        <Input
-          label="Password (optional)"
-          secureTextEntry={true}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          leftIcon={<Icon type="material-community" name="lock" />}
-        />
-        <TouchableOpacity
-          style={styles.alreadyRegistered}
-          onPress={() => this.onAlreadyRegistered()}
-        >
-          <Text>Already Registered? Login</Text>
-        </TouchableOpacity>
+      <KeyboardAvoidingView behavior="padding" style={styles.container}>
+        <ScrollView>
+          <TouchableOpacity
+            style={styles.alreadyRegistered}
+            onPress={() => this.onAlreadyRegistered()}
+          >
+            <Text>Already Registered? Login</Text>
+          </TouchableOpacity>
+          <View
+            style={{
+              opacity: this.state.error ? 100 : 0,
+              justifyContent: "center",
+              alignItems: "center",
+              flexDirection: "row"
+            }}
+          >
+            <Badge status="error" />
+            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+          </View>
+          <View style={{ marginTop: "10%" }} />
+          <Input
+            label={"First Name"}
+            ref={this.firstName}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.firstNameError}
+            onChangeText={firstName => this.onFirstNameChange(firstName)}
+            onBlur={() => this.onFirstNameBlur()}
+            leftIcon={<Icon type="material" name="person" />}
+          />
+          <Input
+            label={"Last Name"}
+            ref={this.lastName}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.lastNameError}
+            onChangeText={lastName => this.onLastNameChange(lastName)}
+            onBlur={() => this.onLastNameBlur()}
+            leftIcon={<Icon type="material" name="person" />}
+          />
+          <Input
+            label={"Phone"}
+            keyboardType={"phone-pad"}
+            ref={this.phone}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.phoneError}
+            onChangeText={email => this.onPhoneChange(email)}
+            onBlur={() => this.onPhoneBlur()}
+            leftIcon={<Icon type="material-community" name="phone" />}
+          />
+          <Input
+            label={"Email"}
+            autoCapitalize={"none"}
+            keyboardType="email-address"
+            ref={this.field}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.emailError}
+            onChangeText={email => this.onEmailChange(email)}
+            onBlur={() => this.onEmailBlur()}
+            leftIcon={<Icon type="material-community" name="email" />}
+          />
+          <Input
+            label="Password (optional)"
+            secureTextEntry={true}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            leftIcon={<Icon type="material-community" name="lock" />}
+          />
+
+          <CheckBox
+            containerStyle={styles.field}
+            onPress={() => this.setState({ testify: !this.state.testify })}
+            title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
+            checked={this.state.testify}
+          />
+        </ScrollView>
         <View style={styles.field}>
           <Button
-            onPress={() => {}}
-            loading={this.state.loading}
+            onPress={() => this.submit()}
+            loading={this.state.registering}
+            containerStyle={{
+              marginBottom: 88
+            }}
             buttonStyle={Object.assign(
               {
                 padding: 20
@@ -201,10 +274,7 @@ export default class Register extends React.Component {
 
 const styles = StyleSheet.create({
   container: {
-    position: "absolute",
-    flex: 1,
-    width: "100%",
-    height: "100%"
+    flex: 1
   },
   email: {
     top: "20%"
@@ -213,7 +283,8 @@ const styles = StyleSheet.create({
     marginTop: 30
   },
   alreadyRegistered: {
-    marginTop: 30,
+    marginTop: 10,
+    padding: 5,
     alignItems: "center"
   }
 });
