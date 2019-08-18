@@ -139,7 +139,10 @@ export default class Register extends React.Component {
       .register({
         firstName,
         lastName,
-        phone,
+        phone: `(${phone.substring(0, 3)}) ${phone.substring(
+          3,
+          6
+        )}-${phone.substring(6, 10)}`,
         testify,
         email,
         password
@@ -155,6 +158,8 @@ export default class Register extends React.Component {
         this.setState({ registering: false });
         let message = "";
         if (x.response) {
+          alert(x.response);
+          alert(JSON.stringify(x.response));
           if (x.response.status == 401) {
             message = "Credentials not found";
           } else {
