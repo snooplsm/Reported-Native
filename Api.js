@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "http://localhost:8084/prod/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -88,7 +88,7 @@ ax.interceptors.request.use(
   }
 );
 
-export const uploadFile = file => {
+export const uploadFile = (file, extra) => {
   return new Promise((resolve, reject) => {
     const data = {};
     isSignedIn()
@@ -115,7 +115,12 @@ export const uploadFile = file => {
       })
       .then(blob => {
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
-        const key = `${data.user.id}/${time}.jpg`;
+        let ext = data.fc.uri || data.fc.url;
+        ext =
+          ext.lastIndexOf(".") != -1 &&
+          ext.lastIndexOf(".") != ext.length - 1 &&
+          ext.substring(ext.lastIndexOf(".") + 1);
+        const key = `${data.user.id}/${time}.${ext}`;
         console.log("blob key", key);
         const metaData = Object.assign({
           "User-Id": data.user.id,
@@ -137,11 +142,13 @@ export const uploadFile = file => {
         } else {
           contentType = "video/mp4";
         }
+        const callback = extra && extra.listener;
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
           },
           level: "public",
+          progressCallback: callback,
           metadata: metaData,
           contentType: contentType
         }).then(res => {

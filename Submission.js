@@ -1,10 +1,18 @@
 import React from "react";
-import { Alert, Text, TouchableOpacity, View, StyleSheet } from "react-native";
+import {
+  AsyncStorage,
+  Alert,
+  Text,
+  TouchableOpacity,
+  View,
+  StyleSheet
+} from "react-native";
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
 import * as FileSystem from "expo-file-system";
+import * as Constants from "expo-constants";
 import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
 import {
@@ -24,6 +32,7 @@ import LogoTitle from "./LogoTitle";
 import moment from "moment";
 import { ScrollView } from "react-navigation";
 import { IconStyle, colors } from "./Styles";
+import { ProgressBar } from "react-native-paper";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 
@@ -70,8 +79,9 @@ export default class Submission extends React.Component {
       showComplaintModal: undefined,
       showAddressModal: undefined,
       timeofreport: undefined,
+      timeofreportstr: undefined,
       complaints: [],
-      imageModal: false,
+      imageModal: undefined,
       uploadedMedia: {},
       submitting: false,
       description: "",
@@ -98,6 +108,7 @@ export default class Submission extends React.Component {
       canGoBack: false,
       onClearPressed: this.onClearPressed
     });
+    this.loadOffline();
   }
 
   onClearPressed = () => {
@@ -121,7 +132,8 @@ export default class Submission extends React.Component {
       console.log("null state");
       return false;
     }
-    if (this.state.imageModal !== false) {
+    if (this.state.imageModal) {
+      console.log("clear image modal");
       this.setState({ imageModal: undefined });
       return true;
     }
@@ -137,21 +149,50 @@ export default class Submission extends React.Component {
       this.setState({ showComplaintModal: undefined });
       return true;
     }
+    return false;
   };
 
   get modalsShowing() {
     const state = this.state;
     return (
-      state.imageModal === true ||
+      state.imageModal !== undefined ||
       state.datePickerVisible ||
       state.showAddressModal ||
       state.showComplaintModal
     );
   }
 
+  get draftKey() {
+    return `report.draft.${Constants.nativeAppVersion}`;
+  }
+
+  saveOffline = async () => {
+    try {
+      const state = Object.assign(this.state, {});
+
+      await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
+      console.log("saved state");
+    } catch (error) {
+      console.log("async error", error);
+    }
+  };
+
+  loadOffline = async () => {
+    try {
+      const draft = await AsyncStorage.getItem(this.draftKey);
+      const data = draft && JSON.parse(draft);
+      if (data) {
+        this.setState(data);
+      }
+    } catch (error) {
+      console.log("erorr loading draft", error);
+    }
+  };
+
   setState(state, lambda) {
     super.setState(state, () => {
       if (this.modalsShowing) {
+        console.log("can go back!!");
         this.props.navigation.setParams({ canGoBack: true });
       } else {
         this.props.navigation.setParams({ canGoBack: false });
@@ -160,6 +201,7 @@ export default class Submission extends React.Component {
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
       });
+      this.saveOffline();
       if (lambda) {
         lambda();
       }
@@ -167,7 +209,7 @@ export default class Submission extends React.Component {
   }
 
   closeModal() {
-    this.setState({ imageModal: false });
+    this.setState({ imageModal: undefined });
   }
 
   removeImage(index) {
@@ -175,7 +217,7 @@ export default class Submission extends React.Component {
     let newImages = [...media];
     newImages.splice(index, 1);
     console.log("new images size", newImages.length);
-    this.setState({ media: newImages, imageModal: newImages.length > 0 });
+    this.setState({ media: newImages, imageModal: undefined });
   }
 
   get addressString() {
@@ -266,7 +308,7 @@ export default class Submission extends React.Component {
   }
 
   get imageModal() {
-    if (this.state.imageModal !== false) {
+    if (this.state.imageModal !== undefined) {
       return (
         <ImageViewer
           ref={ref => {
@@ -294,7 +336,6 @@ export default class Submission extends React.Component {
                   flex: 1,
                   flexDirection: "row",
                   flexWrap: "nowrap",
-                  backgroundColor: "red",
                   justifyContent: "flex-end"
                 }}
               >
@@ -322,7 +363,9 @@ export default class Submission extends React.Component {
   componentWillMount() {
     this.timeofreportinterval = setInterval(() => {
       const time = this.timeofreport(this.state.timeofreport);
-      this.setState({ timeofreportstr: time });
+      if (this.state.timeofreportstr !== time) {
+        this.setState({ timeofreportstr: time });
+      }
     }, 60000);
   }
 
@@ -378,6 +421,34 @@ export default class Submission extends React.Component {
     Alert.alert(title, message);
   }
 
+  progressListener(progress) {
+    const _this = this;
+    var promise = new Promise(function(resolve, reject) {
+      const reducer = (sum, num) => {
+        return sum + num.size;
+      };
+      const plate =
+        _this.state.license &&
+        _this.state.license.plate &&
+        _this.state.license.plate.image;
+      console.log("plate is ", plate);
+      const total =
+        _this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
+      const loaded =
+        _this.state.uploadedMedia.reduce(reducer, 0) + progress.loaded;
+      resolve({ total, loaded });
+    });
+    promise
+      .then(prog => {
+        console.log("total uploaded", prog);
+        this.progress.progress = loaded / total;
+      })
+      .catch(e => {
+        console.log(e);
+        console.log(this.state.license);
+      });
+  }
+
   submit() {
     if (this.state.complaints.length < 1) {
       this.alrt(
@@ -408,7 +479,9 @@ export default class Submission extends React.Component {
       this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
       this.setState({ submitting: true });
-      uploadFile(this.state.license.plate.image)
+      uploadFile(this.state.license.plate.image, {
+        listener: this.progressListener
+      })
         .then(uploaded => {
           uploaded.type = "S3_IMAGE_LICENSE";
           this.state.uploadedMedia[
@@ -426,7 +499,10 @@ export default class Submission extends React.Component {
     );
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
-      uploadFile(file)
+      this.setState({ submitting: true });
+      uploadFile(file, {
+        listener: this.progressListener
+      })
         .then(uploaded => {
           if (file.type == "image") {
             uploaded.type = "S3_IMAGE";
@@ -442,6 +518,8 @@ export default class Submission extends React.Component {
         });
       return;
     }
+
+    this.setState({ submitting: true });
 
     const license = Object.assign(
       {
@@ -504,6 +582,7 @@ export default class Submission extends React.Component {
         this.clear();
       })
       .catch(e => {
+        console.log(e);
         this.alrt(
           "Problem submitting report",
           "An error occured while submitting your report.  Please try again."
@@ -562,7 +641,6 @@ export default class Submission extends React.Component {
 
             <ImageCarousel
               onItemPressed={({ item, index }) => {
-                console.log("index", index);
                 this.setState({ imageModal: index });
               }}
               entries={this.state.media}
@@ -604,6 +682,7 @@ export default class Submission extends React.Component {
               ref={r => (this._license = r)}
               onPlateSelected={plate => {
                 const { candidate } = plate;
+                console.log("candidate plate", candidate);
                 if (
                   candidate &&
                   candidate.plate &&
@@ -614,6 +693,7 @@ export default class Submission extends React.Component {
                   this.setState({ license: undefined });
                 }
               }}
+              license={this.state.license}
               alpr={this.state.alpr}
             />
 
@@ -686,6 +766,14 @@ export default class Submission extends React.Component {
             <View style={{ height: 100 }} />
           </View>
         </ScrollView>
+        {this.state.submitting && (
+          <ProgressBar
+            ref={this.progress}
+            isVisible={this.state.submitting}
+            color={"red"}
+          />
+        )}
+
         <Button
           onPress={() => this.submit()}
           title="Submit"

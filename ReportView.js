@@ -19,6 +19,9 @@ import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 
 const reduce512 = (prev, curr) => {
+  if (prev === null) {
+    return null;
+  }
   return Math.abs(curr.width - 512) < Math.abs(prev.width - 512) ? curr : prev;
 };
 
@@ -32,7 +35,10 @@ export default class ReportView extends React.Component {
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
       return report.media.map((image, index) => {
-        const thumb = image.thumbnails.reduce(reduce512);
+        const thumb = image.thumbnails && image.thumbnails.reduce(reduce512);
+        if (!thumb) {
+          return <></>;
+        }
         return (
           <>
             <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
