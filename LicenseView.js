@@ -13,12 +13,24 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { ImagePicker, Permissions } from "expo";
 import { AutoStyle } from "./Styles";
 import { alpr } from "./Api";
-import { result } from "./alpr";
 
 export default class LicenseView extends React.Component {
   constructor(props) {
     super(props);
     this.state = this.initialState;
+  }
+
+  get licenseFromProps() {
+    console.log("license from props", this.props.licnese);
+    console.log("license from props2", this.state.licensePlate);
+    if (this.state.licensePlate !== "") {
+      return this.state.licensePlate;
+    }
+    const { license } = this.props;
+    if (license && license.candidate && license.candidate.plate) {
+      return license.candidate.plate;
+    }
+    return "";
   }
 
   get initialState() {
@@ -184,7 +196,7 @@ export default class LicenseView extends React.Component {
             });
           }}
           label={"License Plate"}
-          value={this.state.licensePlate}
+          value={this.licenseFromProps}
         />
 
         <Modal
