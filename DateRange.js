@@ -69,8 +69,6 @@ export class MonthDayYear {
   }
 
   get allDates() {
-    console.log("allDates", this);
-    console.log(this.year, this.month, this.day);
     const month = this.month;
     const year = this.year;
     const day = this.day;

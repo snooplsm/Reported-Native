@@ -18,7 +18,6 @@ export default class ImageCarousel extends React.Component {
     return (
       <SliderEntry
         onItemPress={() => {
-          console.log(item, index);
           if (this.props.onItemPressed) {
             this.props.onItemPressed({ item, index });
           }
@@ -74,9 +73,6 @@ export default class ImageCarousel extends React.Component {
           renderItem={this._renderItem.bind(this)}
           sliderWidth={sliderWidth}
           itemWidth={itemWidth}
-          onPress={() => {
-            console.log("onpresszi");
-          }}
         />
         {this.pagination}
       </View>

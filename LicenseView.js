@@ -21,8 +21,6 @@ export default class LicenseView extends React.Component {
   }
 
   get licenseFromProps() {
-    console.log("license from props", this.props.licnese);
-    console.log("license from props2", this.state.licensePlate);
     if (this.state.licensePlate !== "") {
       return this.state.licensePlate;
     }
@@ -58,8 +56,6 @@ export default class LicenseView extends React.Component {
   }
 
   processAlpr({ image, original }) {
-    console.log("image:", image);
-    console.log("original:", original);
     const { results } = this.props.alpr.alprResult;
     const images = results.map(result => {
       const { plate, confidence, region, candidates, coordinates } = result;
@@ -93,14 +89,6 @@ export default class LicenseView extends React.Component {
         height
       };
 
-      console.log("original", original);
-      console.log("image", image);
-      console.log("crop", crop);
-      //
-      // console.log(coordinates);
-      // console.log(crop);
-      // console.log(image);
-      // console.log(original);
       return {
         plates: plates,
         imageAsync: ImageManipulator.manipulateAsync(original.url, [
@@ -143,7 +131,6 @@ export default class LicenseView extends React.Component {
   }
 
   _onPlateSelected(selected) {
-    console.log("selected", selected);
     this.setState({
       selected: selected,
       licensePlate: selected.candidate.plate,
