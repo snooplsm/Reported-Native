@@ -108,9 +108,7 @@ export default class Login extends React.Component {
         } else {
           messaage = "Unknown error";
         }
-        console.log(message);
         this.setState({ error: message });
-        console.log("error logging in ", x);
       });
   }
 

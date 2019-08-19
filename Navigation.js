@@ -7,6 +7,7 @@ import CalendarView from "./CalendarView";
 import AuthLoadingScreen from "./AuthLoadingScreen";
 import FilterView from "./SubmissionFilter";
 import Profile from "./Profile";
+import { colors } from "./Styles";
 import { Icon } from "react-native-elements";
 import React from "react";
 import {
@@ -106,7 +107,19 @@ const SignedInNavigator = createBottomTabNavigator(
     }
   },
   {
-    defaultNavigationOptions
+    defaultNavigationOptions,
+    tabBarOptions: {
+      activeTintColor: colors.orange,
+      // activeBackgroundColor: "yellow", //Doesn't work
+      showIcon: true,
+      style: {
+        height: 66
+      },
+      labelStyle: {
+        fontSize: 14,
+        paddingBottom: 4
+      }
+    }
   }
 );
 

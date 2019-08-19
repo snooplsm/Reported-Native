@@ -127,13 +127,10 @@ export default class Submission extends React.Component {
   };
 
   onBackPressed = () => {
-    console.log("on back pressed");
     if (!this.state) {
-      console.log("null state");
       return false;
     }
     if (this.state.imageModal) {
-      console.log("clear image modal");
       this.setState({ imageModal: undefined });
       return true;
     }
@@ -171,7 +168,6 @@ export default class Submission extends React.Component {
       const state = Object.assign(this.state, {});
 
       await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
-      console.log("saved state");
     } catch (error) {
       console.log("async error", error);
     }
@@ -393,7 +389,6 @@ export default class Submission extends React.Component {
   }
 
   validatePlate() {
-    console.log(this.state.license);
     const okPlate =
       this.state.license &&
       this.state.license.candidate &&
@@ -440,12 +435,10 @@ export default class Submission extends React.Component {
     });
     promise
       .then(prog => {
-        console.log("total uploaded", prog);
         this.progress.progress = loaded / total;
       })
       .catch(e => {
         console.log(e);
-        console.log(this.state.license);
       });
   }
 
@@ -717,7 +710,6 @@ export default class Submission extends React.Component {
             <View>
               <TouchableOpacity
                 onPress={() => {
-                  console.log("datepickers");
                   this.setState({
                     datePickerVisible: true
                   });
@@ -776,8 +768,12 @@ export default class Submission extends React.Component {
 
         <Button
           onPress={() => this.submit()}
-          title="Submit"
+          title="SUBMIT"
           loading={this.state.submitting}
+          titleStyle={{
+            fontSize: 22,
+            fontWeight: "bold"
+          }}
           buttonStyle={[
             {
               opacity: this.percentageOpacity

@@ -48,7 +48,6 @@ export default class Profile extends React.Component {
 
   editPressed = () => {
     const { editable } = this.state;
-    console.log(editable, !editable);
     this.setState({ editable: !editable });
     if (editable) {
       this.setData(this.state.user);
@@ -122,7 +121,6 @@ export default class Profile extends React.Component {
   }
 
   onPhoneChange(phone) {
-    console.log(phone);
     this.setState({ phone });
   }
 
@@ -233,7 +231,6 @@ export default class Profile extends React.Component {
   updateUser() {
     const user = {};
     const { email, phone, firstName, lastName } = this.state;
-    console.log(phone);
     const { email: e, phone: p, firstName: f, lastName: l } = this.state.user;
     if (email != e) {
       user.email = email;
@@ -247,11 +244,9 @@ export default class Profile extends React.Component {
     if (lastName != l) {
       user.lastName = lastName;
     }
-    console.log(user);
     api
       .updateUser(user)
       .then(success => {
-        console.log(success);
         this.setData(success);
       })
       .catch(e => {

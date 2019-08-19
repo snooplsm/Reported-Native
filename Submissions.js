@@ -57,7 +57,8 @@ export default class Submissions extends React.Component {
       count: 0,
       filter: null,
       refreshing: true,
-      lastResultEmpty: false
+      lastResultEmpty: false,
+      error: undefined
     };
   }
 
@@ -91,15 +92,6 @@ export default class Submissions extends React.Component {
 
   componentDidMount() {
     this.props.navigation.setParams({ filterPressed: this._filterPressed });
-    this.props.navigation.addListener("didBlur", payload => {
-      console.debug("didBlur", payload);
-    });
-    this.props.navigation.addListener("willFocus", payload => {
-      console.debug("willFocus", payload);
-    });
-    this.props.navigation.addListener("didFocus", payload => {
-      console.debug("didFocus", payload);
-    });
     this.fetchReports();
   }
 
@@ -108,7 +100,7 @@ export default class Submissions extends React.Component {
     api
       .reports(this.state.filter, offset)
       .then(res => {
-        this.setState({ refreshing: false });
+        this.setState({ refreshing: false, error: undefined });
         const addressMap = res.data.addresses.reduce((map, x) => {
           map[x.id] = x;
           return map;
@@ -144,9 +136,19 @@ export default class Submissions extends React.Component {
         });
       })
       .catch(err => {
-        this.setState({ refreshing: false });
-        console.log(err);
-        alert("An error occurred");
+        let message = "";
+        if (err.response) {
+          if (err.response.status == 401) {
+            message = "Credentials not found";
+          } else {
+            message = err.response.data.message;
+          }
+        } else if (err.request) {
+          message = "Server was unresponsive";
+        } else {
+          messaage = "Unknown error";
+        }
+        this.setState({ refreshing: false, error: message });
       });
   }
 
@@ -165,8 +167,19 @@ export default class Submissions extends React.Component {
         });
       })
       .catch(e => {
-        console.log(e);
-        alert("There was a problem.");
+        let message = "";
+        if (x.response) {
+          if (x.response.status == 401) {
+            message = "Credentials not found";
+          } else {
+            message = x.response.data.message;
+          }
+        } else if (x.request) {
+          message = "Server was unresponsive";
+        } else {
+          messaage = "Unknown error";
+        }
+        alert("Problem deleting report");
       });
   }
 
@@ -261,6 +274,25 @@ export default class Submissions extends React.Component {
               {!this.state.refreshing && this.state.reports.length === 0 && (
                 <Text>No reports found.</Text>
               )}
+            </View>
+          )}
+          {this.state.error && this.state.reports.length === 0 && (
+            <View
+              style={{
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                justifyContent: "center",
+                alignItems: "center",
+                flex: 1
+              }}
+            >
+              <TouchableOpacity onPress={() => this.fetchReports()}>
+                <Icon name="refresh" size={100} />
+                <Text
+                  style={{ textAlign: "center" }}
+                >{`${this.state.error}\n\nTap to retry`}</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>

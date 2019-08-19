@@ -123,7 +123,6 @@ export default class CalendarView extends React.Component {
 
   render() {
     const months = moment.monthsShort();
-    console.log("render");
     return (
       <View>
         <View style={style.iconContainer}>
@@ -175,7 +174,6 @@ export default class CalendarView extends React.Component {
         </View>
         <Button
           onPress={() => {
-            console.log(this.state.mdy);
             if (this.state.mdy.valid) {
               const onValidDate = this.props.onValidDate ?? (() => {});
               onValidDate(this.state.mdy);

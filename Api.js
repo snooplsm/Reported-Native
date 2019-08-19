@@ -51,8 +51,6 @@ Amplify.configure({
   }
 });
 
-console.log(BASE_URL);
-
 const ax = axios.create({
   baseURL: BASE_URL
 });
@@ -121,7 +119,6 @@ export const uploadFile = (file, extra) => {
           ext.lastIndexOf(".") != ext.length - 1 &&
           ext.substring(ext.lastIndexOf(".") + 1);
         const key = `${data.user.id}/${time}.${ext}`;
-        console.log("blob key", key);
         const metaData = Object.assign({
           "User-Id": data.user.id,
           "File-Name": data.fc.uri || data.fc.url,
@@ -152,7 +149,6 @@ export const uploadFile = (file, extra) => {
           metadata: metaData,
           contentType: contentType
         }).then(res => {
-          console.log("success", res);
           resolve({
             url: `https://${BUCKET}.s3.amazonaws.com/uploads/${res.key}`,
             meta: data.meta,
@@ -209,8 +205,6 @@ export const alpr = {
       })
       .then(response => {
         if (response) {
-          console.log("cache found alpr");
-          console.log(response);
           return JSON.parse(response);
         } else {
           const url = `https://api.openalpr.com/v2/recognize?country=us&secret_key=${ALPR_KEY}`;
@@ -231,8 +225,6 @@ export const alpr = {
           return fetch(url, options)
             .then(result => result.json())
             .then(json => {
-              console.log(json);
-              console.log(`saving alpr to ${temp.key}`);
               AsyncStorage.setItem(temp.key, JSON.stringify(json));
               return json;
             });
@@ -272,22 +264,6 @@ export const api = {
     return ax.post("/forgot_password", forgot);
   },
 
-  // upload: (fileJson, meta) => {
-  //   console.log("upload fileJson");
-  //   FileSystem.getInfoAsync(fileJson.url, { md5: true }).then(info => {
-  //     console.log(info);
-  //     return info;
-  //   });
-  //   return urlToBlob(fileJson.url).then(file => {
-  //     console.log("fetch upload", BASE_URL);
-  //     console.log(file);
-  //     return fetch(`${BASE_URL}/upload`, {
-  //       method: "PUT",
-  //       body: file
-  //     });
-  //   });
-  // },
-
   changePassword: password => {
     return ax.post(`/change_password`, {
       password: password
@@ -310,12 +286,10 @@ export const api = {
   },
 
   report: report => {
-    console.log("put report", report);
     return ax.put("/report", report);
   },
 
   deleteReport: reportId => {
-    console.log("delete report", reportId);
     return ax.delete(`/report/delete/${reportId}`, {});
   },
 

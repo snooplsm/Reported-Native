@@ -75,11 +75,7 @@ export default class ComplaintView extends React.Component {
             );
           })}
         </View>
-        <TouchSpoof
-          onPress={() => {
-            console.log("on prezzz");
-          }}
-        >
+        <TouchSpoof onPress={() => {}}>
           <View
             style={[
               {
@@ -97,13 +93,9 @@ export default class ComplaintView extends React.Component {
               hideResults={this.state.hideResults}
               placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
               onFocus={() => {
-                console.log("onPress");
                 const state = Object.assign({}, this.state);
                 state.hideResults = false;
                 this.setState(state);
-              }}
-              onKeyPress={key => {
-                console.log("key", key);
               }}
               onChangeText={text => {
                 const state = Object.assign({}, this.state);
