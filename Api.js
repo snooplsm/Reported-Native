@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "http://localhost:8084/prod/",
+  dev: "https://reported-stats.herokuapp.com/prod/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -247,10 +247,34 @@ const urlToBlob = url =>
     xhr.send();
   });
 
+export const finds = (address, key) => {
+  return address
+    .filter(x => x.types.includes(key))
+    .map(x => x.short_name)
+    .shift();
+};
+
 export const reverseGeocode = location => {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM
-    &latlng=${location.lat},${location.lng}&rankby=distance`;
-  return fetch(url).then(res => res.json());
+  if (!location || !location.lat || !location.lng) {
+    return Promise.reject(
+      `illegal location ${location == null ? null : JSON.stringify(location)}`
+    );
+  }
+  const key = `location.${location.lat}.${location.lng}`;
+  return AsyncStorage.getItem(key).then(item => {
+    if (item) {
+      return JSON.parse(item);
+    }
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat.toFixed(
+      3
+    )},${location.lng.toFixed(3)}&rankby=distance`;
+    return fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        AsyncStorage.setItem(key, JSON.stringify(data));
+        return data;
+      });
+  });
 };
 
 export const api = {

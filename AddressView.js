@@ -7,37 +7,127 @@ import {
   TouchableWithoutFeedback,
   Text,
   View,
-  SafeAreaView
+  SafeAreaView,
+  FlatList
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { Button, Icon, Input } from "react-native-elements";
 import { AutoStyle } from "./Styles";
 import { addresses } from "./Addresses.js";
 import marker from "./assets/car-marker.png";
+import { reverseGeocode, finds } from "./Api";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 
 export default class AddressView extends React.Component {
   constructor(props) {
     super(props);
+    console.log(props.location);
+    const location = (props.location &&
+      props.location.place.geometry.location) || {
+      lat: 40.70696,
+      lng: -73.973621
+    };
+
     this.state = {
       listViewDisplayed: true,
       region: {
-        latitude: 40.70696,
-        longitude: -73.973621,
+        latitude: location.lat,
+        longitude: location.lng,
         latitudeDelta: 0.0922,
         longitudeDelta: 0.0421
       },
       camera: {
-        latitude: 40.70696,
-        longitude: -73.973621
+        latitude: location.latitude,
+        longitude: location.longitude,
+        zoom: 10.0
       }
     };
   }
 
   onRegionChange = region => {
-    this.setState({
-      region
-    });
+    this.setState(
+      {
+        region
+      },
+      () => {
+        this.debounce = setTimeout(() => {
+          const { region } = this.state;
+          if (!region) {
+            return;
+          }
+          const location = { lat: region.latitude, lng: region.longitude };
+
+          reverseGeocode(location)
+            .then(data => {
+              //console.log(data);
+              const { results: pre } = data;
+              if (pre) {
+                const formattedAddress = {};
+                const results = [];
+                pre.forEach((x, index) => {
+                  const { address_components: address } = x;
+                  const premise = finds(address, "premise");
+                  const building = finds(address, "street_number");
+                  const street = finds(address, "route");
+                  if (!premise && !building && !street) {
+                    //alert("no dice", premise, building, street);
+                  } else {
+                    //alert("we good");
+                    if (!formattedAddress[x.formatted_address]) {
+                      formattedAddress[x.formatted_address] = x;
+                      results.push(x);
+                    }
+                  }
+                });
+                this.setState({ results });
+              }
+            })
+            .catch(e => {
+              console.log(e);
+            });
+        }, 400);
+      }
+    );
+  };
+
+  componentWillUnount() {
+    clearTimeout(this.debounce);
+  }
+
+  _keyExtractor = (item, index) => item.formatted_address;
+
+  _renderItem = ({ item }) => {
+    const { address_components: address } = item;
+    const premise = finds(address, "premise");
+    const building = finds(address, "street_number");
+    const street = finds(address, "route");
+    let title = "";
+    if (premise) {
+      title = [premise, street].filter(x => x).join(" ");
+    } else {
+      title = [building, street].join(" ");
+    }
+    return (
+      <Button
+        id={item.id}
+        title={title}
+        onPress={() => {
+          this.props.onPress({
+            place: item
+          });
+        }}
+        containerStyle={{
+          padding: 5,
+          opacity: 0.75
+        }}
+        buttonStyle={{
+          backgroundColor: "#FFF"
+        }}
+        titleStyle={{
+          color: "black"
+        }}
+      />
+    );
   };
 
   render() {
@@ -139,19 +229,48 @@ export default class AddressView extends React.Component {
           />
         )}
         {this.state.map && (
-          <View style={styles.map}>
+          <View
+            style={
+              Platform.OS === "ios" ? styles.mapIos : styles.mapAndroidContainer
+            }
+          >
             <MapView
-              style={styles.map}
+              style={Platform.OS === "ios" ? styles.mapIos : styles.mapAndroid}
               // initialCamera={this.state.camera}
               zoomEnabled={true}
               initialRegion={region}
               onRegionChangeComplete={this.onRegionChange}
               style={{ flex: 1 }}
             >
-              <View style={styles.markerFixed}>
-                <Image style={styles.marker} source={marker} />
-              </View>
+              {Platform.OS === "ios" && (
+                <>
+                  <View style={styles.markerFixed}>
+                    <Image style={styles.marker} source={marker} />
+                  </View>
+                </>
+              )}
             </MapView>
+            {Platform.OS === "android" && (
+              <>
+                <View style={styles.markerFixed}>
+                  <Image style={styles.marker} source={marker} />
+                </View>
+                <SafeAreaView style={styles.footer}>
+                  {this.state.results.slice(0, 4).map(addy => {
+                    console.log(addy.formatted_address);
+                    return <Text>{addy.formatted_address || ""}</Text>;
+                  })}
+                </SafeAreaView>
+              </>
+            )}
+            {Platform.OS === "ios" && (
+              <FlatList
+                style={styles.footer}
+                horizontal={true}
+                renderItem={this._renderItem}
+                data={this.state.results}
+              />
+            )}
           </View>
         )}
       </>
@@ -180,25 +299,28 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14
   },
-  map: {
+  mapIos: {
+    flex: 1
+  },
+  mapAndroid: {},
+  mapAndroidContainer: {
     flex: 1
   },
   markerFixed: {
     left: "50%",
-    marginLeft: -24,
-    marginTop: -48,
+    marginLeft: -40,
+    marginTop: -80,
     position: "absolute",
     top: "50%"
   },
   marker: {
-    height: 48,
-    width: 48
+    height: 80,
+    width: 80
   },
   footer: {
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     bottom: 0,
     position: "absolute",
-    width: "100%"
+    alignItems: "center"
   },
   region: {
     color: "#fff",

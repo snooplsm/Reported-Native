@@ -34,7 +34,7 @@ import { ScrollView } from "react-navigation";
 import { IconStyle, colors } from "./Styles";
 import { ProgressBar } from "react-native-paper";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr, api, uploadFile, reverseGeocode } from "./Api";
+import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
 
 const isEqual = require("react-fast-compare");
 
@@ -226,7 +226,6 @@ export default class Submission extends React.Component {
       return null;
     }
     const { address_components: address } = place;
-    const finds = this.finds;
     const premise = finds(address, "premise");
     const building = finds(address, "street_number");
     const street = finds(address, "route");
@@ -260,6 +259,7 @@ export default class Submission extends React.Component {
           }}
         >
           <AddressView
+            location={this.state.location}
             onPress={({ data, place }) => {
               console.log(place);
               this._address.blur();
@@ -379,13 +379,6 @@ export default class Submission extends React.Component {
       return `${momy.fromNow()} @ ${momy.format("M/D h:mm a")}`;
     }
     return "";
-  }
-
-  finds(address, key) {
-    return address
-      .filter(x => x.types.includes(key))
-      .map(x => x.short_name)
-      .shift();
   }
 
   validatePlate() {
@@ -534,8 +527,6 @@ export default class Submission extends React.Component {
       license.media = this.state.uploadedMedia[this.state.license.plate.url];
     }
     const address = this.state.location.place.address_components;
-
-    const finds = this.finds;
 
     const geo = this.state.location.place.geometry.location;
     const building = finds(address, "street_number");
@@ -772,14 +763,10 @@ export default class Submission extends React.Component {
           loading={this.state.submitting}
           titleStyle={{
             fontSize: 22,
-            fontWeight: "bold"
+            fontWeight: "bold",
+            opacity: this.percentageOpacity
           }}
-          buttonStyle={[
-            {
-              opacity: this.percentageOpacity
-            },
-            styles.submitButtonStyle
-          ]}
+          buttonStyle={[{}, styles.submitButtonStyle]}
         />
         {this.imageModal}
         {this.complaintModal}
