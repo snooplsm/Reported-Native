@@ -37,8 +37,8 @@ export default class AddressView extends React.Component {
         longitudeDelta: 0.0421
       },
       camera: {
-        latitude: location.latitude,
-        longitude: location.longitude,
+        latitude: location.lat,
+        longitude: location.lng,
         zoom: 10.0
       }
     };
@@ -184,13 +184,22 @@ export default class AddressView extends React.Component {
               }
             }
             renderRightButton={() => (
-              <Icon
-                onPress={() => {
-                  this.setState({ map: true });
-                }}
-                name="map"
-                size={26}
-              />
+              <View style={{ marginTop: 10, marginRight: 10 }}>
+                <TouchableOpacity>
+                  <Icon
+                    onPress={() => {
+                      this.setState({ map: true });
+                    }}
+                    name="map"
+                    containerStyle={
+                      {
+                        //padding: 2
+                      }
+                    }
+                    size={30}
+                  />
+                </TouchableOpacity>
+              </View>
             )}
             styles={{
               textInputContainer: {
@@ -244,6 +253,15 @@ export default class AddressView extends React.Component {
             >
               {Platform.OS === "ios" && (
                 <>
+                  <View style={{ right: 0, position: "absolute" }}>
+                    <Icon
+                      onPress={() => {
+                        this.setState({ map: undefined });
+                      }}
+                      name="list"
+                      size={40}
+                    />
+                  </View>
                   <View style={styles.markerFixed}>
                     <Image style={styles.marker} source={marker} />
                   </View>
