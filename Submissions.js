@@ -10,7 +10,7 @@ import {
   TouchableOpacity
 } from "react-native";
 import { Icon } from "react-native-elements";
-import { SectionList } from "react-navigation";
+import ListSpoof from "./ListSpoof";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
 import { colors } from "./Styles";
@@ -121,7 +121,7 @@ export default class Submissions extends React.Component {
           list.push(x);
           dict[date.valueOf()] = list;
         });
-        sections = Object.keys(dict).map(key => {
+        const sections = Object.keys(dict).map(key => {
           const list = dict[key];
           const date = moment(Number(key));
           return {
@@ -131,7 +131,7 @@ export default class Submissions extends React.Component {
         });
         this.setState({
           reports: combinedReports,
-          sections: sections,
+          sections: sections || [],
           lastResultEmpty
         });
       })
@@ -208,7 +208,7 @@ export default class Submissions extends React.Component {
       <>
         {this.submissionsFilter}
         <View>
-          <SectionList
+          <ListSpoof
             style={{
               width: "100%",
               height: "100%"
