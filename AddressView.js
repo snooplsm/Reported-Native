@@ -1,6 +1,7 @@
 import React from "react";
 import Autocomplete from "react-native-autocomplete-input";
 import {
+  AsyncStorage,
   Image,
   StyleSheet,
   TouchableOpacity,
@@ -21,7 +22,7 @@ import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplet
 export default class AddressView extends React.Component {
   constructor(props) {
     super(props);
-    console.log(props.location);
+    this.key = `address.view.state`;
     const location = (props.location &&
       props.location.place.geometry.location) || {
       lat: 40.70696,
@@ -121,7 +122,8 @@ export default class AddressView extends React.Component {
           opacity: 0.75
         }}
         buttonStyle={{
-          backgroundColor: "#FFF"
+          backgroundColor: "#FFF",
+          padding: 10
         }}
         titleStyle={{
           color: "black"
@@ -129,6 +131,39 @@ export default class AddressView extends React.Component {
       />
     );
   };
+
+  componentDidMount() {
+    this.loadOffline();
+  }
+
+  saveOffline = async () => {
+    console.log("save");
+    AsyncStorage.setItem(this.key, JSON.stringify(this.state));
+  };
+
+  loadOffline = async () => {
+    console.log("load");
+    AsyncStorage.getItem(this.key)
+      .then(state => {
+        console.log("got state");
+        if (state) {
+          const state2 = JSON.parse(state);
+          super.setState(state2);
+        }
+      })
+      .catch(e => {
+        console.log(e);
+      });
+  };
+
+  setState(data, lambda) {
+    super.setState(data, () => {
+      this.saveOffline();
+      if (lambda) {
+        lambda();
+      }
+    });
+  }
 
   render() {
     const { region } = this.state;
@@ -273,22 +308,15 @@ export default class AddressView extends React.Component {
                 <View style={styles.markerFixed}>
                   <Image style={styles.marker} source={marker} />
                 </View>
-                <SafeAreaView style={styles.footer}>
-                  {this.state.results.slice(0, 4).map(addy => {
-                    console.log(addy.formatted_address);
-                    return <Text>{addy.formatted_address || ""}</Text>;
-                  })}
-                </SafeAreaView>
               </>
             )}
-            {Platform.OS === "ios" && (
-              <FlatList
-                style={styles.footer}
-                horizontal={true}
-                renderItem={this._renderItem}
-                data={this.state.results}
-              />
-            )}
+
+            <FlatList
+              style={styles.footer}
+              horizontal={true}
+              renderItem={this._renderItem}
+              data={this.state.results}
+            />
           </View>
         )}
       </>
@@ -327,12 +355,12 @@ const styles = StyleSheet.create({
   markerFixed: {
     left: "50%",
     marginLeft: -40,
-    marginTop: -80,
+    marginTop: -100,
     position: "absolute",
     top: "50%"
   },
   marker: {
-    height: 80,
+    height: 100,
     width: 80
   },
   footer: {
