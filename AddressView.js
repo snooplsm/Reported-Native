@@ -305,6 +305,15 @@ export default class AddressView extends React.Component {
             </MapView>
             {Platform.OS === "android" && (
               <>
+                <View style={{ right: 0, position: "absolute" }}>
+                  <Icon
+                    onPress={() => {
+                      this.setState({ map: undefined });
+                    }}
+                    name="list"
+                    size={40}
+                  />
+                </View>
                 <View style={styles.markerFixed}>
                   <Image style={styles.marker} source={marker} />
                 </View>
