@@ -62,6 +62,10 @@ export default class Submissions extends React.Component {
     };
   }
 
+  get offset() {
+    return this.state.offset || this.state.reports.length;
+  }
+
   get submissionsFilter() {
     if (this.state.submissionsFilter) {
       return (
@@ -95,16 +99,17 @@ export default class Submissions extends React.Component {
     this.fetchReports();
   }
 
-  fetchReports(offset) {
+  fetchReports() {
     this.setState({ refreshing: true });
     api
-      .reports(this.state.filter, offset)
+      .reports(this.state.filter, this.offset)
       .then(res => {
         this.setState({ refreshing: false, error: undefined });
         const addressMap = res.data.addresses.reduce((map, x) => {
           map[x.id] = x;
           return map;
         }, {});
+        const seen = {};
         const reports = [...res.data.reports].map((report, index) => {
           return {
             report: report,
@@ -132,10 +137,12 @@ export default class Submissions extends React.Component {
         this.setState({
           reports: combinedReports,
           sections: sections || [],
+          offset: undefined,
           lastResultEmpty
         });
       })
       .catch(err => {
+        console.log(err);
         let message = "";
         if (err.response) {
           if (err.response.status == 401) {
@@ -186,7 +193,9 @@ export default class Submissions extends React.Component {
   _keyExtractor = (item, index) => item.report.id;
 
   _onRefresh = () => {
-    this.fetchReports();
+    this.setState({ offset: 0 }, () => {
+      this.fetchReports();
+    });
   };
 
   _onEndReached = info => {
@@ -200,7 +209,7 @@ export default class Submissions extends React.Component {
       return;
     }
     alert(this.state.reports.length);
-    this.fetchReports(this.state.reports.length);
+    this.fetchReports();
   };
 
   render() {
@@ -237,9 +246,9 @@ export default class Submissions extends React.Component {
             ListFooterComponent={<View style={{ height: 10 }} />}
             renderItem={({ item }) => {
               const { report, address } = item;
-              console.log(report);
               return (
                 <TouchableOpacity
+                  key={report.id}
                   onLongPress={() => {
                     if (report.status > 0) {
                       return;

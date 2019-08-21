@@ -137,7 +137,6 @@ export default class ReportView extends React.Component {
 
   render() {
     const { report: rpt } = this.props;
-    console.log(report);
     const { report, address } = rpt;
     const time = moment(report.timeofincident);
     return (
@@ -159,6 +158,12 @@ export default class ReportView extends React.Component {
 
         <Autolink text={report.description ?? ""} />
         <Autolink text={report.notes ?? ""} />
+        {(report.searchId === null || report.searchId.length === 0) && (
+          <Autolink
+            style={ButtonStyle.orangeText}
+            text={`311# Pending Submission`}
+          />
+        )}
         {report.searchId != null && report.searchId.length > 0 && (
           <TouchableOpacity onLongPress={() => this.copy(report.searchId)}>
             <Autolink

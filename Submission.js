@@ -178,6 +178,7 @@ export default class Submission extends React.Component {
       const draft = await AsyncStorage.getItem(this.draftKey);
       const data = draft && JSON.parse(draft);
       if (data) {
+        data.submitting = false;
         this.setState(data);
       }
     } catch (error) {
@@ -212,7 +213,6 @@ export default class Submission extends React.Component {
     const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
-    console.log("new images size", newImages.length);
     this.setState({ media: newImages, imageModal: undefined });
   }
 
@@ -261,7 +261,6 @@ export default class Submission extends React.Component {
           <AddressView
             location={this.state.location}
             onPress={({ data, place }) => {
-              console.log(place);
               this._address.blur();
               this.setState({
                 showAddressModal: false,
@@ -276,7 +275,6 @@ export default class Submission extends React.Component {
 
   get complaintModal() {
     if (this.state.showComplaintModal) {
-      console.log("show");
       return (
         <View
           style={{
@@ -291,7 +289,6 @@ export default class Submission extends React.Component {
         >
           <ComplaintView
             onComplaintsChanged={c => {
-              console.log(c);
               this._complaint.blur();
               this.setState({ showComplaintModal: false, complaints: c });
             }}
@@ -410,25 +407,26 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    const _this = this;
     var promise = new Promise(function(resolve, reject) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
       const plate =
-        _this.state.license &&
-        _this.state.license.plate &&
-        _this.state.license.plate.image;
+        this.state.license &&
+        this.state.license.plate &&
+        this.state.license.plate.image;
       console.log("plate is ", plate);
       const total =
-        _this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
+        this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
       const loaded =
-        _this.state.uploadedMedia.reduce(reducer, 0) + progress.loaded;
+        this.state.uploadedMedia.reduce(reducer, 0) + progress.loaded;
       resolve({ total, loaded });
     });
     promise
       .then(prog => {
-        this.progress.progress = loaded / total;
+        setState({
+          progress: loaded / total
+        });
       })
       .catch(e => {
         console.log(e);
@@ -466,13 +464,16 @@ export default class Submission extends React.Component {
     if (!plateUploaded) {
       this.setState({ submitting: true });
       uploadFile(this.state.license.plate.image, {
-        listener: this.progressListener
+        listener: progress => {
+          this.progressListener(progress);
+        }
       })
         .then(uploaded => {
+          console.log("uploaded license plate");
           uploaded.type = "S3_IMAGE_LICENSE";
-          this.state.uploadedMedia[
-            this.state.license.plate.image.url
-          ] = uploaded;
+          const uploadedMedia = this.state.uploadedMedia;
+          uploadedMedia[this.state.license.plate.image.url] = uploaded;
+          this.setState({ uploadedMedia });
           this.submit();
         })
         .catch(e => {
@@ -495,7 +496,9 @@ export default class Submission extends React.Component {
           } else {
             uploaded.type = "S3_VIDEO";
           }
-          this.state.uploadedMedia[file.url] = uploaded;
+          const uploadedMedia = this.state.uploadedMedia;
+          uploadedMedia[(file.url = uploaded)] = uploaded;
+          this.setState({ uploadedMedia });
           this.submit();
         })
         .catch(e => {
@@ -537,6 +540,7 @@ export default class Submission extends React.Component {
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
+
     this.setState({ submitting: true });
     api
       .report({
@@ -545,8 +549,7 @@ export default class Submission extends React.Component {
         complaintIds: complaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
-          state: license.plate.region,
-          media: license.media
+          state: license.plate.region
         },
         address: Object.assign({
           premise,
@@ -560,7 +563,13 @@ export default class Submission extends React.Component {
           location: geo
         }),
         timeofincident: this.state.timeofreport,
-        media: this.state.media.map(x => this.state.uploadedMedia[x.url])
+        media: this.state.media
+          .map(x => this.state.uploadedMedia[x.url])
+          .concat(
+            [license]
+              .filter(x => x && x.plate && x.plate.image)
+              .map(x => this.state.uploadedMedia[x.plate.image.url])
+          )
       })
       .then(x => {
         this.clear();
@@ -572,6 +581,17 @@ export default class Submission extends React.Component {
           "An error occured while submitting your report.  Please try again."
         );
       });
+  }
+
+  get time() {
+    const { timeofreport } = this.state;
+    if (!timeofreport) {
+      return null;
+    }
+    if (typeof timeofreport === "string") {
+      return moment(timeofreport).toDate();
+    }
+    return timeofreport;
   }
 
   clear() {
@@ -610,6 +630,18 @@ export default class Submission extends React.Component {
   render() {
     return (
       <>
+        {this.state.submitting && (
+          <ProgressBar
+            style={{
+              margin: 0,
+              height: 4,
+              verticalPadding: 0,
+              padding: 0
+            }}
+            progress={this.state.progress}
+            color={colors.orange}
+          />
+        )}
         <ScrollView>
           <View style={styles.container}>
             {/*<ComplaintView
@@ -681,81 +713,69 @@ export default class Submission extends React.Component {
               alpr={this.state.alpr}
             />
 
-            <DateTimePicker
-              mode={"datetime"}
-              titleIOS={"Time of incident"}
-              isVisible={this.state.datePickerVisible}
-              date={this.state.timeofreport}
-              onConfirm={date => {
-                this._datePick.blur();
-                this.setState({
-                  timeofreport: date,
-                  timeofreportstr: this.timeofreport(date),
-                  datePickerVisible: undefined
-                });
-              }}
-              onCancel={() => {
-                this.setState({ datePickerVisible: undefined });
-              }}
-            />
-            <View>
-              <TouchableOpacity
-                onPress={() => {
+            {this.state.datePickerVisible && (
+              <DateTimePicker
+                mode={"datetime"}
+                titleIOS={"Time of incident"}
+                isVisible={true}
+                date={this.time}
+                onConfirm={date => {
+                  this._datePick.blur();
                   this.setState({
-                    datePickerVisible: true
+                    timeofreport: date,
+                    timeofreportstr: this.timeofreport(date),
+                    datePickerVisible: undefined
                   });
                 }}
-              >
-                <Input
-                  ref={r => {
-                    this._datePick = r;
-                  }}
-                  pointerEvents="none"
-                  caretHidden={true}
-                  autoFocus={false}
-                  onFocus={x => this.setState({ datePickerVisible: true })}
-                  label={"When Incident Occurred"}
-                  placeholder={"Time you observed infraction"}
-                  value={this.state.timeofreportstr}
-                />
-              </TouchableOpacity>
-            </View>
-            <View>
-              <Input
-                label={"Incident Description (optional)"}
-                onChangeText={v => {
-                  this.setState({ description: v });
+                onCancel={() => {
+                  this.setState({ datePickerVisible: undefined });
                 }}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={"Add any additional details to provide to 311"}
-                textAlignVertical={"top"}
-                value={this.state.description}
               />
-            </View>
-            <View>
+            )}
+
+            <TouchableOpacity
+              onPress={() => {
+                this.setState({
+                  datePickerVisible: true
+                });
+              }}
+            >
               <Input
-                label={"Notes (optional and private)"}
-                onChangeText={v => this.setState({ notes: v })}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={
-                  "Notes that only you will see and will not be sent to 311"
-                }
-                textAlignVertical={"top"}
-                value={this.state.notes}
+                ref={r => {
+                  this._datePick = r;
+                }}
+                caretHidden={true}
+                autoFocus={false}
+                label={"When Incident Occurred"}
+                placeholder={"Time you observed infraction"}
+                value={this.state.timeofreportstr}
               />
-            </View>
+            </TouchableOpacity>
+            <Input
+              label={"Incident Description (optional)"}
+              onChangeText={v => {
+                this.setState({ description: v });
+              }}
+              multiline={true}
+              numberOfLines={3}
+              placeholder={"Add any additional details to provide to 311"}
+              textAlignVertical={"top"}
+              value={this.state.description}
+            />
+            <Input
+              label={"Notes (optional and private)"}
+              onChangeText={v => this.setState({ notes: v })}
+              multiline={true}
+              numberOfLines={3}
+              placeholder={
+                "Notes that only you will see and will not be sent to 311"
+              }
+              textAlignVertical={"top"}
+              value={this.state.notes}
+            />
             <View style={{ height: 100 }} />
           </View>
         </ScrollView>
-        {this.state.submitting && (
-          <ProgressBar
-            ref={this.progress}
-            isVisible={this.state.submitting}
-            color={"red"}
-          />
-        )}
 
         <Button
           onPress={() => this.submit()}
@@ -774,40 +794,6 @@ export default class Submission extends React.Component {
       </>
     );
   }
-
-  resizeImages = async () => {
-    const resizeAsync = this.state.media.map(x => {
-      let crop = null;
-      if (x.width < x.height) {
-        crop = {
-          originX: (x.height - x.width) / 2,
-          originY: 0,
-          width: x.width,
-          height: x.width
-        };
-      } else {
-        crop = {
-          originY: (x.width - x.height) / 2,
-          originX: 0,
-          width: x.height,
-          height: x.height
-        };
-      }
-      console.log("crop", crop);
-      return ImageManipulator.manipulateAsync(x.url, [
-        {
-          crop: crop
-        },
-        {
-          resize: {
-            width: 200,
-            height: 200
-          }
-        }
-      ]);
-    });
-    return Promise.all(resizeAsync);
-  };
 
   _pickImage = async () => {
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
@@ -863,6 +849,7 @@ export default class Submission extends React.Component {
             .catch(e => console.log(e));
         }
         if (!this.state.license) {
+          alert("license", this.state.license);
           let resize = null;
           if (width > height) {
             resize = { width: Math.min(1200, parseInt(width)) };
@@ -892,6 +879,8 @@ export default class Submission extends React.Component {
       const { timeofreport } = image;
 
       if (timeofreport) {
+        alert(timeofreport);
+        alert(typeof timeofreport);
         var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
         this.setState({
           timeofreport: datetime,
