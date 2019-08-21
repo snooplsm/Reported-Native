@@ -217,7 +217,7 @@ export default class Submissions extends React.Component {
               <Text
                 style={{
                   width: "100%",
-                  backgroundColor: "white",
+                  backgroundColor: "#FAFAFA",
                   textAlign: "center",
                   fontWeight: "bold",
                   fontSize: 19,
