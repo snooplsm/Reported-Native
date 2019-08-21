@@ -9,14 +9,15 @@ import {
   Text,
   View,
   SafeAreaView,
-  FlatList
+  FlatList,
+  Platform
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { Button, Icon, Input } from "react-native-elements";
 import { AutoStyle } from "./Styles";
 import { addresses } from "./Addresses.js";
 import marker from "./assets/car-marker.png";
-import { reverseGeocode, finds } from "./Api";
+import { geocode, reverseGeocode, finds } from "./Api";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 
 export default class AddressView extends React.Component {
@@ -181,17 +182,20 @@ export default class AddressView extends React.Component {
             returnKeyType={"search"} // Can be left out for default return key https://facebook.github.io/react-native/docs/textinput.html#returnkeytype
             keyboardAppearance={"light"} // Can be left out for default keyboardAppearance https://facebook.github.io/react-native/docs/textinput.html#keyboardappearance
             listViewDisplayed={this.state.listViewDisplayed} // true/false/undefined
-            fetchDetails={true}
+            fetchDetails={false}
             renderDescription={row => {
               return row.description;
             }} // custom description render
             onPress={(data, details = null) => {
               // 'details' is provided when fetchDetails = true
-              this.props.onPress({
-                data: data,
-                place: details
+              console.log("place", details);
+              console.log("data", data);
+              geocode(data.description).then(ok => {
+                this.props.onPress({
+                  data: data,
+                  place: ok
+                });
               });
-              //this.setState({ listViewDisplayed: false });
             }}
             getDefaultValue={() => ""}
             query={{

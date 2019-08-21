@@ -44,7 +44,11 @@ export default class LicenseView extends React.Component {
   componentDidUpdate(prevProps, prevState, snapshot) {
     const old = (prevProps.alpr && prevProps.alpr.images) || [];
     const newz = (this.props.alpr && this.props.alpr.images) || [];
-    if (newz.length > old.length && this.props.alpr) {
+    if (
+      newz.length > old.length &&
+      this.props.alpr &&
+      this.licenseFromProps === ""
+    ) {
       this.processImage({
         image: newz[newz.length - 1],
         original: this.props.alpr.original
@@ -157,18 +161,32 @@ export default class LicenseView extends React.Component {
   }
 
   render() {
+    const { license } = this.props;
     return (
       <View>
-        {this.state.plates.map((plate, index) => (
-          <Image
-            containerStyle={{
-              paddingLeft: 10,
-              paddingRight: 10
-            }}
-            key={index}
-            source={plate.image}
-          />
-        ))}
+        {!license &&
+          this.state.plates.map((plate, index) => (
+            <Image
+              containerStyle={{
+                paddingLeft: 10,
+                paddingRight: 10
+              }}
+              key={index}
+              source={plate.image}
+            />
+          ))}
+        {license &&
+          license.plate &&
+          license.plate.image &&
+          license.plate.image.url && (
+            <Image
+              containerStyle={{
+                paddingLeft: 10,
+                paddingRight: 10
+              }}
+              source={license.plate.image}
+            />
+          )}
         <Input
           placeholder="ie: T64353"
           autoCapitalize="characters"

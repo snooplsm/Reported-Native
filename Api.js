@@ -10,7 +10,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -92,14 +92,18 @@ export const uploadFile = (file, extra) => {
     isSignedIn()
       .then(user => {
         data.user = user;
-        if (file.type == "image") {
-          return ImageManipulator.manipulateAsync(file.url, null, {
+        if (file.type === "image") {
+          return ImageManipulator.manipulateAsync(file.url || file.uri, [], {
             compress: 1.0,
             format: ImageManipulator.SaveFormat.JPEG
           });
         } else {
           return file;
         }
+      })
+      .catch(e => {
+        console.log(e);
+        throw e;
       })
       .then(fc => {
         data.fc = fc;
@@ -117,7 +121,7 @@ export const uploadFile = (file, extra) => {
         ext =
           ext.lastIndexOf(".") != -1 &&
           ext.lastIndexOf(".") != ext.length - 1 &&
-          ext.substring(ext.lastIndexOf(".") + 1);
+          ext.substring(ext.lastIndexOf(".") + 1).toLowerCase();
         const key = `${data.user.id}/${time}.${ext}`;
         const metaData = Object.assign({
           "User-Id": data.user.id,
@@ -134,12 +138,13 @@ export const uploadFile = (file, extra) => {
         data.size = blob.size;
         data.meta = metaData;
         let contentType = null;
-        if (data.type === "image") {
+        if (file.type === "image" || ext === "jpg") {
           contentType = "image/jpeg";
         } else {
           contentType = "video/mp4";
         }
         const callback = extra && extra.listener;
+        console.log("call back is", callback);
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
@@ -252,6 +257,33 @@ export const finds = (address, key) => {
     .filter(x => x.types.includes(key))
     .map(x => x.short_name)
     .shift();
+};
+
+export const geocode = address => {
+  if (!address) {
+    return Promise.reject(`illegal address ${address}`);
+  }
+  const key = `location1.${address}`;
+  return AsyncStorage.getItem(key).then(item => {
+    if (item) {
+      return JSON.parse(item);
+    }
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&address=${encodeURIComponent(
+      address
+    )}`;
+    return fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        let item = null;
+        if (data.results && data.results.length > 0) {
+          item = data.results[0];
+        }
+        if (item) {
+          AsyncStorage.setItem(key, JSON.stringify(item));
+        }
+        return item;
+      });
+  });
 };
 
 export const reverseGeocode = location => {
