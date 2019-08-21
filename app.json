@@ -4,7 +4,11 @@
     "slug": "reported",
     "privacy": "unlisted",
     "sdkVersion": "33.0.0",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,8 +18,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "com.reported.reported",
-      "buildNumber": "3.0.0",
+      "bundleIdentifier": "com.reported.reported.beta",
+      "buildNumber": "9",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true
     },
@@ -32,6 +36,8 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"]
+    "assetBundlePatterns": [
+      "**/*"
+    ]
   }
 }
