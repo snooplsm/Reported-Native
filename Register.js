@@ -158,8 +158,6 @@ export default class Register extends React.Component {
         this.setState({ registering: false });
         let message = "";
         if (x.response) {
-          alert(x.response);
-          alert(JSON.stringify(x.response));
           if (x.response.status == 401) {
             message = "Credentials not found";
           } else {
@@ -172,7 +170,6 @@ export default class Register extends React.Component {
         }
         console.log(message);
         this.setState({ error: message });
-        console.log("error registering in ", x);
       });
   }
 
