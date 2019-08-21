@@ -144,7 +144,6 @@ export const uploadFile = (file, extra) => {
           contentType = "video/mp4";
         }
         const callback = extra && extra.listener;
-        console.log("call back is", callback);
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"

@@ -849,7 +849,6 @@ export default class Submission extends React.Component {
             .catch(e => console.log(e));
         }
         if (!this.state.license) {
-          alert("license", this.state.license);
           let resize = null;
           if (width > height) {
             resize = { width: Math.min(1200, parseInt(width)) };
@@ -879,8 +878,6 @@ export default class Submission extends React.Component {
       const { timeofreport } = image;
 
       if (timeofreport) {
-        alert(timeofreport);
-        alert(typeof timeofreport);
         var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
         this.setState({
           timeofreport: datetime,
