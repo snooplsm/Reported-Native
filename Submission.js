@@ -529,7 +529,8 @@ export default class Submission extends React.Component {
     ) {
       license.media = this.state.uploadedMedia[this.state.license.plate.url];
     }
-    const address = this.state.location.place.address_components;
+    const place = this.state.location.place;
+    const address = place.address_components;
 
     const geo = this.state.location.place.geometry.location;
     const building = finds(address, "street_number");
@@ -540,18 +541,21 @@ export default class Submission extends React.Component {
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
+    const formatted_address = place.formatted_address;
 
     this.setState({ submitting: true });
     api
       .report({
         description: this.state.description,
         notes: this.state.notes,
+
         complaintIds: complaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
           state: license.plate.region
         },
         address: Object.assign({
+          formatted_address,
           premise,
           building,
           street,
