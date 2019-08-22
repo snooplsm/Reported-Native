@@ -4,10 +4,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   StyleSheet,
+  Linking,
   Text,
   View
 } from "react-native";
-import { Button } from "react-native-elements";
+import { Button, Avatar } from "react-native-elements";
 import SplashMp4 from "./assets/splash.mp4";
 import { ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { uploadFile } from "./Api";
@@ -53,6 +54,36 @@ export default class Splash extends React.Component {
             type="outline"
           />
         </View>
+
+        <Avatar
+          rounded
+          title={"@driversofnyc"}
+          onPress={() => {
+            Linking.openURL("https://twitter.com/driversofnyc");
+          }}
+          source={{
+            uri:
+              "https://pbs.twimg.com/profile_images/874464796426612738/J83zyXlh_400x400.jpg"
+          }}
+          containerStyle={{
+            position: "absolute",
+            opacity: 0.4,
+            bottom: 40,
+            right: 20,
+            width: 50,
+            height: 50
+          }}
+        />
+        <Text
+          style={{
+            position: "absolute",
+            bottom: 20,
+            right: 20,
+            color: "white"
+          }}
+        >
+          @driversofnyc
+        </Text>
       </KeyboardAvoidingView>
     );
   }
