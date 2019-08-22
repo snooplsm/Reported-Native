@@ -96,7 +96,9 @@ export class MonthDayYear {
       });
     } else if (year != null) {
       const mm = moment().year(year);
-      return [new DateRange(mm.startOf("year"), mm.endOf("year"))];
+      const ms = moment(mm);
+      const me = moment(mm);
+      return [new DateRange(ms.startOf("year"), me.endOf("year"))];
     } else {
       return [new DateRange()];
     }

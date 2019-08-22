@@ -7,9 +7,10 @@ import {
   View,
   SafeAreaView,
   Button,
-  TouchableOpacity
+  TouchableOpacity,
+  FlatList
 } from "react-native";
-import { Icon } from "react-native-elements";
+import { Icon, Overlay } from "react-native-elements";
 import ListSpoof from "./ListSpoof";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
@@ -69,25 +70,20 @@ export default class Submissions extends React.Component {
   get submissionsFilter() {
     if (this.state.submissionsFilter) {
       return (
-        <SubmissionFilter
-          style={{
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-            position: "absolute",
-            backgroundColor: "white",
-            zIndex: 9999
-          }}
-          filter={this.state.filter}
-          onFilterPressed={filter => {
-            console.log(filter);
-            this.setState({ filter: filter, submissionsFilter: false }, () => {
-              this.fetchReports();
-            });
-          }}
-          onCloseClicked={() => this.setState({ submissionsFilter: false })}
-        />
+        <Overlay overlayBackgroundColor="rgba(255, 255, 255, .9)">
+          <SubmissionFilter
+            filter={this.state.filter}
+            onFilterPressed={filter => {
+              this.setState(
+                { filter: filter, submissionsFilter: false, reports: [] },
+                () => {
+                  this.fetchReports();
+                }
+              );
+            }}
+            onCloseClicked={() => this.setState({ submissionsFilter: false })}
+          />
+        </Overlay>
       );
     } else {
       return <></>;
@@ -99,10 +95,10 @@ export default class Submissions extends React.Component {
     this.fetchReports();
   }
 
-  fetchReports() {
+  fetchReports(offset) {
     this.setState({ refreshing: true });
     api
-      .reports(this.state.filter, this.offset)
+      .reports(this.state.filter)
       .then(res => {
         this.setState({ refreshing: false, error: undefined });
         const addressMap = res.data.addresses.reduce((map, x) => {
@@ -190,10 +186,20 @@ export default class Submissions extends React.Component {
       });
   }
 
+  get _filterData() {
+    const data = [];
+    const filter = this.state.filter;
+    filter.keywords && filter.keywords.split(/[ ,]+/).map(x => data.push(x));
+    filter.complaints.map(x => data.push(x.name));
+
+    filter.location && data.push(`near: ${filter.location.formatted_address}`);
+    return data.filter(x => x && x.trim().length > 0).map(x => x.trim());
+  }
+
   _keyExtractor = (item, index) => item.report.id;
 
   _onRefresh = () => {
-    this.setState({ offset: 0 }, () => {
+    this.setState({ results: [] }, () => {
       this.fetchReports();
     });
   };
@@ -208,15 +214,51 @@ export default class Submissions extends React.Component {
     if (this.state.lastResultEmpty) {
       return;
     }
-    alert(this.state.reports.length);
-    this.fetchReports();
+    this.fetchReports(this.state.reports.length);
   };
 
   render() {
     return (
       <>
-        {this.submissionsFilter}
-        <View>
+        <View
+          style={{
+            zIndex: 9999
+          }}
+        >
+          {!this.state.refreshing && this.state.reports.length === 0 && (
+            <View
+              style={{
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                justifyContent: "center",
+                alignItems: "center",
+                flex: 1
+              }}
+            >
+              <Text>No reports found.</Text>
+            </View>
+          )}
+          {this.state.filter && (
+            <View>
+              <FlatList
+                horizontal={true}
+                data={this._filterData}
+                renderItem={({ item }) => {
+                  return <Button title={item} />;
+                }}
+              />
+              <Button
+                icon={<Icon name="close" size={15} color="white" />}
+                onPress={() => {
+                  this.setState({ filter: undefined }, () => {
+                    this.fetchReports();
+                  });
+                }}
+                title="Clear"
+              />
+            </View>
+          )}
           <ListSpoof
             style={{
               width: "100%",
@@ -280,11 +322,9 @@ export default class Submissions extends React.Component {
               }}
             >
               {this.state.refreshing && <Text style>Loading...</Text>}
-              {!this.state.refreshing && this.state.reports.length === 0 && (
-                <Text>No reports found.</Text>
-              )}
             </View>
           )}
+
           {this.state.error && this.state.reports.length === 0 && (
             <View
               style={{
@@ -305,6 +345,7 @@ export default class Submissions extends React.Component {
             </View>
           )}
         </View>
+        {this.submissionsFilter}
       </>
     );
   }

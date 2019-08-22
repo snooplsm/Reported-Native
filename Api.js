@@ -350,10 +350,17 @@ export const api = {
 
   reports: (filter, _skip) => {
     const skip = _skip ?? 0;
+    const f2 =
+      filter &&
+      Object.assign(Object.assign({}, filter), {
+        when: filter.when && filter.when.allDates,
+        complaints: filter.complaints.map(x => x.name)
+      });
     if (filter == null) {
       return ax.get(`/reports?skip=${skip}`);
     } else {
-      return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(filter)}`);
+      console.log("filter", f2);
+      return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(f2)}`);
     }
   }
 };
