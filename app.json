@@ -4,11 +4,7 @@
     "slug": "reported",
     "privacy": "unlisted",
     "sdkVersion": "33.0.0",
-    "platforms": [
-      "ios",
-      "android",
-      "web"
-    ],
+    "platforms": ["ios", "android", "web"],
     "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -30,14 +26,12 @@
         "backgroundColor": "#ffffff"
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 45,
+      "versionCode": 46,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ]
+    "assetBundlePatterns": ["**/*"]
   }
 }

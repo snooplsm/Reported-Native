@@ -9,6 +9,7 @@ import {
   Text,
   View,
   SafeAreaView,
+  Keyboard,
   FlatList,
   Platform
 } from "react-native";
@@ -227,6 +228,7 @@ export default class AddressView extends React.Component {
                 <TouchableOpacity>
                   <Icon
                     onPress={() => {
+                      Keyboard.dismiss();
                       this.setState({ map: true });
                     }}
                     name="map"
@@ -279,7 +281,9 @@ export default class AddressView extends React.Component {
         {this.state.map && (
           <View
             style={
-              Platform.OS === "ios" ? styles.mapIos : styles.mapAndroidContainer
+              Platform.OS === "ios"
+                ? styles.mapIosContainer
+                : styles.mapAndroidContainer
             }
           >
             <MapView
@@ -358,6 +362,10 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14
   },
+  mapIosContainer: {
+    width: "100%",
+    height: "100%"
+  },
   mapIos: {
     flex: 1
   },
@@ -378,8 +386,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     bottom: 0,
-    position: "absolute",
-    alignItems: "center"
+    position: "absolute"
   },
   region: {
     color: "#fff",
