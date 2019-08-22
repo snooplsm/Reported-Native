@@ -297,8 +297,8 @@ export const reverseGeocode = location => {
       return JSON.parse(item);
     }
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat.toFixed(
-      3
-    )},${location.lng.toFixed(3)}&rankby=distance`;
+      4
+    )},${location.lng.toFixed(4)}&rankby=distance`;
     return fetch(url)
       .then(res => res.json())
       .then(data => {
