@@ -293,25 +293,8 @@ export default class AddressView extends React.Component {
               initialRegion={region}
               onRegionChangeComplete={this.onRegionChange}
               style={{ flex: 1 }}
-            >
-              {Platform.OS === "ios" && (
-                <>
-                  <View style={{ right: 0, position: "absolute" }}>
-                    <Icon
-                      onPress={() => {
-                        this.setState({ map: undefined });
-                      }}
-                      name="list"
-                      size={40}
-                    />
-                  </View>
-                  <View style={styles.markerFixed}>
-                    <Image style={styles.marker} source={marker} />
-                  </View>
-                </>
-              )}
-            </MapView>
-            {Platform.OS === "android" && (
+            ></MapView>
+            {true && (
               <>
                 <View style={{ right: 0, position: "absolute" }}>
                   <Icon
