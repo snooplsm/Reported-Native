@@ -42,7 +42,7 @@ export class MonthDayYear {
     const year = this.year;
     const day = this.day;
     if (month != null && year != null && day != null) {
-      return this.date.format("MMMM D YYYY");
+      return this.date.format("MMMM Do YYYY");
     } else if (month != null && year != null) {
       const mm = moment().month(month);
       return `${mm.format("MMMM")} ${year}`;

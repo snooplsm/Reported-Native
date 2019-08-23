@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, Text } from "react-native";
+import { Dimensions, View, StyleSheet, Text } from "react-native";
 import { Button, Icon } from "react-native-elements";
 import moment from "moment";
 import { IconStyle, HorizontalStyle } from "./Styles";
@@ -42,6 +42,7 @@ export default class CalendarView extends React.Component {
       29,
       [30, 31]
     ];
+
     s.months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const year = moment().year();
     s.years = [year, year - 1, year - 2, year - 3, year - 4, year - 5];
@@ -108,6 +109,19 @@ export default class CalendarView extends React.Component {
 
   _dayButton(day) {
     const typeButton = this.type(`day_${day}`);
+    const number = typeof day === "number";
+    let asString = day.toString();
+    if (!number) {
+      asString = day.join("/");
+    }
+    let containerStyle = null;
+    if (day < 26) {
+      containerStyle = style.dayItem;
+    } else if (day < 30) {
+      containerStyle = style.dayItem26;
+    } else {
+      containerStyle = style.dayItem30;
+    }
     return (
       <Button
         key={`day_${day}`}
@@ -115,8 +129,8 @@ export default class CalendarView extends React.Component {
         style={style.dayStyle}
         titleStyle={day < 26 ? style.dayText : style.dayText26}
         onPress={x => this.toggleDay(day)}
-        containerStyle={day < 26 ? style.dayItem : style.dayItem26}
-        title={`${day}`}
+        containerStyle={containerStyle}
+        title={`${asString}`}
       />
     );
   }
@@ -146,6 +160,7 @@ export default class CalendarView extends React.Component {
                   onPress={x => this.toggleMonth(month)}
                   style={style.monthStyle}
                   containerStyle={style.monthItem}
+                  titleStyle={style.dayText}
                   title={`${months[month - 1]}`}
                 />
               );
@@ -166,6 +181,7 @@ export default class CalendarView extends React.Component {
                   onPress={x => this.toggleYear(year)}
                   style={style.yearStyle}
                   containerStyle={style.yearItem}
+                  titleStyle={style.dayText}
                   title={`${year}`}
                 />
               );
@@ -183,12 +199,20 @@ export default class CalendarView extends React.Component {
             }
           }}
           type="outline"
+          buttonStyle={{
+            borderRadius: 0,
+            height: 80
+          }}
           title={this.state.dateString ?? "Set"}
         />
       </View>
     );
   }
 }
+
+const { width: screenWidth, height: screenheight } = Dimensions.get("screen");
+
+const fontSize = screenWidth <= 375 ? 15 : 17;
 
 const style = StyleSheet.create({
   iconContainer: {
@@ -218,17 +242,20 @@ const style = StyleSheet.create({
   },
 
   dayText: {
-    fontSize: 17
+    fontSize: fontSize
   },
   dayText26: {
-    fontSize: 17
+    fontSize: fontSize - 1
   },
 
   dayItem: {
     width: "19%"
   },
   dayItem26: {
-    width: "19%"
+    width: "17%"
+  },
+  dayItem30: {
+    width: "29%"
   },
   dayStyle: {
     margin: 0
