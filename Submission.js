@@ -388,15 +388,15 @@ export default class Submission extends React.Component {
       return false;
     }
     const plate = this.state.license.candidate.plate.toUpperCase();
-    if (plate.charAt(0) === "T") {
-      if (plate.length < 6) {
-        return true;
-      }
-      const tlcRegex = /^T\d{6}C$/g;
-      console.log(tlcRegex);
-      console.log(plate.match(tlcRegex));
-      const match = plate.match(tlcRegex);
-      return match && match.length == 1;
+
+    const regexes = [/^[TNWY]\d{6}$/g, /^[TNWY]\d{6}[^C]{*}/g, /^\d{6}[C]/g];
+    if (
+      regexes.filter(x => {
+        const matches = plate.match(x);
+        return matches && matches.length === 1;
+      }).length > 0
+    ) {
+      return "TLC plates start with T and end with C.  Please fix.";
     }
     return plate.length > 1;
   }
@@ -445,16 +445,17 @@ export default class Submission extends React.Component {
       this.alrt("Address Missing", "Location of incident is missing.");
       return;
     }
+
+    const okPlate = this.validatePlate();
+    if (okPlate !== true) {
+      this.alrt("Invalid License Plate", `${okPlate}`);
+      return;
+    }
     if (!this.state.timeofreport) {
       this.alrt(
         "Incident Time Missing",
         "Time you observed infraction is missing."
       );
-      return;
-    }
-    const okPlate = this.validatePlate();
-    if (!okPlate) {
-      this.alrt("Invalid Plate", "Mke sure the license plate is valid.");
       return;
     }
     const plateNeedsUploading = okPlate && this.state.license.plate.image;
@@ -629,7 +630,7 @@ export default class Submission extends React.Component {
 
   get percentageOpacity() {
     let percent = 0.3;
-    if (this.validatePlate()) {
+    if (this.validatePlate() === true) {
       percent += 0.2;
     }
     if (this.state.complaints.length === 1) {
