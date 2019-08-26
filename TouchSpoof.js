@@ -1,12 +1,7 @@
 import React from "react";
 import {
-  Alert,
-  Text,
   TouchableOpacity,
   TouchableNativeFeedback,
-  View,
-  StyleSheet,
-  ScrollView,
   Platform
 } from "react-native";
 

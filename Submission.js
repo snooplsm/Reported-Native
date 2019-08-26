@@ -389,8 +389,8 @@ export default class Submission extends React.Component {
     }
     const plate = this.state.license.candidate.plate.toUpperCase();
     if (plate.charAt(0) === "T") {
-      if (plate.length > 6 && plate.charAt(plate.length - 1) !== "C") {
-        return false;
+      if (plate.length < 6) {
+        return true;
       }
       const tlcRegex = /^T\d{6}C$/g;
       console.log(tlcRegex);
@@ -497,7 +497,7 @@ export default class Submission extends React.Component {
             uploaded.type = "S3_VIDEO";
           }
           const uploadedMedia = this.state.uploadedMedia;
-          uploadedMedia[(file.url = uploaded)] = uploaded;
+          uploadedMedia[file.url || fille.uri] = uploaded;
           this.setState({ uploadedMedia });
           this.submit();
         })
@@ -542,13 +542,11 @@ export default class Submission extends React.Component {
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
-
     this.setState({ submitting: true });
     api
       .report({
         description: this.state.description,
         notes: this.state.notes,
-
         complaintIds: complaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
@@ -579,11 +577,29 @@ export default class Submission extends React.Component {
         this.clear();
       })
       .catch(e => {
-        console.log(e);
-        this.alrt(
-          "Problem submitting report",
-          "An error occured while submitting your report.  Please try again."
-        );
+        const request = e.request;
+        const response = request && request.response;
+        const error = response && JSON.parse(response);
+        const code = error && error.code;
+        if (code) {
+          switch (code) {
+            case 216:
+              this.alrt(
+                "Duplicate Report",
+                "Appears this report has already been submitted."
+              );
+              break;
+            default:
+              this.alrt(
+                "Problem submitting report",
+                "An error occured while submitting your report.  Please try again."
+              );
+          }
+        } else
+          this.alrt(
+            "Problem submitting report",
+            "An error occured while submitting your report.  Please try again."
+          );
       });
   }
 
@@ -722,7 +738,7 @@ export default class Submission extends React.Component {
                 mode={"datetime"}
                 titleIOS={"Time of incident"}
                 isVisible={true}
-                date={this.time}
+                date={this.time || new Date()}
                 onConfirm={date => {
                   this._datePick.blur();
                   this.setState({
@@ -737,7 +753,7 @@ export default class Submission extends React.Component {
               />
             )}
 
-            <TouchableOpacity
+            <TouchSpoof
               onPress={() => {
                 this.setState({
                   datePickerVisible: true
@@ -751,10 +767,11 @@ export default class Submission extends React.Component {
                 caretHidden={true}
                 autoFocus={false}
                 label={"When Incident Occurred"}
+                onFocus={x => this.setState({ datePickerVisible: true })}
                 placeholder={"Time you observed infraction"}
                 value={this.state.timeofreportstr}
               />
-            </TouchableOpacity>
+            </TouchSpoof>
             <Input
               label={"Incident Description (optional)"}
               onChangeText={v => {
