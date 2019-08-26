@@ -6,6 +6,8 @@ import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import { Notifications } from "expo";
+import * as Permissions from "expo-permissions";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
@@ -340,6 +342,32 @@ export const api = {
       });
   },
 
+  registerToken: token => {
+    const key = {};
+    return isSignedIn()
+      .then(user => {
+        key.key = `user.token.${user && user.id}`;
+        return AsyncStorage.getItem(key);
+      })
+      .then(_token => {
+        if (_token !== token) {
+          return ax
+            .put("/user/register/token", {
+              installationId: token,
+              channels: ["general"]
+            })
+            .then(res => {
+              if (res.request.status / 100 === 2) {
+                AsyncStorage.setItem(key.key, token);
+              }
+              return res;
+            });
+        } else {
+          return token;
+        }
+      });
+  },
+
   report: report => {
     return ax.put("/report", report);
   },
@@ -364,3 +392,30 @@ export const api = {
     }
   }
 };
+
+export async function registerForPushNotificationsAsync() {
+  const { status: existingStatus } = await Permissions.getAsync(
+    Permissions.NOTIFICATIONS
+  );
+  let finalStatus = existingStatus;
+
+  // only ask if permissions have not already been determined, because
+  // iOS won't necessarily prompt the user a second time.
+  if (existingStatus !== "granted") {
+    // Android remote notification permissions are granted during the app
+    // install, so this will only ask on iOS
+    const { status } = await Permissions.askAsync(Permissions.NOTIFICATIONS);
+    finalStatus = status;
+  }
+
+  // Stop here if the user did not grant permissions
+  if (finalStatus !== "granted") {
+    return;
+  }
+
+  // Get the token that uniquely identifies this device
+  let token = await Notifications.getExpoPushTokenAsync();
+
+  // POST the token to your backend server from where you can retrieve it to send push notifications.
+  return api.registerToken(token);
+}
