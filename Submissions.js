@@ -97,7 +97,10 @@ export default class Submissions extends React.Component {
   componentDidMount() {
     this.props.navigation.setParams({ filterPressed: this._filterPressed });
     this.fetchReports();
+    this.fetchAggregate();
   }
+
+  fetchAggregate() {}
 
   fetchReports(offset) {
     this.setState({ refreshing: true });
@@ -163,10 +166,7 @@ export default class Submissions extends React.Component {
     api
       .deleteReport(report.id)
       .then(cancelled => {
-        console.log("deleted");
         const reports = this.state.reports.filter(x => {
-          console.log(x);
-          console.log(report.id);
           return x.report.id != report.id;
         });
         this.setState({
@@ -295,7 +295,6 @@ export default class Submissions extends React.Component {
                   onChangeText={t => {
                     try {
                       report.fine = parseFloat(t);
-                      console.log(report.fined);
                     } catch (e) {
                       console.log(e);
                     }
@@ -510,7 +509,6 @@ export default class Submissions extends React.Component {
               height: "100%"
             }}
             renderHiddenItem={(data, rowMap) => {
-              console.log(data);
               return (
                 <View style={styles.rowBack}>
                   {data.item.report.status > 0 && (
@@ -585,6 +583,18 @@ export default class Submissions extends React.Component {
             data={this.state.reports}
             onEndReached={this._onEndReached}
             initialNumToRender={2}
+            ListHeaderComponent={() => {
+              if (!this.state.aggregate) {
+                return <></>;
+              } else {
+                return (
+                  <View>
+                    <View>{this.state.aggregate.fine}</View>
+                    <View>{this.state.aggregate.points}</View>
+                  </View>
+                );
+              }
+            }}
             ListFooterComponent={<View style={{ height: 10 }} />}
             renderItem={({ item }) => {
               const { report, address } = item;
