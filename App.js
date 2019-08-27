@@ -11,25 +11,25 @@ export default class App extends React.Component {
   }
 
   register = async () => {
-    if (this.registering) {
-      return;
-    }
-    this.registering = true;
-    api
-      .registerToken()
-      .then(success => {
-        console.log("token registered");
-        this.registering = false;
-      })
-      .catch(e => {
-        this.regisgtering = false;
-        console.log("token error", e);
-      });
+    // if (this.registering) {
+    //   return;
+    // }
+    // this.registering = true;
+    // api
+    //   .registerToken()
+    //   .then(success => {
+    //     console.log("token registered");
+    //     this.registering = false;
+    //   })
+    //   .catch(e => {
+    //     this.regisgtering = false;
+    //     console.log("token error", e);
+    //   });
   };
 
   componentDidMount() {
     AppState.addEventListener("change", this._handleAppStateChange);
-    this.register();
+    //this.register();
   }
 
   componentWillUnmount() {
@@ -38,10 +38,10 @@ export default class App extends React.Component {
   }
 
   _handleAppStateChange(state) {
-    console.log(state);
-    if (state === "active") {
-      this.register();
-    }
+    // console.log(state);
+    // if (state === "active") {
+    //   this.register();
+    // }
   }
 
   render() {

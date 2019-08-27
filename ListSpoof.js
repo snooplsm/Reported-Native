@@ -1,6 +1,6 @@
 import React from "react";
 import { Platform } from "react-native";
-import { FlatList, SectionList } from "react-navigation";
+import { SwipeListView } from "react-native-swipe-list-view";
 
 export default class ListSpoof extends React.Component {
   constructor(props) {
@@ -11,9 +11,9 @@ export default class ListSpoof extends React.Component {
   render() {
     const { ...props } = this.props;
     if (this.ios) {
-      return <SectionList {...props} />;
+      return <SwipeListView useSectionList={true} {...props} />;
     } else {
-      return <FlatList {...props} />;
+      return <SwipeListView useSectionList={false} {...props} />;
     }
   }
 }

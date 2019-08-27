@@ -17,6 +17,7 @@ import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
 import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
+import { statusesMap } from "./Statuses";
 
 const reduce512 = (prev, curr) => {
   if (prev === null) {
@@ -113,11 +114,9 @@ export default class ReportView extends React.Component {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     if (report.status <= 0) {
-      return (
-        <View>
-          <Text>[PENDING]</Text>
-        </View>
-      );
+      return "PENDING";
+    } else {
+      return statusesMap[report.status].text;
     }
   }
 
@@ -180,12 +179,24 @@ export default class ReportView extends React.Component {
             }
           ]}
         >
-          <Text>{` ${time.fromNow()} \n ${time.format(
-            "M/D/YY h:mm A"
-          )} `}</Text>
-          <Text style={ButtonStyle.orangeText}>
-            {address.cb ? `#CB${address.cb}` : ""}
-          </Text>
+          <View
+            style={{
+              flexDirection: "column"
+            }}
+          >
+            <Text>{`${time.fromNow()}`}</Text>
+            <Text>{`${time.format("M/D/YY h:mm A")} `}</Text>
+          </View>
+          <View
+            style={{
+              flexDirection: "column"
+            }}
+          >
+            <Text style={ButtonStyle.orangeText}>
+              {address.cb ? `#CB${address.cb}` : ""}
+            </Text>
+            <Text>{this.status}</Text>
+          </View>
         </View>
       </Card>
     );

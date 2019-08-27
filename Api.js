@@ -142,6 +142,8 @@ export const uploadFile = (file, extra) => {
         let contentType = null;
         if (file.type === "image" || ext === "jpg") {
           contentType = "image/jpeg";
+        } else if (file.type === "pdf" || ext === "pdf") {
+          contentType = "application/pdf";
         } else {
           contentType = "video/mp4";
         }
@@ -370,6 +372,11 @@ export const api = {
 
   report: report => {
     return ax.put("/report", report);
+  },
+
+  changeStatus: payload => {
+    console.log(payload);
+    return ax.put("/report/change_status", payload);
   },
 
   deleteReport: reportId => {

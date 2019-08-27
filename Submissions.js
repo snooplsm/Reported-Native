@@ -8,16 +8,20 @@ import {
   SafeAreaView,
   Button,
   TouchableOpacity,
+  TouchableHighlight,
   FlatList
 } from "react-native";
-import { Icon, Overlay } from "react-native-elements";
+import { Input, Icon, Overlay } from "react-native-elements";
 import ListSpoof from "./ListSpoof";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
+import * as DocumentPicker from "expo-document-picker";
 import { colors } from "./Styles";
 import ReportView from "./ReportView";
 import moment from "moment";
+import Swipeout from "react-native-swipeout";
 import SubmissionFilter from "./SubmissionFilter";
+import { statuses } from "./Statuses.js";
 
 export default class Submissions extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -196,6 +200,247 @@ export default class Submissions extends React.Component {
     return data.filter(x => x && x.trim().length > 0).map(x => x.trim());
   }
 
+  changeStatus(report, status) {
+    api
+      .changeStatus({
+        id: report.id,
+        status: status
+      })
+      .then(success => {
+        const newStatus = statuses.find(s => s.key === status);
+        report.status = newStatus.sId;
+        this.setState({ selectedRow: null, verdict: undefined }, () => {
+          setTimeout(() => {
+            Alert.alert(
+              "Status Changed!",
+              `The status has been updated to ${newStatus.text}`
+            );
+          }, 300);
+        });
+      });
+  }
+
+  guiltyNotGuilty(report, status) {
+    this.setState({ verdict: status });
+  }
+
+  uploadAndChangeStatus(report, file, status) {
+    let type = status;
+    file.width = -1;
+    file.height = -1;
+    uploadFile(file)
+      .then(media => {
+        media.type = `S3_STATUS_${type}`;
+        return api.changeStatus({
+          id: report.id,
+          status: type,
+          media: media
+        });
+      })
+      .then(yass => {
+        const newStatus = statuses.find(key => key === status);
+        report.status = newStatus.sId;
+        this.setState({ selectedRow: undefined, verdict: undefined }, () => {
+          this.setTimeout(() => {
+            Alert.alert(
+              "Success",
+              `Your report has changed to ${newStatus.text}`
+            );
+          }, 300);
+        });
+      })
+      .catch(err => {
+        console.log(err);
+        alert("There was an error");
+      });
+  }
+
+  get notGuiltyOverlay() {
+    const report = this.state.selectedRow;
+    if (!report || ["NOT_GUILTY", "GUILTY"].indexOf(this.state.verdict) < 0) {
+      return <></>;
+    }
+    return (
+      <Overlay isVisible={true}>
+        <View
+          style={{
+            flex: 1,
+            flexDirection: "column"
+          }}
+        >
+          <Text>
+            {this.state.verdict === "NOT_GUILTY" &&
+              `Please submit the TLC not guilty verdict that was emailed to you. (email subject: tlc notice of decision ${report.license.plate.substring(
+                0
+              )})`}
+            {this.state.verdict === "GUILTY" &&
+              `Please submit the TLC guilty verdict that was emailed to you. (email subject: tlc notice of decision ${report.license.plate.substring(
+                0
+              )})`}
+          </Text>
+          <View
+            style={{
+              flex: 1,
+              flexDirection: "column"
+            }}
+          >
+            {this.state.verdict === "GUILTY" && (
+              <>
+                <View
+                  style={{
+                    height: 15
+                  }}
+                />
+                <Input
+                  onChangeText={t => {
+                    try {
+                      report.fine = parseFloat(t);
+                      console.log(report.fined);
+                    } catch (e) {
+                      console.log(e);
+                    }
+                  }}
+                  keyboardType="decimal-pad"
+                  label="Amount Fined"
+                  containerStyle={{
+                    width: "50%",
+                    alignSelf: "center"
+                  }}
+                />
+                <Input
+                  containerStyle={{
+                    width: "50%",
+                    alignSelf: "center"
+                  }}
+                  onChangeText={t => {
+                    try {
+                      report.points = parseInt(t);
+                    } catch (e) {
+                      console.log(e);
+                    }
+                  }}
+                  keyboardType="numeric"
+                  label="Points"
+                />
+                <View
+                  style={{
+                    height: 15
+                  }}
+                />
+              </>
+            )}
+            <Button
+              onPress={() => {
+                DocumentPicker.getDocumentAsync({
+                  type: "application/pdf"
+                }).then(response => {
+                  if (response.type === "cancel") {
+                    return;
+                  }
+                  this.uploadAndChangeStatus(
+                    report,
+                    response,
+                    this.state.verdict
+                  );
+                });
+              }}
+              title="Upload"
+            />
+            <Button
+              onPress={() => {
+                Alert.alert(
+                  "TLC Status Pending",
+                  "Please allow some time to receive the verdict from the TLC in the PDF file format."
+                );
+              }}
+              title="I don't have one"
+            />
+            <Button
+              onPress={() => {
+                api
+                  .changeStatus({
+                    id: report.id,
+                    status: this.state.verdict,
+                    fine: report.fine,
+                    points: report.points
+                  })
+                  .then(f => {
+                    const newStatus = statuses.find(
+                      key => key.key === this.state.verdict
+                    );
+                    report.status = newStatus.sId;
+                    this.setState({
+                      selectedRow: undefined,
+                      verdict: undefined
+                    });
+                  })
+                  .catch(e => {
+                    alert("Problem changing status.");
+                  });
+              }}
+              title="I don't want to."
+            />
+            <Button
+              onPress={() => {
+                this.setState({ verdict: undefined, selectedRow: undefined });
+              }}
+              title={"Close"}
+            />
+          </View>
+        </View>
+      </Overlay>
+    );
+  }
+
+  get selectedRowOverlay() {
+    const report = this.state.selectedRow;
+    if (!report || this.state.verdict) {
+      return <></>;
+    }
+    return (
+      <Overlay
+        isVisible={this.state.selectedRow != undefined && !this.state.verdict}
+      >
+        <Icon
+          name="close"
+          style={{ position: "absolute", right: 15 }}
+          onPress={() =>
+            this.setState({ selectedRow: undefined, verdict: undefined })
+          }
+        />
+        <View
+          style={{
+            flex: 1,
+            flexDirection: "column",
+            justifyContent: "space-around"
+          }}
+        >
+          <Button
+            onPress={() => this.changeStatus(report, "SUMMONS")}
+            title="Summons Issued"
+          />
+          <Button
+            onPress={() => this.changeStatus(report, "HEARING")}
+            title="Hearing Scheduled"
+          />
+          <Button
+            onPress={() => this.guiltyNotGuilty(report, "GUILTY")}
+            title="Driver Paid Fine / Guilty"
+          />
+          <Button
+            onPress={() => this.changeStatus(report, "UNABLE_TO_ID")}
+            title="Unable to ID Driver"
+          />
+          <Button
+            onPress={() => this.guiltyNotGuilty(report, "NOT_GUILTY")}
+            title="Driver Not Guilty"
+          />
+          <Button title="No Reason / Archive" />
+        </View>
+      </Overlay>
+    );
+  }
+
   _keyExtractor = (item, index) => item.report.id;
 
   _onRefresh = () => {
@@ -264,19 +509,74 @@ export default class Submissions extends React.Component {
               width: "100%",
               height: "100%"
             }}
-            renderSectionHeader={({ section: { title } }) => (
-              <Text
-                style={{
-                  width: "100%",
-                  backgroundColor: "#FAFAFA",
-                  textAlign: "center",
-                  fontWeight: "bold",
-                  fontSize: 19,
-                  padding: 10
-                }}
-              >
-                {title}
-              </Text>
+            renderHiddenItem={(data, rowMap) => {
+              console.log(data);
+              return (
+                <View style={styles.rowBack}>
+                  {data.item.report.status > 0 && (
+                    <Button
+                      onPress={() =>
+                        this.setState({ selectedRow: data.item.report })
+                      }
+                      title={"Change Status"}
+                      type="outline"
+                    />
+                  )}
+                  {data.item.report.status < 0 && (
+                    <Icon
+                      onPress={() => {
+                        const { report } = data;
+                        Alert.alert(
+                          "Confirm Delete?",
+                          "Are you sure you want to delete this report?",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Ok",
+                              onPress: () => this.deleteReport(data.item.report)
+                            }
+                          ]
+                        );
+                      }}
+                      name="delete"
+                    />
+                  )}
+                </View>
+              );
+            }}
+            leftOpenValue={0}
+            rightOpenValue={-160}
+            renderSectionHeader={({ section: { title, sectionIndex } }) => (
+              <View>
+                <Text
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#FAFAFA",
+                    textAlign: "center",
+                    fontWeight: "bold",
+                    fontSize: 19,
+                    padding: 10
+                  }}
+                >
+                  {title}
+                </Text>
+                {false && (
+                  <Icon
+                    buttonStyle={{
+                      alignSelf: "center",
+                      height: "100%"
+                    }}
+                    containerStyle={{
+                      position: "absolute",
+                      alignSelf: "flex-end",
+                      top: 0,
+                      bottom: 0,
+                      backgroundColor: "blue"
+                    }}
+                    name="swap-vert"
+                  />
+                )}
+              </View>
             )}
             keyExtractor={this._keyExtractor}
             sections={this.state.sections}
@@ -288,25 +588,11 @@ export default class Submissions extends React.Component {
             ListFooterComponent={<View style={{ height: 10 }} />}
             renderItem={({ item }) => {
               const { report, address } = item;
+
               return (
-                <TouchableOpacity
-                  key={report.id}
-                  onLongPress={() => {
-                    if (report.status > 0) {
-                      return;
-                    }
-                    Alert.alert(
-                      "Confirm Delete?",
-                      "Are you sure you want to delete this report?",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Ok", onPress: () => this.deleteReport(report) }
-                      ]
-                    );
-                  }}
-                >
+                <TouchableHighlight key={report.id}>
                   <ReportView report={item} />
-                </TouchableOpacity>
+                </TouchableHighlight>
               );
             }}
           />
@@ -346,7 +632,20 @@ export default class Submissions extends React.Component {
           )}
         </View>
         {this.submissionsFilter}
+        {this.selectedRowOverlay}
+        {this.notGuiltyOverlay}
       </>
     );
   }
 }
+
+const styles = StyleSheet.create({
+  rowBack: {
+    alignItems: "center",
+    backgroundColor: "#DDD",
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingRight: 15
+  }
+});
