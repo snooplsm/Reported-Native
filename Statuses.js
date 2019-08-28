@@ -52,6 +52,22 @@ export const statuses = [
     text: "Unable to ID Driver",
     key: "UNABLE_TO_ID",
     enable: true
+  },
+  {
+    sId: -1,
+    createdAt: "2016-11-03T16:56:54.348Z",
+    updatedAt: "2016-11-04T11:04:46.136Z",
+    text: "Error Pending",
+    key: "ERROR_PENDING",
+    enable: true
+  },
+  {
+    sId: 1,
+    createdAt: "2016-11-03T16:56:54.348Z",
+    updatedAt: "2016-11-04T11:04:46.136Z",
+    text: "Submitted",
+    key: "SUBMITTED",
+    enable: true
   }
 ];
 
