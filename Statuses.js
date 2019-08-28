@@ -62,6 +62,22 @@ export const statuses = [
     enable: true
   },
   {
+    sId: -3,
+    createdAt: "2016-11-03T16:56:54.348Z",
+    updatedAt: "2016-11-04T11:04:46.136Z",
+    text: "Processing",
+    key: "Pre_PROCESSING",
+    enable: true
+  },
+  {
+    sId: -2,
+    createdAt: "2016-11-03T16:56:54.348Z",
+    updatedAt: "2016-11-04T11:04:46.136Z",
+    text: "Processing",
+    key: "POST_PROCESSING",
+    enable: true
+  },
+  {
     sId: 1,
     createdAt: "2016-11-03T16:56:54.348Z",
     updatedAt: "2016-11-04T11:04:46.136Z",
