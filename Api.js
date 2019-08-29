@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/staging/",
+  dev: "http://localhost:8084/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -399,6 +399,10 @@ export const api = {
       console.log("filter", f2);
       return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(f2)}`);
     }
+  },
+
+  reportStats: () => {
+    return ax.get(`/reports/aggregate`);
   }
 };
 

@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Button,
   TouchableOpacity,
+  Modal,
   TouchableHighlight,
   FlatList
 } from "react-native";
@@ -74,7 +75,7 @@ export default class Submissions extends React.Component {
   get submissionsFilter() {
     if (this.state.submissionsFilter) {
       return (
-        <Overlay overlayBackgroundColor="rgba(255, 255, 255, .9)">
+        <Modal>
           <SubmissionFilter
             filter={this.state.filter}
             onFilterPressed={filter => {
@@ -87,7 +88,7 @@ export default class Submissions extends React.Component {
             }}
             onCloseClicked={() => this.setState({ submissionsFilter: false })}
           />
-        </Overlay>
+        </Modal>
       );
     } else {
       return <></>;
@@ -100,7 +101,16 @@ export default class Submissions extends React.Component {
     this.fetchAggregate();
   }
 
-  fetchAggregate() {}
+  fetchAggregate() {
+    api.reportStats().then(f => {
+      const { sections } = this.state;
+      if (sections.length > 0) {
+        const section = sections[0];
+        section.aggregate = this.state.aggregate;
+      }
+      this.setState({ sections });
+    });
+  }
 
   fetchReports(offset) {
     this.setState({ refreshing: true });
@@ -544,38 +554,40 @@ export default class Submissions extends React.Component {
             }}
             leftOpenValue={0}
             rightOpenValue={-160}
-            renderSectionHeader={({ section: { title, sectionIndex } }) => (
-              <View>
-                <Text
-                  style={{
-                    width: "100%",
-                    backgroundColor: "#FAFAFA",
-                    textAlign: "center",
-                    fontWeight: "bold",
-                    fontSize: 19,
-                    padding: 10
-                  }}
-                >
-                  {title}
-                </Text>
-                {false && (
-                  <Icon
-                    buttonStyle={{
-                      alignSelf: "center",
-                      height: "100%"
+            renderSectionHeader={({ section: { title } }) => {
+              return (
+                <View>
+                  <Text
+                    style={{
+                      width: "100%",
+                      backgroundColor: "#FAFAFA",
+                      textAlign: "center",
+                      fontWeight: "bold",
+                      fontSize: 19,
+                      padding: 10
                     }}
-                    containerStyle={{
-                      position: "absolute",
-                      alignSelf: "flex-end",
-                      top: 0,
-                      bottom: 0,
-                      backgroundColor: "blue"
-                    }}
-                    name="swap-vert"
-                  />
-                )}
-              </View>
-            )}
+                  >
+                    {title}
+                  </Text>
+                  {false && (
+                    <Icon
+                      buttonStyle={{
+                        alignSelf: "center",
+                        height: "100%"
+                      }}
+                      containerStyle={{
+                        position: "absolute",
+                        alignSelf: "flex-end",
+                        top: 0,
+                        bottom: 0,
+                        backgroundColor: "blue"
+                      }}
+                      name="swap-vert"
+                    />
+                  )}
+                </View>
+              );
+            }}
             keyExtractor={this._keyExtractor}
             sections={this.state.sections}
             onRefresh={this._onRefresh}
@@ -583,18 +595,6 @@ export default class Submissions extends React.Component {
             data={this.state.reports}
             onEndReached={this._onEndReached}
             initialNumToRender={2}
-            ListHeaderComponent={() => {
-              if (!this.state.aggregate) {
-                return <></>;
-              } else {
-                return (
-                  <View>
-                    <View>{this.state.aggregate.fine}</View>
-                    <View>{this.state.aggregate.points}</View>
-                  </View>
-                );
-              }
-            }}
             ListFooterComponent={<View style={{ height: 10 }} />}
             renderItem={({ item }) => {
               const { report, address } = item;
