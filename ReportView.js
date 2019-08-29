@@ -139,66 +139,87 @@ export default class ReportView extends React.Component {
     const { report, address } = rpt;
     const time = moment(report.timeofincident);
     return (
-      <Card title={report.complaint}>
-        <View
-          style={[
-            HorizontalStyle.style,
-            {
-              paddingBottom: 10
-            }
-          ]}
-        >
-          <Text>
-            {address.building} {address.street}
-          </Text>
-          <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
-        </View>
-        {this.carousel()}
+      <View>
+        <Card title={report.complaint}>
+          <View
+            style={[
+              HorizontalStyle.style,
+              {
+                paddingBottom: 10
+              }
+            ]}
+          >
+            <Text>
+              {address.building} {address.street}
+            </Text>
+            <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
+          </View>
+          {this.carousel()}
 
-        <Autolink text={report.description ?? ""} />
-        <Autolink text={report.notes ?? ""} />
-        {(report.searchId === null || report.searchId.length === 0) && (
-          <Autolink
-            style={ButtonStyle.orangeText}
-            text={`311# Pending Submission`}
-          />
-        )}
-        {report.searchId != null && report.searchId.length > 0 && (
-          <TouchableOpacity onLongPress={() => this.copy(report.searchId)}>
+          <Autolink text={report.description ?? ""} />
+          <Autolink text={report.notes ?? ""} />
+          {(report.searchId === null || report.searchId.length === 0) && (
             <Autolink
               style={ButtonStyle.orangeText}
-              text={`311# ${report.searchId}`}
+              text={`311# Pending Submission`}
             />
-          </TouchableOpacity>
-        )}
+          )}
+          {report.searchId != null && report.searchId.length > 0 && (
+            <TouchableOpacity onLongPress={() => this.copy(report.searchId)}>
+              <Autolink
+                style={ButtonStyle.orangeText}
+                text={`311# ${report.searchId}`}
+              />
+            </TouchableOpacity>
+          )}
+          <View
+            style={[
+              HorizontalStyle.style,
+              {
+                paddingTop: 10
+              }
+            ]}
+          >
+            <View
+              style={{
+                flexDirection: "column"
+              }}
+            >
+              <Text>{`${time.fromNow()}`}</Text>
+              <Text>{`${time.format("M/D/YY h:mm A")} `}</Text>
+            </View>
+            <View
+              style={{
+                flexDirection: "column"
+              }}
+            >
+              <Text style={ButtonStyle.orangeText}>
+                {address.cb ? `#CB${address.cb}` : ""}
+              </Text>
+              <Text>{this.status}</Text>
+            </View>
+          </View>
+        </Card>
         <View
-          style={[
-            HorizontalStyle.style,
-            {
-              paddingTop: 10
-            }
-          ]}
+          style={{
+            position: "absolute",
+            width: "100%",
+            alignItems: "center"
+          }}
         >
-          <View
+          <Text
             style={{
-              flexDirection: "column"
+              alignSelf: "center",
+              color: "green",
+              opacity: report.fine || report.points ? 100 : 0
             }}
           >
-            <Text>{`${time.fromNow()}`}</Text>
-            <Text>{`${time.format("M/D/YY h:mm A")} `}</Text>
-          </View>
-          <View
-            style={{
-              flexDirection: "column"
-            }}
-          >
-            <Text style={ButtonStyle.orangeText}>
-              {address.cb ? `#CB${address.cb}` : ""}
-            </Text>
-            <Text>{this.status}</Text>
-          </View>
+            {report.fine && `\$${report.fine}`}
+            {report.fine && report.points && "\n"}
+            {report.points && report.points}
+          </Text>
         </View>
-      </Card>
+      </View>
     );
   }
 }
