@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "http://localhost:8084/staging/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };

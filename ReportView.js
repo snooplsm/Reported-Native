@@ -12,7 +12,7 @@ import {
   TouchableOpacity
 } from "react-native";
 import { ToastAndroid } from "react-native";
-import { Card, Icon } from "react-native-elements";
+import { Avatar, Card, Icon, Tooltip } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
 import ImageCarousel from "./ImageCarousel";
@@ -138,6 +138,7 @@ export default class ReportView extends React.Component {
     const { report: rpt } = this.props;
     const { report, address } = rpt;
     const time = moment(report.timeofincident);
+    console.log(report.fine, report.points);
     return (
       <View>
         <Card title={report.complaint}>
@@ -203,21 +204,86 @@ export default class ReportView extends React.Component {
         <View
           style={{
             position: "absolute",
-            width: "100%",
-            alignItems: "center"
+            right: 0,
+            flexDirection: "row",
+            alignItems: "flex-end"
           }}
         >
-          <Text
-            style={{
-              alignSelf: "center",
-              color: "green",
-              opacity: report.fine || report.points ? 100 : 0
-            }}
-          >
-            {report.fine && `\$${report.fine}`}
-            {report.fine && report.points && "\n"}
-            {report.points && report.points}
-          </Text>
+          {report.points && (
+            <Tooltip
+              popover={
+                <Text style={{ color: "white", fontWeight: "bold" }}>
+                  {report.points} {report.points != 1 ? "Point" : "Points"}
+                  {" added to license."}
+                </Text>
+              }
+              backgroundColor={"black"}
+            >
+              <Avatar
+                rounded
+                size={40}
+                title={`+${report.points}`}
+                overlayContainerStyle={{
+                  backgroundColor: "white",
+                  borderColor: "black",
+                  borderWidth: 2
+                }}
+                titleStyle={{
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  color: "black"
+                }}
+              />
+            </Tooltip>
+          )}
+          {report.fine && (
+            <Tooltip
+              popover={
+                <Text style={{ color: "white", fontWeight: "bold" }}>
+                  Fined ${report.fine}
+                </Text>
+              }
+              backgroundColor={"green"}
+            >
+              <Avatar
+                rounded
+                size={40}
+                title={`$${report.fine}`}
+                overlayContainerStyle={{
+                  backgroundColor: "white",
+                  borderColor: "green",
+                  borderWidth: 2
+                }}
+                titleStyle={{
+                  fontSize: 12,
+                  fontWeight: "bold",
+                  color: "green"
+                }}
+              />
+            </Tooltip>
+          )}
+          {report.media.find(x => x.type && x.type.indexOf("GUILTY") != -1) && (
+            <Avatar
+              rounded
+              size={40}
+              onPress={() => {
+                Linking.openURL(
+                  report.media.find(x => x.type && x.type.indexOf("GUILTY")).url
+                );
+              }}
+              title={`PDF`}
+              overlayContainerStyle={{
+                backgroundColor: "white",
+                borderColor: "red",
+                borderWidth: 2
+              }}
+              titleStyle={{
+                fontSize: 14,
+                fontWeight: "bold",
+                color: "render"
+              }}
+            />
+          )}
         </View>
       </View>
     );
