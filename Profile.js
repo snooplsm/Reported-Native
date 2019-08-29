@@ -1,6 +1,7 @@
 import React from "react";
 
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -232,25 +233,16 @@ export default class Profile extends React.Component {
     const user = {};
     const { email, phone, firstName, lastName } = this.state;
     const { email: e, phone: p, firstName: f, lastName: l } = this.state.user;
-    if (email != e) {
-      user.email = email;
-    }
-    if (phone != p) {
-      user.phone = phone;
-    }
-    if (firstName != f) {
-      user.firstName = firstName;
-    }
-    if (lastName != l) {
-      user.lastName = lastName;
-    }
+    const newUser = { email, phone, firstName, lastName };
     api
-      .updateUser(user)
+      .updateUser(newUser)
+      .then(success => success.data)
       .then(success => {
+        alert(JSON.stringify(success));
         this.setData(success);
       })
       .catch(e => {
-        console.log(e);
+        Alert.alert("Problem", "Could not update.");
       });
   }
 

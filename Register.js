@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   StyleSheet,
   Text,
@@ -91,14 +92,16 @@ export default class Register extends React.Component {
     });
   }
 
-  onEmailBlur() {
+  onEmailBlur(onlySuccess) {
     let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
       emailError = "Invalid Email";
     } else {
       emailError = null;
     }
-    this.setState({ emailError });
+    if (this.state.emailError || !onlySuccess) {
+      this.setState({ emailError });
+    }
   }
 
   validateEmail(email) {
@@ -173,6 +176,30 @@ export default class Register extends React.Component {
       });
   }
 
+  _keyboardDidShow() {
+    this.setState({ keyboard: true });
+  }
+
+  _keyboardDidHide() {
+    this.setState({ keyboard: false });
+  }
+
+  componentDidMount() {
+    this.keyboardDidShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      this._keyboardDidShow.bind(this)
+    );
+    this.keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      this._keyboardDidHide.bind(this)
+    );
+  }
+
+  componentWillUnmount() {
+    this.keyboardDidShowListener.remove();
+    this.keyboardDidHideListener.remove();
+  }
+
   render() {
     return (
       <KeyboardAvoidingView behavior="padding" style={styles.container}>
@@ -234,14 +261,18 @@ export default class Register extends React.Component {
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.emailError}
-            onChangeText={email => this.onEmailChange(email)}
-            onBlur={() => this.onEmailBlur()}
+            onChangeText={email => {
+              this.onEmailChange(email);
+              this.onEmailBlur(true);
+            }}
+            onBlur={() => this.onEmailBlur(false)}
             leftIcon={<Icon type="material-community" name="email" />}
           />
           <Input
             label="Password (optional)"
             secureTextEntry={true}
             containerStyle={styles.field}
+            onChangeText={password => this.setState({ password })}
             errorStyle={ErrorStyle.style}
             leftIcon={<Icon type="material-community" name="lock" />}
           />
@@ -253,16 +284,17 @@ export default class Register extends React.Component {
             checked={this.state.testify}
           />
         </ScrollView>
-        <View style={styles.field}>
+        <View>
           <Button
             onPress={() => this.submit()}
             loading={this.state.registering}
             containerStyle={{
-              marginBottom: 88
+              marginBottom: this.state.keyboard ? 64 : 0
             }}
             buttonStyle={Object.assign(
               {
-                padding: 20
+                padding: 20,
+                borderRadius: 0
               },
               Button.primary
             )}

@@ -14,7 +14,6 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "usesIcloudStorage": true,
       "bundleIdentifier": "com.reported.reported.beta",
       "buildNumber": "9",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
@@ -27,7 +26,7 @@
         "backgroundColor": "#ffffff"
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 48,
+      "versionCode": 49,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
     "updates": {

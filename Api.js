@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -330,7 +330,9 @@ export const api = {
   },
 
   updateUser: user => {
-    return ax.put("/user/update", user);
+    return ax.put("/user/update", user).then(res => {
+      return new UserPromise(res);
+    });
   },
 
   login: (username, password) => {
@@ -400,6 +402,24 @@ export const api = {
   }
 };
 
+export async function pushTokenNeedsRegisteringAsync() {
+  const { status: existingStatus } = await Permissions.getAsync(
+    Permissions.NOTIFICATIONS
+  );
+  let finalStatus = existingStatus;
+  if (existingStatus !== "granted") {
+    return true;
+  }
+  let user = await isSignedIn();
+  if (!user) {
+    return true;
+  }
+  let key = `user.token.${user && user.id}`;
+  let token = await AsyncStorage.getItem(key);
+  let token2 = await Notifications.getExpoPushTokenAsync();
+  return token2 !== token;
+}
+
 export async function registerForPushNotificationsAsync() {
   const { status: existingStatus } = await Permissions.getAsync(
     Permissions.NOTIFICATIONS
@@ -417,12 +437,13 @@ export async function registerForPushNotificationsAsync() {
 
   // Stop here if the user did not grant permissions
   if (finalStatus !== "granted") {
-    return;
+    return new Error(`No Permission Granted. ${finalStatus}`);
   }
 
   // Get the token that uniquely identifies this device
   let token = await Notifications.getExpoPushTokenAsync();
 
   // POST the token to your backend server from where you can retrieve it to send push notifications.
-  return api.registerToken(token);
+  const result = await api.registerToken(token);
+  return result;
 }
