@@ -2,6 +2,8 @@ import React from "react";
 import {
   AsyncStorage,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
   Text,
   TouchableOpacity,
   View,
@@ -34,7 +36,15 @@ import { ScrollView } from "react-navigation";
 import { IconStyle, colors } from "./Styles";
 import { ProgressBar } from "react-native-paper";
 import DateTimePicker from "react-native-modal-datetime-picker";
-import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
+import {
+  alpr,
+  finds,
+  api,
+  uploadFile,
+  reverseGeocode,
+  pushTokenNeedsRegisteringAsync,
+  registerForPushNotificationsAsync
+} from "./Api";
 
 const isEqual = require("react-fast-compare");
 
@@ -109,7 +119,33 @@ export default class Submission extends React.Component {
       onClearPressed: this.onClearPressed
     });
     this.loadOffline();
+    this.registerToken();
+    this.keyboardDidShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      this._keyboardDidShow.bind(this)
+    );
+    this.keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      this._keyboardDidHide.bind(this)
+    );
   }
+
+  _keyboardDidShow() {
+    this.setState({ keyboard: true });
+  }
+
+  _keyboardDidHide() {
+    this.setState({ keyboard: false });
+  }
+
+  registerToken = async () => {
+    const needsRegistering = await pushTokenNeedsRegisteringAsync();
+    if (needsRegistering) {
+      console.log("needsRegistering", needsRegistering);
+      const result = await registerForPushNotificationsAsync();
+      console.log(result);
+    }
+  };
 
   onClearPressed = () => {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
@@ -273,6 +309,31 @@ export default class Submission extends React.Component {
     }
   }
 
+  reportSubmitted = async => {
+    const canRegister = pushTokenNeedsRegisteringAsync();
+    const needsToEnablePush = canRegister && Platform.OS !== "android";
+    const buttons = needsToEnablePush && [
+      {
+        text: "No",
+        onPress: () => {}
+      },
+      {
+        text: "Enable",
+        onPress: () => {
+          this.registerToken();
+        }
+      }
+    ];
+    let msg = needsToEnablePush
+      ? "Your report has been submitted.  Enable push notifications to get future updates?"
+      : "Your report has been submitted.";
+    Alert.alert(
+      "Report Submitted",
+      "Your report has been submitted.  Enable push notifications to get future updates?",
+      buttons
+    );
+  };
+
   get complaintModal() {
     if (this.state.showComplaintModal) {
       return (
@@ -362,9 +423,11 @@ export default class Submission extends React.Component {
     }, 60000);
   }
 
-  componentWillUnount() {
+  componentWillUnmount() {
     this.backHandler.remove();
     clearInterval(this.timeofreportinterval);
+    this.keyboardDidShowListener.remove();
+    this.keyboardDidHideListener.remove();
   }
 
   timeofreport(timeofreport) {
@@ -575,7 +638,9 @@ export default class Submission extends React.Component {
           )
       })
       .then(x => {
-        this.clear();
+        this.clear(() => {
+          this.reportSubmitted();
+        });
       })
       .catch(e => {
         const request = e.request;
@@ -615,9 +680,11 @@ export default class Submission extends React.Component {
     return timeofreport;
   }
 
-  clear() {
+  clear(lambda) {
     this._license.clear();
-    this.setState(this.initialState);
+    this.setState(this.initialState, () => {
+      lambda && lambda();
+    });
   }
 
   get addPhotoText() {
@@ -663,153 +730,161 @@ export default class Submission extends React.Component {
             color={colors.orange}
           />
         )}
-        <ScrollView>
-          <View style={styles.container}>
-            {/*<ComplaintView
+        <KeyboardAvoidingView behavior="padding" style={styles.container}>
+          <ScrollView>
+            <View style={styles.container}>
+              {/*<ComplaintView
           onComplaintsChanged={c => this.setState({ complaints: c })}
         />*/}
-            <Button
-              type="outline"
-              buttonStyle={styles.addPhoto}
-              containerStyle={styles.addPhotoContainer}
-              onPress={this._pickImage}
-              title={this.addPhotoText}
-            />
+              <Button
+                type="outline"
+                buttonStyle={styles.addPhoto}
+                containerStyle={styles.addPhotoContainer}
+                onPress={this._pickImage}
+                title={this.addPhotoText}
+              />
 
-            <ImageCarousel
-              onItemPressed={({ item, index }) => {
-                this.setState({ imageModal: index });
-              }}
-              entries={this.state.media}
-            />
+              <ImageCarousel
+                onItemPressed={({ item, index }) => {
+                  this.setState({ imageModal: index });
+                }}
+                entries={this.state.media}
+              />
 
-            <View>
+              <View>
+                <TouchSpoof
+                  onPress={() => this.setState({ showComplaintModal: true })}
+                >
+                  <Input
+                    ref={r => (this._complaint = r)}
+                    caretHidden={true}
+                    autoFocus={false}
+                    onFocus={x => this.setState({ showComplaintModal: true })}
+                    label={"Complaint"}
+                    placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                    value={this.state.complaints.map(x => x.name).join(", ")}
+                  />
+                </TouchSpoof>
+              </View>
+
+              <View>
+                <TouchableOpacity
+                  onPress={() => this.setState({ showAddressModal: true })}
+                >
+                  <Input
+                    ref={r => (this._address = r)}
+                    caretHidden={true}
+                    autoFocus={false}
+                    onFocus={x => this.setState({ showAddressModal: true })}
+                    label={"Address"}
+                    placeholder={"Where you observed infraction"}
+                    value={this.addressString}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              <LicenseView
+                ref={r => (this._license = r)}
+                onPlateSelected={plate => {
+                  const { candidate } = plate;
+                  console.log("candidate plate", candidate);
+                  if (
+                    candidate &&
+                    candidate.plate &&
+                    candidate.plate.length > 0
+                  ) {
+                    this.setState({ license: plate });
+                  } else {
+                    this.setState({ license: undefined });
+                  }
+                }}
+                license={this.state.license}
+                alpr={this.state.alpr}
+              />
+
+              {this.state.datePickerVisible && (
+                <DateTimePicker
+                  mode={"datetime"}
+                  titleIOS={"Time of incident"}
+                  isVisible={true}
+                  date={this.time || new Date()}
+                  onConfirm={date => {
+                    this._datePick.blur();
+                    this.setState({
+                      timeofreport: date,
+                      timeofreportstr: this.timeofreport(date),
+                      datePickerVisible: undefined
+                    });
+                  }}
+                  onCancel={() => {
+                    this.setState({ datePickerVisible: undefined });
+                  }}
+                />
+              )}
+
               <TouchSpoof
-                onPress={() => this.setState({ showComplaintModal: true })}
-              >
-                <Input
-                  ref={r => (this._complaint = r)}
-                  caretHidden={true}
-                  autoFocus={false}
-                  onFocus={x => this.setState({ showComplaintModal: true })}
-                  label={"Complaint"}
-                  placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-                  value={this.state.complaints.map(x => x.name).join(", ")}
-                />
-              </TouchSpoof>
-            </View>
-
-            <View>
-              <TouchableOpacity
-                onPress={() => this.setState({ showAddressModal: true })}
-              >
-                <Input
-                  ref={r => (this._address = r)}
-                  caretHidden={true}
-                  autoFocus={false}
-                  onFocus={x => this.setState({ showAddressModal: true })}
-                  label={"Address"}
-                  placeholder={"Where you observed infraction"}
-                  value={this.addressString}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <LicenseView
-              ref={r => (this._license = r)}
-              onPlateSelected={plate => {
-                const { candidate } = plate;
-                console.log("candidate plate", candidate);
-                if (
-                  candidate &&
-                  candidate.plate &&
-                  candidate.plate.length > 0
-                ) {
-                  this.setState({ license: plate });
-                } else {
-                  this.setState({ license: undefined });
-                }
-              }}
-              license={this.state.license}
-              alpr={this.state.alpr}
-            />
-
-            {this.state.datePickerVisible && (
-              <DateTimePicker
-                mode={"datetime"}
-                titleIOS={"Time of incident"}
-                isVisible={true}
-                date={this.time || new Date()}
-                onConfirm={date => {
-                  this._datePick.blur();
+                onPress={() => {
                   this.setState({
-                    timeofreport: date,
-                    timeofreportstr: this.timeofreport(date),
-                    datePickerVisible: undefined
+                    datePickerVisible: true
                   });
                 }}
-                onCancel={() => {
-                  this.setState({ datePickerVisible: undefined });
-                }}
-              />
-            )}
-
-            <TouchSpoof
-              onPress={() => {
-                this.setState({
-                  datePickerVisible: true
-                });
-              }}
-            >
+              >
+                <Input
+                  ref={r => {
+                    this._datePick = r;
+                  }}
+                  caretHidden={true}
+                  autoFocus={false}
+                  label={"When Incident Occurred"}
+                  onFocus={x => this.setState({ datePickerVisible: true })}
+                  placeholder={"Time you observed infraction"}
+                  value={this.state.timeofreportstr}
+                />
+              </TouchSpoof>
               <Input
-                ref={r => {
-                  this._datePick = r;
+                label={"Incident Description (optional)"}
+                onChangeText={v => {
+                  this.setState({ description: v });
                 }}
-                caretHidden={true}
-                autoFocus={false}
-                label={"When Incident Occurred"}
-                onFocus={x => this.setState({ datePickerVisible: true })}
-                placeholder={"Time you observed infraction"}
-                value={this.state.timeofreportstr}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={"Add any additional details to provide to 311"}
+                textAlignVertical={"top"}
+                value={this.state.description}
               />
-            </TouchSpoof>
-            <Input
-              label={"Incident Description (optional)"}
-              onChangeText={v => {
-                this.setState({ description: v });
-              }}
-              multiline={true}
-              numberOfLines={3}
-              placeholder={"Add any additional details to provide to 311"}
-              textAlignVertical={"top"}
-              value={this.state.description}
-            />
-            <Input
-              label={"Notes (optional and private)"}
-              onChangeText={v => this.setState({ notes: v })}
-              multiline={true}
-              numberOfLines={3}
-              placeholder={
-                "Notes that only you will see and will not be sent to 311"
-              }
-              textAlignVertical={"top"}
-              value={this.state.notes}
-            />
-            <View style={{ height: 100 }} />
-          </View>
-        </ScrollView>
+              <Input
+                label={"Notes (optional and private)"}
+                onChangeText={v => this.setState({ notes: v })}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={
+                  "Notes that only you will see and will not be sent to 311"
+                }
+                textAlignVertical={"top"}
+                value={this.state.notes}
+              />
+              <View style={{ height: 100 }} />
+            </View>
+          </ScrollView>
 
-        <Button
-          onPress={() => this.submit()}
-          title="SUBMIT"
-          loading={this.state.submitting}
-          titleStyle={{
-            fontSize: 22,
-            fontWeight: "bold",
-            opacity: this.percentageOpacity
-          }}
-          buttonStyle={[{}, styles.submitButtonStyle]}
-        />
+          <Button
+            onPress={() => this.submit()}
+            title="SUBMIT"
+            loading={this.state.submitting}
+            titleStyle={{
+              fontSize: 22,
+              fontWeight: "bold",
+              opacity: this.percentageOpacity
+            }}
+            containerStyle={{
+              marginBottom: this.state.keyboard ? 64 : 0
+            }}
+            buttonStyle={[
+              { padding: 20, borderRadius: 0 },
+              styles.submitButtonStyle
+            ]}
+          />
+        </KeyboardAvoidingView>
         {this.imageModal}
         {this.complaintModal}
         {this.addressModal}
@@ -944,8 +1019,6 @@ const styles = StyleSheet.create({
     padding: 10
   },
   submitButtonStyle: {
-    borderRadius: 0,
-    padding: 20,
     backgroundColor: colors.orange
   },
   button: {

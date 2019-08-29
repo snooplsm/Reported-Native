@@ -2,6 +2,7 @@ import React from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
@@ -112,6 +113,30 @@ export default class Login extends React.Component {
       });
   }
 
+  _keyboardDidShow() {
+    this.setState({ keyboard: true });
+  }
+
+  _keyboardDidHide() {
+    this.setState({ keyboard: false });
+  }
+
+  componentDidMount() {
+    this.keyboardDidShowListener = Keyboard.addListener(
+      "keyboardDidShow",
+      this._keyboardDidShow.bind(this)
+    );
+    this.keyboardDidHideListener = Keyboard.addListener(
+      "keyboardDidHide",
+      this._keyboardDidHide.bind(this)
+    );
+  }
+
+  componentWillUnmount() {
+    this.keyboardDidShowListener.remove();
+    this.keyboardDidHideListener.remove();
+  }
+
   isSubmitEnabled() {
     return (
       this.validateEmail(this.state.email) && this.state.password.length > 2
@@ -173,7 +198,7 @@ export default class Login extends React.Component {
             this.submitLogin();
           }}
           containerStyle={{
-            marginBottom: 88
+            marginBottom: this.state.keyboard ? 64 : 0
           }}
           buttonStyle={Object.assign(
             {
