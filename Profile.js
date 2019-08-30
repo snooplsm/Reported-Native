@@ -240,6 +240,7 @@ export default class Profile extends React.Component {
       .then(success => {
         alert(JSON.stringify(success));
         this.setData(success);
+        this.editPressed();
       })
       .catch(e => {
         Alert.alert("Problem", "Could not update.");
