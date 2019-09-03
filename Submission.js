@@ -47,6 +47,7 @@ import {
 } from "./Api";
 
 const isEqual = require("react-fast-compare");
+const diff = require("deep-diff");
 
 export default class Submission extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -99,7 +100,8 @@ export default class Submission extends React.Component {
       license: undefined,
       alpr: undefined,
       location: undefined,
-      license: undefined
+      license: undefined,
+      keyboard: undefined
     };
   }
 
@@ -135,7 +137,7 @@ export default class Submission extends React.Component {
   }
 
   _keyboardDidHide() {
-    this.setState({ keyboard: false });
+    this.setState({ keyboard: undefined });
   }
 
   registerToken = async () => {
@@ -143,7 +145,8 @@ export default class Submission extends React.Component {
     if (needsRegistering) {
       console.log("needsRegistering", needsRegistering);
       const result = await registerForPushNotificationsAsync();
-      console.log(result);
+      console.log("ok");
+      //console.log(result);
     }
   };
 
@@ -230,6 +233,8 @@ export default class Submission extends React.Component {
       } else {
         this.props.navigation.setParams({ canGoBack: false });
       }
+      const diffy = diff(this.state, this.initialState);
+      console.log("diff is", diffy);
       const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
@@ -432,7 +437,7 @@ export default class Submission extends React.Component {
 
   timeofreport(timeofreport) {
     if (!timeofreport) {
-      return "";
+      return undefined;
     }
     const momy = moment(timeofreport);
     if (momy.isValid()) {

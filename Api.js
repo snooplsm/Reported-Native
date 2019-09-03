@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/staging/",
+  dev: "https://reported-stats.herokuapp.com/prod/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -351,13 +351,13 @@ export const api = {
     return isSignedIn()
       .then(user => {
         key.key = `user.token.${user && user.id}`;
-        return AsyncStorage.getItem(key);
+        return AsyncStorage.getItem(key.key);
       })
       .then(_token => {
         if (_token !== token) {
           return ax
             .put("/user/register/token", {
-              installationId: token,
+              token: token,
               channels: ["general"]
             })
             .then(res => {
@@ -446,7 +446,7 @@ export async function registerForPushNotificationsAsync() {
 
   // Get the token that uniquely identifies this device
   let token = await Notifications.getExpoPushTokenAsync();
-
+  console.log("token", token);
   // POST the token to your backend server from where you can retrieve it to send push notifications.
   const result = await api.registerToken(token);
   return result;
