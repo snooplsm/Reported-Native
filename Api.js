@@ -289,6 +289,24 @@ export const geocode = address => {
   });
 };
 
+export const precincts = () => {
+  const key = "@nyc.precinct.00";
+  return AsyncStorage.getItem(key).then(precincts => {
+    if (precincts) {
+      return JSON.parse(precincts);
+    }
+    return fetch(
+      `https://raw.githubusercontent.com/snooplsm/nyc_neighborhood_polylines/master/nyc_precincts.json?date=${new Date().valueOf()}`
+    )
+      .then(result => result.json())
+      .then(result => {
+        const json = result;
+        AsyncStorage.setItem(key, JSON.stringify(json));
+        return json;
+      });
+  });
+};
+
 export const reverseGeocode = location => {
   if (!location || !location.lat || !location.lng) {
     return Promise.reject(
