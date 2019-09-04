@@ -13,12 +13,16 @@ import {
   FlatList,
   Platform
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
-import { Button, Icon, Input } from "react-native-elements";
+import MapView, { Marker, Polygon } from "react-native-maps";
+import { Button, Icon, Input, Overlay } from "react-native-elements";
 import { AutoStyle } from "./Styles";
+import Autolink from "react-native-autolink";
 import { addresses } from "./Addresses.js";
 import marker from "./assets/car-marker.png";
-import { geocode, reverseGeocode, finds } from "./Api";
+import { geocode, reverseGeocode, finds, precincts } from "./Api";
+const polylineUtil = require("@mapbox/polyline");
+import { isPointInPolygon } from "geolib";
+import ordinal from "ordinal";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 
 export default class AddressView extends React.Component {
@@ -43,23 +47,98 @@ export default class AddressView extends React.Component {
         latitude: location.lat,
         longitude: location.lng,
         zoom: 10.0
-      }
+      },
+      precincts: []
     };
   }
 
+  precinctsInBounds = async () => {
+    console.log("precinctsinbounds start", Date());
+    const bounds = this.state.region;
+    const n = { latitude: bounds.latitude + bounds.latitudeDelta };
+    const s = { latitude: bounds.latitude - bounds.latitudeDelta };
+    const e = { longitude: bounds.longitude + bounds.longitudeDelta };
+    const w = { longitude: bounds.longitude - bounds.longitudeDelta };
+    const ne = {
+      ...n,
+      ...e
+    };
+    const nw = {
+      ...n,
+      ...w
+    };
+    const sw = {
+      ...s,
+      ...w
+    };
+    const se = {
+      ...s,
+      ...e
+    };
+
+    const big = [ne, se, sw, nw];
+    const precincts = this._precincts || [];
+
+    // console.log(big);
+    const some = precincts.filter(precinct => {
+      //console.log(precinct.id);
+      const some = precinct.polygons.some(polygon => {
+        return polygon.some(point => {
+          return isPointInPolygon(point, big);
+        });
+      });
+      return some;
+    });
+    console.log("precinctsinbounds end", Date());
+    return some;
+  };
+
+  precinctWithin = async location => {
+    const start = Date();
+    console.log("precinctswithinstart", start);
+    const precincts = this._precincts || [];
+    const point = { latitude: location.lat, longitude: location.lng };
+    const result = precincts.filter(precinct => {
+      return (
+        precinct.polygons.filter(polygon => {
+          const isInPoly = isPointInPolygon(point, polygon);
+          //console.log(isInPoly);
+          if (isInPoly) {
+            console.log("found", precinct.id);
+          }
+          return isInPoly;
+        }).length > 0
+      );
+    });
+    console.log("precinctswithinend", Date());
+    return result;
+  };
+
   onRegionChange = region => {
+    if (this._reverseGeocode) {
+    }
     this.setState(
       {
         region
       },
       () => {
+        const location = { lat: region.latitude, lng: region.longitude };
+        this.precinctWithin(location).then(f => {
+          const precinct = f.length > 0 ? f[0] : undefined;
+          this.setState({ precinct });
+        });
+        this.precinctsInBounds().then(some => {
+          console.log("precinctsInBounds");
+          this.setState({ precincts: some });
+        });
+        console.log("after set state", Date());
+        clearTimeout(this.debounce);
         this.debounce = setTimeout(() => {
+          console.log("after timeout", Date());
           const { region } = this.state;
           if (!region) {
             return;
           }
-          const location = { lat: region.latitude, lng: region.longitude };
-
           reverseGeocode(location)
             .then(data => {
               //console.log(data);
@@ -88,7 +167,7 @@ export default class AddressView extends React.Component {
             .catch(e => {
               console.log(e);
             });
-        }, 400);
+        }, 0);
       }
     );
   };
@@ -136,10 +215,30 @@ export default class AddressView extends React.Component {
 
   componentDidMount() {
     this.loadOffline();
+    precincts()
+      .then(precincts => {
+        if (!precincts) {
+          return;
+        }
+        this._precincts = precincts.map(precinct => {
+          precinct.polygons = precinct.polylines.map(polyline =>
+            polylineUtil.decode(polyline).map(arr => {
+              return {
+                latitude: arr[0],
+                longitude: arr[1]
+              };
+            })
+          );
+          delete precinct.polylines;
+          return precinct;
+        });
+      })
+      .catch(e => {
+        console.log("precincts error", e);
+      });
   }
 
   saveOffline = async () => {
-    console.log("save");
     AsyncStorage.setItem(this.key, JSON.stringify(this.state));
   };
 
@@ -165,6 +264,40 @@ export default class AddressView extends React.Component {
         lambda();
       }
     });
+  }
+
+  get selectedPrecinct() {
+    const selectedPrecinct = this.state.selectedPrecinct;
+    if (!selectedPrecinct) {
+      return <></>;
+    }
+    console.log(selectedPrecinct.social.twitter);
+    return (
+      <Overlay
+        isVisible={true}
+        width="auto"
+        height="auto"
+        onBackdropPress={() => {
+          this.setState({ selectedPrecinct: undefined });
+        }}
+        overlayBackgroundColor="#ffffffCC"
+        windowBackgroundColor={null}
+      >
+        <View style={{ padding: 20 }}>
+          <Text
+            style={{ alignSelf: "center" }}
+          >{`${selectedPrecinct.name}`}</Text>
+          <Text style={{ alignSelf: "center" }}>
+            {selectedPrecinct.social && selectedPrecinct.social.address}
+          </Text>
+          {selectedPrecinct.social && selectedPrecinct.social.twitter && (
+            <Autolink
+              text={`https://twitter.com/${selectedPrecinct.social.twitter}`}
+            />
+          )}
+        </View>
+      </Overlay>
+    );
   }
 
   render() {
@@ -288,12 +421,25 @@ export default class AddressView extends React.Component {
           >
             <MapView
               style={Platform.OS === "ios" ? styles.mapIos : styles.mapAndroid}
-              // initialCamera={this.state.camera}
               zoomEnabled={true}
               initialRegion={region}
               onRegionChangeComplete={this.onRegionChange}
               style={{ flex: 1 }}
-            ></MapView>
+            >
+              {this.state.precincts.map(precinct => {
+                return precinct.polygons.map(polygon => {
+                  return (
+                    <Polygon
+                      tappable
+                      onPress={() => {
+                        this.setState({ selectedPrecinct: precinct });
+                      }}
+                      coordinates={polygon}
+                    />
+                  );
+                });
+              })}
+            </MapView>
             {true && (
               <>
                 <View style={{ right: 0, position: "absolute" }}>
@@ -305,18 +451,39 @@ export default class AddressView extends React.Component {
                     size={40}
                   />
                 </View>
-                <View style={styles.markerFixed}>
+                <View pointerEvents="none" style={styles.markerFixed}>
                   <Image style={styles.marker} source={marker} />
                 </View>
               </>
             )}
 
-            <FlatList
-              style={styles.footer}
-              horizontal={true}
-              renderItem={this._renderItem}
-              data={this.state.results}
-            />
+            <View style={styles.footer}>
+              {this.state.precinct && (
+                <Text
+                  onPress={() => {
+                    this.setState({ selectedPrecinct: this.state.precinct });
+                  }}
+                  style={{
+                    padding: 10,
+                    alignSelf: "center",
+                    backgroundColor: "#000000",
+                    borderRadius: 5,
+                    color: "#FFF"
+                  }}
+                >
+                  {this.state.precinct.name}
+                </Text>
+              )}
+              <FlatList
+                keyExtractor={(item, index) => {
+                  return `${item.formatted_address} ${index}`;
+                }}
+                horizontal={true}
+                renderItem={this._renderItem}
+                data={this.state.results}
+              />
+            </View>
+            {this.selectedPrecinct}
           </View>
         )}
       </>
@@ -368,6 +535,7 @@ const styles = StyleSheet.create({
     width: 80
   },
   footer: {
+    width: "100%",
     bottom: 0,
     position: "absolute"
   },
