@@ -129,7 +129,7 @@ export default class AddressView extends React.Component {
     // const end2 = new Date().valueOf();
     //
     // console.log("milliseconds ellapsed", end - start, end2 - start);
-
+    console.log("precinct", precinct.name, precinct.id, precinct.social);
     this.setState({ precinct });
 
     clearTimeout(this.debounce);
