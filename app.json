@@ -5,7 +5,7 @@
     "privacy": "unlisted",
     "sdkVersion": "33.0.0",
     "platforms": ["ios", "android", "web"],
-    "version": "3.0.0",
+    "version": "3.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -25,8 +25,11 @@
         "foregroundImage": "./assets/android/ic_launcher_foreground.png",
         "backgroundColor": "#ffffff"
       },
+      "googleMaps": {
+        "apiKey": "AIzaSyDGtEsa9h6bbmepu3hoWzxeNBMlXOOnzUo"
+      },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 50,
+      "versionCode": 51,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
     "updates": {
