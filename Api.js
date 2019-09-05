@@ -290,7 +290,7 @@ export const geocode = address => {
 };
 
 export const precincts = () => {
-  const key = "@nyc.precinct.00";
+  const key = "@nyc.precinct.01";
   return AsyncStorage.getItem(key).then(precincts => {
     if (precincts) {
       return JSON.parse(precincts);

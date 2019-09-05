@@ -29,6 +29,7 @@ export default class AddressView extends React.Component {
   constructor(props) {
     super(props);
     this.key = `address.view.state`;
+    this._precincts = [];
     const location = (props.location &&
       props.location.place.geometry.location) || {
       lat: 40.70696,
@@ -53,7 +54,6 @@ export default class AddressView extends React.Component {
   }
 
   precinctsInBounds = async () => {
-    console.log("precinctsinbounds start", Date());
     const bounds = this.state.region;
     const n = { latitude: bounds.latitude + bounds.latitudeDelta };
     const s = { latitude: bounds.latitude - bounds.latitudeDelta };
@@ -77,18 +77,22 @@ export default class AddressView extends React.Component {
     };
 
     const big = [ne, se, sw, nw];
-    const precincts = this._precincts || [];
+    const precincts = (this._precincts || []).sort((a, b) => {});
+    console.log("big", big);
+    //this.setState({ big });
 
     // console.log(big);
     const some = precincts.filter(precinct => {
       //console.log(precinct.id);
       const some = precinct.polygons.some(polygon => {
         return polygon.some(point => {
+          console.log(point);
           return isPointInPolygon(point, big);
         });
       });
       return some;
     });
+    console.log("found", some.length);
     console.log("precinctsinbounds end", Date());
     return some;
   };
@@ -98,23 +102,75 @@ export default class AddressView extends React.Component {
     console.log("precinctswithinstart", start);
     const precincts = this._precincts || [];
     const point = { latitude: location.lat, longitude: location.lng };
-    const result = precincts.filter(precinct => {
-      return (
-        precinct.polygons.filter(polygon => {
-          const isInPoly = isPointInPolygon(point, polygon);
-          //console.log(isInPoly);
-          if (isInPoly) {
-            console.log("found", precinct.id);
-          }
-          return isInPoly;
-        }).length > 0
-      );
+    const result = precincts.find(precinct => {
+      return precinct.polygons.some(polygon => {
+        const isInPoly = isPointInPolygon(point, polygon);
+        //console.log(isInPoly);
+        if (isInPoly) {
+          console.log("found", precinct.id);
+        }
+        return isInPoly;
+      });
     });
-    console.log("precinctswithinend", Date());
-    return result;
+    return [result].filter(x => x);
   };
 
-  onRegionChange = region => {
+  doBgShit = async () => {
+    const { region } = this.state;
+    if (!region) {
+      return;
+    }
+    const location = { lat: region.latitude, lng: region.longitude };
+    // const start = new Date().valueOf();
+    const precinct = await this.precinctWithin(location);
+    // const end = new Date().valueOf();
+    // const start2 = new Date().valueOf();
+    // const precincts = await this.precinctsInBounds();
+    // const end2 = new Date().valueOf();
+    //
+    // console.log("milliseconds ellapsed", end - start, end2 - start);
+
+    this.setState({ precinct });
+
+    clearTimeout(this.debounce);
+    this.debounce = setTimeout(() => {
+      console.log("after timeout", Date());
+      const { region } = this.state;
+      if (!region) {
+        return;
+      }
+      reverseGeocode(location)
+        .then(data => {
+          //console.log(data);
+          const { results: pre } = data;
+          if (pre) {
+            const formattedAddress = {};
+            const results = [];
+            pre.forEach((x, index) => {
+              const { address_components: address } = x;
+              const premise = finds(address, "premise");
+              const building = finds(address, "street_number");
+              const street = finds(address, "route");
+              if (!premise && !building && !street) {
+                //alert("no dice", premise, building, street);
+              } else {
+                //alert("we good");
+                if (!formattedAddress[x.formatted_address]) {
+                  formattedAddress[x.formatted_address] = x;
+                  results.push(x);
+                }
+              }
+            });
+            this.setState({ results });
+          }
+        })
+        .catch(e => {
+          console.log(e);
+        });
+    }, 0);
+  };
+
+  onRegionChange = async region => {
     if (this._reverseGeocode) {
     }
     this.setState(
@@ -122,52 +178,7 @@ export default class AddressView extends React.Component {
         region
       },
       () => {
-        const location = { lat: region.latitude, lng: region.longitude };
-        this.precinctWithin(location).then(f => {
-          const precinct = f.length > 0 ? f[0] : undefined;
-          this.setState({ precinct });
-        });
-        this.precinctsInBounds().then(some => {
-          console.log("precinctsInBounds");
-          this.setState({ precincts: some });
-        });
-        console.log("after set state", Date());
-        clearTimeout(this.debounce);
-        this.debounce = setTimeout(() => {
-          console.log("after timeout", Date());
-          const { region } = this.state;
-          if (!region) {
-            return;
-          }
-          reverseGeocode(location)
-            .then(data => {
-              //console.log(data);
-              const { results: pre } = data;
-              if (pre) {
-                const formattedAddress = {};
-                const results = [];
-                pre.forEach((x, index) => {
-                  const { address_components: address } = x;
-                  const premise = finds(address, "premise");
-                  const building = finds(address, "street_number");
-                  const street = finds(address, "route");
-                  if (!premise && !building && !street) {
-                    //alert("no dice", premise, building, street);
-                  } else {
-                    //alert("we good");
-                    if (!formattedAddress[x.formatted_address]) {
-                      formattedAddress[x.formatted_address] = x;
-                      results.push(x);
-                    }
-                  }
-                });
-                this.setState({ results });
-              }
-            })
-            .catch(e => {
-              console.log(e);
-            });
-        }, 0);
+        this.doBgShit().done();
       }
     );
   };
@@ -220,18 +231,22 @@ export default class AddressView extends React.Component {
         if (!precincts) {
           return;
         }
-        this._precincts = precincts.map(precinct => {
-          precinct.polygons = precinct.polylines.map(polyline =>
-            polylineUtil.decode(polyline).map(arr => {
-              return {
-                latitude: arr[0],
-                longitude: arr[1]
-              };
-            })
-          );
-          delete precinct.polylines;
-          return precinct;
-        });
+        this._precincts = precincts
+          .sort((a, b) => {
+            return b.polylines.length - a.polylines.length;
+          })
+          .map(precinct => {
+            precinct.polygons = precinct.polylines.map(polyline =>
+              polylineUtil.decode(polyline).map(arr => {
+                return {
+                  latitude: arr[0],
+                  longitude: arr[1]
+                };
+              })
+            );
+            delete precinct.polylines;
+            return precinct;
+          });
       })
       .catch(e => {
         console.log("precincts error", e);
@@ -322,8 +337,8 @@ export default class AddressView extends React.Component {
             }} // custom description render
             onPress={(data, details = null) => {
               // 'details' is provided when fetchDetails = true
-              console.log("place", details);
-              console.log("data", data);
+              // console.log("place", details);
+              // console.log("data", data);
               geocode(data.description).then(ok => {
                 this.props.onPress({
                   data: data,
@@ -426,7 +441,7 @@ export default class AddressView extends React.Component {
               onRegionChangeComplete={this.onRegionChange}
               style={{ flex: 1 }}
             >
-              {this.state.precincts.map(precinct => {
+              {this._precincts.map(precinct => {
                 return precinct.polygons.map(polygon => {
                   return (
                     <Polygon
@@ -439,6 +454,13 @@ export default class AddressView extends React.Component {
                   );
                 });
               })}
+              {this.state.big && (
+                <Polygon
+                  coordinates={this.state.big}
+                  strokeWidth={5}
+                  strokeColor={"red"}
+                />
+              )}
             </MapView>
             {true && (
               <>
@@ -475,9 +497,7 @@ export default class AddressView extends React.Component {
                 </Text>
               )}
               <FlatList
-                keyExtractor={(item, index) => {
-                  return `${item.formatted_address} ${index}`;
-                }}
+                keyExtractor={this._keyExtractor}
                 horizontal={true}
                 renderItem={this._renderItem}
                 data={this.state.results}

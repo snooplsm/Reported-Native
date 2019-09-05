@@ -498,6 +498,7 @@ export default class Submissions extends React.Component {
               <FlatList
                 horizontal={true}
                 data={this._filterData}
+                style={{ backgroundColor: "#FFF" }}
                 renderItem={({ item }) => {
                   return <Button title={item} />;
                 }}
