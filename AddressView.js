@@ -112,7 +112,7 @@ export default class AddressView extends React.Component {
         return isInPoly;
       });
     });
-    return [result].filter(x => x);
+    return result;
   };
 
   doBgShit = async () => {
@@ -305,8 +305,16 @@ export default class AddressView extends React.Component {
           <Text style={{ alignSelf: "center" }}>
             {selectedPrecinct.social && selectedPrecinct.social.address}
           </Text>
+          {selectedPrecinct.social && selectedPrecinct.social.phone && (
+            <Autolink
+              style={{ alignSelf: "center" }}
+              phone={true}
+              text={`${selectedPrecinct.social.phone}`}
+            />
+          )}
           {selectedPrecinct.social && selectedPrecinct.social.twitter && (
             <Autolink
+              style={{ alignSelf: "center" }}
               text={`https://twitter.com/${selectedPrecinct.social.twitter}`}
             />
           )}
