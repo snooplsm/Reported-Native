@@ -238,7 +238,6 @@ export default class Profile extends React.Component {
       .updateUser(newUser)
       .then(success => success.data)
       .then(success => {
-        alert(JSON.stringify(success));
         this.setData(success);
         this.editPressed();
       })
