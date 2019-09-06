@@ -36,6 +36,7 @@ import { ScrollView } from "react-navigation";
 import { IconStyle, colors } from "./Styles";
 import { ProgressBar } from "react-native-paper";
 import DateTimePicker from "react-native-modal-datetime-picker";
+import { isSignedIn } from "./Auth";
 import {
   alpr,
   finds,
@@ -130,6 +131,28 @@ export default class Submission extends React.Component {
       "keyboardDidHide",
       this._keyboardDidHide.bind(this)
     );
+    isSignedIn().then(user => {
+      if (!user || !user.phone) {
+        return;
+      }
+      const phoneMatches = user.phone.match(
+        /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
+      );
+      if (!phoneMatches) {
+        Alert.alert(
+          "Invalid Phone Number",
+          `We have detected that you have an invalid phone number of ${user.phone}.`,
+          [
+            {
+              text: "Fix",
+              onPress: () => {
+                this.props.navigation.navigate("Profile");
+              }
+            }
+          ]
+        );
+      }
+    });
   }
 
   _keyboardDidShow() {
