@@ -5,7 +5,7 @@
     "privacy": "unlisted",
     "sdkVersion": "33.0.0",
     "platforms": ["ios", "android", "web"],
-    "version": "3.0.1",
+    "version": "3.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -31,7 +31,7 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 51,
+      "versionCode": 52,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
     "updates": {

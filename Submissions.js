@@ -57,6 +57,7 @@ export default class Submissions extends React.Component {
 
   constructor(props) {
     super(props);
+    this._forUser = true;
     this.state = {
       reports: [],
       sections: [],
@@ -114,6 +115,8 @@ export default class Submissions extends React.Component {
 
   fetchReports(offset) {
     this.setState({ refreshing: true });
+
+    const fetchReportsFunction = this._forUser ? api.myReports : api.reports;
     api
       .reports(this.state.filter)
       .then(res => {
@@ -601,7 +604,10 @@ export default class Submissions extends React.Component {
               const { report, address } = item;
 
               return (
-                <TouchableHighlight key={report.id}>
+                <TouchableHighlight
+                  style={{ backgroundColor: "#FFF" }}
+                  key={report.id}
+                >
                   <ReportView report={item} />
                 </TouchableHighlight>
               );
