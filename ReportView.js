@@ -11,6 +11,7 @@ import {
   View,
   TouchableOpacity
 } from "react-native";
+import MapView, { Marker } from "react-native-maps";
 import { ToastAndroid } from "react-native";
 import { Avatar, Card, Icon, Tooltip } from "react-native-elements";
 import Autolink from "react-native-autolink";
@@ -150,10 +151,58 @@ export default class ReportView extends React.Component {
               }
             ]}
           >
-            <Text>
-              {address.building} {address.street}
-            </Text>
-            <Text style={ButtonStyle.orangeText}>{report.license.plate}</Text>
+            <Tooltip
+              popover={
+                <MapView
+                  style={{
+                    width: 200,
+                    height: 200
+                  }}
+                  initialRegion={{
+                    latitude: address.location.lat,
+                    longitude: address.location.lng,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01
+                  }}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: address.location.lat,
+                      longitude: address.location.lng
+                    }}
+                  />
+                </MapView>
+              }
+            >
+              <Text>
+                {address.building} {address.street}
+              </Text>
+            </Tooltip>
+            <Tooltip
+              popover={
+                <Text style={{ color: "white", fontWeight: "bold" }}>
+                  License plate {report.license.plate}
+                </Text>
+              }
+              backgroundColor={"black"}
+            >
+              <Text
+                style={[
+                  ButtonStyle.orangeText,
+                  ,
+                  {
+                    borderWidth: 1,
+                    borderColor: "black",
+                    paddingTop: 2,
+                    paddingBottom: 2,
+                    paddingLeft: 4,
+                    paddingRight: 4
+                  }
+                ]}
+              >
+                {report.license.plate}
+              </Text>
+            </Tooltip>
           </View>
           {this.carousel()}
 

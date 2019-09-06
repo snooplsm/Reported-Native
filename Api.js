@@ -74,7 +74,7 @@ ax.interceptors.request.use(
             config.headers.common["X-User-Id"] = user.id;
             config.headers.common["X-Session-Token"] = user.sessionToken;
             config.headers.common["X-Operating-System"] = Platform.OS;
-            config.headers.comming["X-Build-Number"] =
+            config.headers.common["X-Build-Number"] =
               Constants.nativeBuildVersion;
           }
           resolve(config);
@@ -368,7 +368,7 @@ export const api = {
     const key = {};
     return isSignedIn()
       .then(user => {
-        key.key = `user.token.${user && user.id}`;
+        key.key = `@user.token.${user && user.id}`;
         return AsyncStorage.getItem(key.key);
       })
       .then(_token => {
@@ -401,6 +401,22 @@ export const api = {
 
   deleteReport: reportId => {
     return ax.delete(`/report/delete/${reportId}`, {});
+  },
+
+  myReports: (filter, _skip) => {
+    const skip = _skip ?? 0;
+    const f2 =
+      filter &&
+      Object.assign(Object.assign({}, filter), {
+        when: filter.when && filter.when.allDates,
+        complaints: filter.complaints.map(x => x.name)
+      });
+    if (filter == null) {
+      return ax.get(`/reports/all?skip=${skip}`);
+    } else {
+      console.log("filter", f2);
+      return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(f2)}`);
+    }
   },
 
   reports: (filter, _skip) => {
@@ -436,7 +452,7 @@ export async function pushTokenNeedsRegisteringAsync() {
   if (!user) {
     return true;
   }
-  let key = `user.token.${user && user.id}`;
+  let key = `@user.token.${user && user.id}`;
   let token = await AsyncStorage.getItem(key);
   let token2 = await Notifications.getExpoPushTokenAsync();
   return token2 !== token;
@@ -464,7 +480,6 @@ export async function registerForPushNotificationsAsync() {
 
   // Get the token that uniquely identifies this device
   let token = await Notifications.getExpoPushTokenAsync();
-  console.log("token", token);
   // POST the token to your backend server from where you can retrieve it to send push notifications.
   const result = await api.registerToken(token);
   return result;
