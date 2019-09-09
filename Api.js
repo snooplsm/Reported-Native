@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -70,12 +70,18 @@ ax.interceptors.request.use(
     return new Promise((resolve, eject) => {
       isSignedIn()
         .then(user => {
+          // console.log(Constants);
+          console.log("ios", Constants.manifest.ios);
+          const buildNumber =
+            Platform.OS === "android"
+              ? Constants.platform.android.versionCode
+              : Constants.manifest.ios.buildNumber;
+          console.log("buildNumber", buildNumber);
           if (user) {
             config.headers.common["X-User-Id"] = user.id;
             config.headers.common["X-Session-Token"] = user.sessionToken;
             config.headers.common["X-Operating-System"] = Platform.OS;
-            config.headers.common["X-Build-Number"] =
-              Constants.nativeBuildVersion;
+            config.headers.common["X-Build-Number"] = buildNumber;
           }
           resolve(config);
         })
@@ -368,7 +374,7 @@ export const api = {
     const key = {};
     return isSignedIn()
       .then(user => {
-        key.key = `@user.token.${user && user.id}`;
+        key.key = `@user.token1.${user && user.id}`;
         return AsyncStorage.getItem(key.key);
       })
       .then(_token => {
@@ -431,7 +437,9 @@ export const api = {
       return ax.get(`/reports?skip=${skip}`);
     } else {
       console.log("filter", f2);
-      return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(f2)}`);
+      return ax.get(
+        `/reports?skip=${skip}&filter=${encodeURIComponent(JSON.stringify(f2))}`
+      );
     }
   },
 
@@ -452,7 +460,7 @@ export async function pushTokenNeedsRegisteringAsync() {
   if (!user) {
     return true;
   }
-  let key = `@user.token.${user && user.id}`;
+  let key = `@user.token1.${user && user.id}`;
   let token = await AsyncStorage.getItem(key);
   let token2 = await Notifications.getExpoPushTokenAsync();
   return token2 !== token;

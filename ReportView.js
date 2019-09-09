@@ -175,7 +175,7 @@ export default class ReportView extends React.Component {
               }
             >
               <Text>
-                {address.building} {address.street}
+                {address.building} {address.street} {address.borough}
               </Text>
             </Tooltip>
             <Tooltip
