@@ -151,7 +151,7 @@ export default class AddressView extends React.Component {
               const premise = finds(address, "premise");
               const building = finds(address, "street_number");
               const street = finds(address, "route");
-              if (!premise && !building && !street) {
+              if (!premise || !building || !street) {
                 //alert("no dice", premise, building, street);
               } else {
                 //alert("we good");

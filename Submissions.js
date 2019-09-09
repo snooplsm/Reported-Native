@@ -12,7 +12,7 @@ import {
   TouchableHighlight,
   FlatList
 } from "react-native";
-import { Input, Icon, Overlay } from "react-native-elements";
+import { Card, Input, Icon, Overlay } from "react-native-elements";
 import ListSpoof from "./ListSpoof";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
@@ -269,15 +269,22 @@ export default class Submissions extends React.Component {
   }
 
   get notGuiltyOverlay() {
-    const report = this.state.selectedRow;
-    if (!report || ["NOT_GUILTY", "GUILTY"].indexOf(this.state.verdict) < 0) {
+    if (
+      !this.state.selectedRow ||
+      ["NOT_GUILTY", "GUILTY"].indexOf(this.state.verdict) < 0
+    ) {
       return <></>;
     }
+    const { report, address } = this.state.selectedRow;
     return (
-      <Overlay isVisible={true}>
+      <Overlay
+        isVisible={true}
+        containerStyle={{ paddingLeft: 50, paddingRight: 100 }}
+        height="auto"
+        onBackdropPress={() => this.setState({ selectedRow: undefined })}
+      >
         <View
           style={{
-            flex: 1,
             flexDirection: "column"
           }}
         >
@@ -293,7 +300,6 @@ export default class Submissions extends React.Component {
           </Text>
           <View
             style={{
-              flex: 1,
               flexDirection: "column"
             }}
           >
@@ -315,13 +321,13 @@ export default class Submissions extends React.Component {
                   keyboardType="decimal-pad"
                   label="Amount Fined"
                   containerStyle={{
-                    width: "50%",
+                    width: 100,
                     alignSelf: "center"
                   }}
                 />
                 <Input
                   containerStyle={{
-                    width: "50%",
+                    width: 100,
                     alignSelf: "center"
                   }}
                   onChangeText={t => {
@@ -405,50 +411,52 @@ export default class Submissions extends React.Component {
   }
 
   get selectedRowOverlay() {
-    const report = this.state.selectedRow;
-    if (!report || this.state.verdict) {
+    if (!this.state.selectedRow || this.state.verdict) {
       return <></>;
     }
+    const { report, address } = this.state.selectedRow;
     return (
       <Overlay
         isVisible={this.state.selectedRow != undefined && !this.state.verdict}
+        width="auto"
+        height="auto"
+        onBackdropPress={() => this.setState({ selectedRow: undefined })}
       >
-        <Icon
-          name="close"
-          style={{ position: "absolute", right: 15 }}
-          onPress={() =>
-            this.setState({ selectedRow: undefined, verdict: undefined })
-          }
-        />
-        <View
-          style={{
-            flex: 1,
-            flexDirection: "column",
-            justifyContent: "space-around"
-          }}
+        <Card
+          title={`${report.license.plate}\n${address.building} ${address.street} ${address.city}`}
         >
-          <Button
-            onPress={() => this.changeStatus(report, "SUMMONS")}
-            title="Summons Issued"
-          />
-          <Button
-            onPress={() => this.changeStatus(report, "HEARING")}
-            title="Hearing Scheduled"
-          />
-          <Button
-            onPress={() => this.guiltyNotGuilty(report, "GUILTY")}
-            title="Driver Paid Fine / Guilty"
-          />
-          <Button
-            onPress={() => this.changeStatus(report, "UNABLE_TO_ID")}
-            title="Unable to ID Driver"
-          />
-          <Button
-            onPress={() => this.guiltyNotGuilty(report, "NOT_GUILTY")}
-            title="Driver Not Guilty"
-          />
-          <Button title="No Reason / Archive" />
-        </View>
+          <View
+            style={{
+              paddingTop: 10,
+              paddingLeft: 10,
+              paddingRight: 10,
+              flexDirection: "column",
+              justifyContent: "space-around"
+            }}
+          >
+            <Button
+              onPress={() => this.changeStatus(report, "SUMMONS")}
+              title="Summons Issued"
+            />
+            <Button
+              onPress={() => this.changeStatus(report, "HEARING")}
+              title="Hearing Scheduled"
+            />
+            <Button
+              onPress={() => this.guiltyNotGuilty(report, "GUILTY")}
+              title="Driver Paid Fine / Guilty"
+            />
+            <Button
+              onPress={() => this.changeStatus(report, "UNABLE_TO_ID")}
+              title="Unable to ID Driver"
+            />
+            <Button
+              onPress={() => this.guiltyNotGuilty(report, "NOT_GUILTY")}
+              title="Driver Not Guilty"
+            />
+            <Button title="No Reason / Archive" />
+          </View>
+        </Card>
       </Overlay>
     );
   }
@@ -523,18 +531,25 @@ export default class Submissions extends React.Component {
               height: "100%"
             }}
             renderHiddenItem={(data, rowMap) => {
+              const { report, address } = data.item;
+              console.log("made it", report, address);
               return (
                 <View style={styles.rowBack}>
-                  {data.item.report.status > 0 && (
+                  {report.status > 0 && (
                     <Button
                       onPress={() =>
-                        this.setState({ selectedRow: data.item.report })
+                        this.setState({
+                          selectedRow: {
+                            report,
+                            address
+                          }
+                        })
                       }
                       title={"Change Status"}
                       type="outline"
                     />
                   )}
-                  {data.item.report.status < 0 && (
+                  {report.status < 0 && (
                     <Icon
                       onPress={() => {
                         const { report } = data;
@@ -545,7 +560,7 @@ export default class Submissions extends React.Component {
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Ok",
-                              onPress: () => this.deleteReport(data.item.report)
+                              onPress: () => this.deleteReport(report)
                             }
                           ]
                         );
@@ -605,6 +620,9 @@ export default class Submissions extends React.Component {
 
               return (
                 <TouchableHighlight
+                  onPress={() => {
+                    this.setState({ selectedRow: { report, address } });
+                  }}
                   style={{ backgroundColor: "#FFF" }}
                   key={report.id}
                 >

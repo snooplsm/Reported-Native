@@ -7,7 +7,8 @@ import {
   Text,
   TouchableOpacity,
   View,
-  StyleSheet
+  StyleSheet,
+  Platform
 } from "react-native";
 import ComplaintView from "./ComplaintView";
 import { categories } from "./Categories.js";
@@ -257,7 +258,7 @@ export default class Submission extends React.Component {
         this.props.navigation.setParams({ canGoBack: false });
       }
       const diffy = diff(this.state, this.initialState);
-      console.log("diff is", diffy);
+      //console.log("diff is", diffy);
       const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
@@ -469,7 +470,7 @@ export default class Submission extends React.Component {
     return "";
   }
 
-  validatePlate() {
+  validatePlate(from) {
     const okPlate =
       this.state.license &&
       this.state.license.candidate &&
@@ -489,6 +490,74 @@ export default class Submission extends React.Component {
     ) {
       return "TLC plates start with T and end with C.  Please fix.";
     }
+    const NYPD = /^[\d]{4}$/g;
+    const USPS = /^[\d]{7}$/g;
+    if (
+      from &&
+      plate.match(USPS) &&
+      (this.state.license.candidate.state || "").length === 0
+    ) {
+      const license = this.state.license;
+      Alert.alert(
+        "Is this a USPS vehicle?",
+        "Does this vehicle belong to the US Postal Service?",
+        [
+          {
+            text: "YES",
+            onPress: () => {
+              const license = this.state.license;
+              license.candidate.state = "USPS";
+              this.setState({ license }, () => {
+                from();
+              });
+            }
+          },
+          {
+            text: "NO",
+            onPress: () => {
+              license.candidate.state = "COMMERCIAL";
+              this.setState({ license });
+              from();
+            }
+          }
+        ]
+      );
+      return undefined;
+    }
+    if (
+      from &&
+      plate.match(NYPD) &&
+      (this.state.license.candidate.state || "").length === 0
+    ) {
+      Alert.alert(
+        "Is this an NYPD vehicle?",
+        "Does the vehicle belong to the New York City Police Department?",
+        [
+          {
+            text: "YES",
+            onPress: () => {
+              const license = this.state.license;
+              license.candidate.state = "NYPD";
+              this.setState({ license }, () => {
+                from();
+              });
+            }
+          },
+          {
+            text: "NO",
+            onPress: () => {
+              const license = this.state.license;
+              license.candidate.state = "UNKNOWN";
+              this.setState({ license }, () => {
+                from();
+              });
+            }
+          }
+        ]
+      );
+      return undefined;
+    }
+
     return plate.length > 1;
   }
 
@@ -537,9 +606,12 @@ export default class Submission extends React.Component {
       return;
     }
 
-    const okPlate = this.validatePlate();
-    if (okPlate !== true) {
+    const okPlate = this.validatePlate(this.submit);
+    if (okPlate === false) {
       this.alrt("Invalid License Plate", `${okPlate}`);
+      return;
+    }
+    if (okPlate === undefined) {
       return;
     }
     if (!this.state.timeofreport) {
