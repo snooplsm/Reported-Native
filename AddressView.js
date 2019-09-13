@@ -97,40 +97,41 @@ export default class AddressView extends React.Component {
     return some;
   };
 
-  precinctWithin = async location => {
-    const start = Date();
-    console.log("precinctswithinstart", start);
-    const precincts = this._precincts || [];
-    const point = { latitude: location.lat, longitude: location.lng };
-    const result = precincts.find(precinct => {
-      return precinct.polygons.some(polygon => {
-        const isInPoly = isPointInPolygon(point, polygon);
-        //console.log(isInPoly);
-        if (isInPoly) {
-          console.log("found", precinct.id);
-        }
-        return isInPoly;
-      });
-    });
-    return result;
-  };
+  // precinctWithin = async location => {
+  //   const start = Date();
+  //   console.log("precinctswithinstart", start);
+  //   const precincts = this._precincts || [];
+  //   const point = { latitude: location.lat, longitude: location.lng };
+  //   const result = precincts.find(precinct => {
+  //     return precinct.polygons.some(polygon => {
+  //       const isInPoly = isPointInPolygon(point, polygon);
+  //       //console.log(isInPoly);
+  //       if (isInPoly) {
+  //         console.log("found", precinct.id);
+  //       }
+  //       return isInPoly;
+  //     });
+  //   });
+  //   return result;
+  // };
 
-  doBgShit = async () => {
+  doBgShit() {
+    console.log("dobgshit");
     const { region } = this.state;
     if (!region) {
       return;
     }
     const location = { lat: region.latitude, lng: region.longitude };
     // const start = new Date().valueOf();
-    const precinct = await this.precinctWithin(location);
+    //const precinct = await this.precinctWithin(location);
     // const end = new Date().valueOf();
     // const start2 = new Date().valueOf();
     // const precincts = await this.precinctsInBounds();
     // const end2 = new Date().valueOf();
     //
     // console.log("milliseconds ellapsed", end - start, end2 - start);
-    console.log("precinct", precinct.name, precinct.id, precinct.social);
-    this.setState({ precinct });
+    // console.log("precinct", precinct.name, precinct.id, precinct.social);
+    this.setState({ precinct: undefined });
 
     clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
@@ -139,9 +140,11 @@ export default class AddressView extends React.Component {
       if (!region) {
         return;
       }
+      console.log("debounce");
       reverseGeocode(location)
         .then(data => {
           //console.log(data);
+          console.log("reverse geocoded");
           const { results: pre } = data;
           if (pre) {
             const formattedAddress = {};
@@ -151,7 +154,7 @@ export default class AddressView extends React.Component {
               const premise = finds(address, "premise");
               const building = finds(address, "street_number");
               const street = finds(address, "route");
-              if (!premise || !building || !street) {
+              if (!premise && !building && !street) {
                 //alert("no dice", premise, building, street);
               } else {
                 //alert("we good");
@@ -168,17 +171,15 @@ export default class AddressView extends React.Component {
           console.log(e);
         });
     }, 0);
-  };
+  }
 
   onRegionChange = async region => {
-    if (this._reverseGeocode) {
-    }
     this.setState(
       {
         region
       },
       () => {
-        this.doBgShit().done();
+        this.doBgShit();
       }
     );
   };
@@ -202,6 +203,7 @@ export default class AddressView extends React.Component {
     }
     return (
       <Button
+        key={item.id}
         id={item.id}
         title={title}
         onPress={() => {

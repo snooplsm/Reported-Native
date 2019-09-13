@@ -18,7 +18,7 @@ export default class App extends React.Component {
 
   _handleNotification = notification => {
     console.log(notification);
-    alert(JSON.stringify(notification));
+    //alert(JSON.stringify(notification));
   };
 
   render() {
