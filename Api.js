@@ -314,6 +314,7 @@ export const precincts = () => {
 };
 
 export const reverseGeocode = location => {
+  console.log("reverse geocode", location);
   if (!location || !location.lat || !location.lng) {
     return Promise.reject(
       `illegal location ${location == null ? null : JSON.stringify(location)}`
@@ -322,6 +323,7 @@ export const reverseGeocode = location => {
   const key = `location.${location.lat}.${location.lng}`;
   return AsyncStorage.getItem(key).then(item => {
     if (item) {
+      console.log("found geo");
       return JSON.parse(item);
     }
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat.toFixed(
@@ -330,6 +332,7 @@ export const reverseGeocode = location => {
     return fetch(url)
       .then(res => res.json())
       .then(data => {
+        console.log("reverse geocoded!");
         AsyncStorage.setItem(key, JSON.stringify(data));
         return data;
       });
@@ -417,6 +420,7 @@ export const api = {
         when: filter.when && filter.when.allDates,
         complaints: filter.complaints.map(x => x.name)
       });
+    console.log("filter", f2);
     if (filter == null) {
       return ax.get(`/reports/all?skip=${skip}`);
     } else {

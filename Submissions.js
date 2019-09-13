@@ -208,7 +208,9 @@ export default class Submissions extends React.Component {
     const filter = this.state.filter;
     filter.keywords && filter.keywords.split(/[ ,]+/).map(x => data.push(x));
     filter.complaints.map(x => data.push(x.name));
-
+    filter.when &&
+      filter.when.allPossibleDates &&
+      data.push(filter.when.allPossibleDates);
     filter.location && data.push(`near: ${filter.location.formatted_address}`);
     return data.filter(x => x && x.trim().length > 0).map(x => x.trim());
   }

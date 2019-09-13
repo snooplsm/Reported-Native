@@ -44,8 +44,10 @@ export default class SubmissionFilter extends React.Component {
       keywords,
       location,
       location,
-      complaints
+      complaints,
+      when
     };
+    console.log("filterPressed", when);
     onFilterPressed(query);
   }
 
