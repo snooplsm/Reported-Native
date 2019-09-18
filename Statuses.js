@@ -14,7 +14,7 @@ export const statuses = [
     createdAt: "2016-11-03T17:12:51.272Z",
     updatedAt: "2016-11-04T11:04:48.523Z",
     enable: true,
-    key: "ARCHIVE",
+    key: "NO_REASON_ARCHIVE",
     text: "No Reason / Archive"
   },
   {
@@ -66,7 +66,7 @@ export const statuses = [
     createdAt: "2016-11-03T16:56:54.348Z",
     updatedAt: "2016-11-04T11:04:46.136Z",
     text: "Processing",
-    key: "Pre_PROCESSING",
+    key: "PRE_PROCESSING",
     enable: true
   },
   {
