@@ -9,7 +9,8 @@ import {
   Linking,
   Text,
   View,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { ToastAndroid } from "react-native";
@@ -122,17 +123,16 @@ export default class ReportView extends React.Component {
   }
 
   copy(value) {
-    Clipboard.setString(report.searchId).then(f => {
-      if (Platform.OS === "ios") {
-        Alert.alert("Copied to clipboard", value);
-      } else if (Platform.OS === "android") {
-        ToastAndroid.showWithGravity(
-          `Copied to clipboard\n${value}`,
-          ToastAndroid.LONG,
-          ToastAndroid.BOTTOM
-        );
-      }
-    });
+    Clipboard.setString(value);
+    if (Platform.OS === "ios") {
+      Alert.alert("Copied to clipboard", value);
+    } else if (Platform.OS === "android") {
+      ToastAndroid.showWithGravity(
+        `Copied to clipboard\n${value}`,
+        ToastAndroid.LONG,
+        ToastAndroid.BOTTOM
+      );
+    }
   }
 
   render() {
@@ -175,7 +175,7 @@ export default class ReportView extends React.Component {
               }
             >
               <Text>
-                {address.building} {address.street} {address.borough}
+                {address.building} {address.street} {address.city}
               </Text>
             </Tooltip>
             <Tooltip
