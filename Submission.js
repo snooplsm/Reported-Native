@@ -38,6 +38,7 @@ import ordinal from "ordinal";
 import { IconStyle, colors } from "./Styles";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { isSignedIn } from "./Auth";
+import setColor from "color";
 import {
   alpr,
   finds,
@@ -953,13 +954,31 @@ export default class Submission extends React.Component {
               <View style={{ height: 100 }} />
             </View>
           </ScrollView>
-
+          <View
+            style={{
+              width: "100%",
+              height: 4,
+              opacity: this.state.submitting ? 100 : 0,
+              backgroundColor: setColor(colors.orange)
+                .alpha(0.38)
+                .rgb()
+                .string()
+            }}
+          >
+            <View
+              style={{
+                width: `${this.state.percent ?? 0}%`,
+                height: "100%",
+                backgroundColor: colors.orange
+              }}
+            />
+          </View>
           <Button
             onPress={() => this.submit()}
             title="SUBMIT"
             loading={this.state.submitting}
             titleStyle={{
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: "bold",
               opacity: this.percentageOpacity
             }}
@@ -1115,9 +1134,7 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     height: "100%",
-    justifyContent: "space-between",
-    marginBottom: 1,
-    marginTop: 12
+    justifyContent: "space-between"
   },
   imageViewer: {
     backgroundColor: "yellow",
