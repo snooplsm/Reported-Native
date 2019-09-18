@@ -16,35 +16,27 @@ import CalendarView from "./CalendarView";
 export default class SubmissionFilter extends React.Component {
   constructor(props) {
     super(props);
-    const { when, location, complaints, keywords } = props.filter ?? {};
-    console.log(
-      "when",
-      when,
-      "near",
-      location,
-      "complaints",
-      complaints,
-      "keywords",
-      keywords
-    );
+    const { when, location, complaints, keywords, srid } = props.filter ?? {};
     this.state = {
       showWhen: false,
       addressStyle: styles.addressStyleBlur,
       when: when,
       location: location,
       complaints: complaints ?? [],
-      keywords: keywords
+      keywords: keywords,
+      srid: srid
     };
   }
 
   filterPressed() {
     const onFilterPressed = this.props.onFilterPressed ?? (() => {});
-    const { keywords, location, complaints, when } = this.state;
+    const { keywords, location, complaints, when, srid } = this.state;
     const query = {
       keywords,
       location,
       location,
       complaints,
+      srid,
       when
     };
     console.log("filterPressed", when);
@@ -144,7 +136,7 @@ export default class SubmissionFilter extends React.Component {
     return (
       <>
         <TouchableOpacity onPress={() => this.props.onCloseClicked()}>
-          <Icon containerStyle={styles.close} name="close" />
+          <Icon containerStyle={styles.close} color="black" name="close" />
         </TouchableOpacity>
         <Card title={"Search Reports"} style={{ backgroundColor: undefined }}>
           <View style={styles.container}>
@@ -155,6 +147,14 @@ export default class SubmissionFilter extends React.Component {
               value={this.state.keywords}
               onChangeText={keywords => {
                 this.setState({ keywords });
+              }}
+            />
+            <Input
+              placeholder={""}
+              label="311 SR"
+              value={this.state.srid}
+              onChangeText={srid => {
+                this.setState({ srid });
               }}
             />
             <View>

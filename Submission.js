@@ -34,8 +34,8 @@ import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
 import { ScrollView } from "react-navigation";
+import ordinal from "ordinal";
 import { IconStyle, colors } from "./Styles";
-import { ProgressBar } from "react-native-paper";
 import DateTimePicker from "react-native-modal-datetime-picker";
 import { isSignedIn } from "./Auth";
 import {
@@ -167,10 +167,7 @@ export default class Submission extends React.Component {
   registerToken = async () => {
     const needsRegistering = await pushTokenNeedsRegisteringAsync();
     if (needsRegistering) {
-      console.log("needsRegistering", needsRegistering);
       const result = await registerForPushNotificationsAsync();
-      console.log("ok");
-      //console.log(result);
     }
   };
 
@@ -193,7 +190,7 @@ export default class Submission extends React.Component {
     if (!this.state) {
       return false;
     }
-    if (this.state.imageModal) {
+    if (this.state.imageModal != undefined) {
       this.setState({ imageModal: undefined });
       return true;
     }
@@ -338,7 +335,7 @@ export default class Submission extends React.Component {
     }
   }
 
-  reportSubmitted = async => {
+  reportSubmitted = async result => {
     const canRegister = pushTokenNeedsRegisteringAsync();
     const needsToEnablePush = canRegister && Platform.OS !== "android";
     const buttons = needsToEnablePush && [
@@ -353,14 +350,16 @@ export default class Submission extends React.Component {
         }
       }
     ];
+    const thirty =
+      result.thirtyDays > 1
+        ? `This is your ${ordinal(
+            result.thirtyDays
+          )} report within a thirty day timespan.`
+        : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = needsToEnablePush
       ? "Your report has been submitted.  Enable push notifications to get future updates?"
-      : "Your report has been submitted.";
-    Alert.alert(
-      "Report Submitted",
-      "Your report has been submitted.  Enable push notifications to get future updates?",
-      buttons
-    );
+      : `Your report has been submitted.  ${thirty}`;
+    Alert.alert("Report Submitted", msg, buttons);
   };
 
   get complaintModal() {
@@ -739,7 +738,7 @@ export default class Submission extends React.Component {
       })
       .then(x => {
         this.clear(() => {
-          this.reportSubmitted();
+          this.reportSubmitted(x.data);
         });
       })
       .catch(e => {
@@ -818,18 +817,6 @@ export default class Submission extends React.Component {
   render() {
     return (
       <>
-        {this.state.submitting && (
-          <ProgressBar
-            style={{
-              margin: 0,
-              height: 4,
-              verticalPadding: 0,
-              padding: 0
-            }}
-            progress={this.state.progress}
-            color={colors.orange}
-          />
-        )}
         <KeyboardAvoidingView behavior="padding" style={styles.container}>
           <ScrollView>
             <View style={styles.container}>

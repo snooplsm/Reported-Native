@@ -207,6 +207,9 @@ export default class Submissions extends React.Component {
     const data = [];
     const filter = this.state.filter;
     filter.keywords && filter.keywords.split(/[ ,]+/).map(x => data.push(x));
+    filter.srid &&
+      filter.srid.trim().length > 0 &&
+      data.push(`311 SR: ${filter.srid.trim()}`);
     filter.complaints.map(x => data.push(x.name));
     filter.when &&
       filter.when.allPossibleDates &&

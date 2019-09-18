@@ -1,6 +1,6 @@
 import React from "react";
 
-import { AppState, StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View, Linking } from "react-native";
 import { Notifications } from "expo";
 import { AppContainer } from "./Navigation";
 import { api } from "./Api";
@@ -18,7 +18,12 @@ export default class App extends React.Component {
 
   _handleNotification = notification => {
     console.log(notification);
-    //alert(JSON.stringify(notification));
+    const data = notification.data;
+    const url = data && data.url;
+    if (url) {
+      Linking.openURL(notification?.data?.url);
+      return;
+    }
   };
 
   render() {
