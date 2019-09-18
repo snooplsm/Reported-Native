@@ -225,7 +225,11 @@ export default class Submissions extends React.Component {
         status: status
       })
       .then(success => {
-        const newStatus = statuses.find(s => s.key === status);
+        const newStatus = statuses.find(s => {
+          console.log(s.key, status);
+          return s.key === status;
+        });
+        console.log("wtf", newStatus);
         report.status = newStatus.sId;
         this.setState({ selectedRow: null, verdict: undefined }, () => {
           setTimeout(() => {
@@ -235,6 +239,9 @@ export default class Submissions extends React.Component {
             );
           }, 300);
         });
+      })
+      .catch(e => {
+        console.log("error changing status", e);
       });
   }
 
@@ -256,10 +263,13 @@ export default class Submissions extends React.Component {
         });
       })
       .then(yass => {
-        const newStatus = statuses.find(key => key === status);
+        const newStatus = statuses.find(key => key.key === status);
+        console.log("newStatus", newStatus);
         report.status = newStatus.sId;
+        report.fine = type.fine;
+        report.points = type.points;
         this.setState({ selectedRow: undefined, verdict: undefined }, () => {
-          this.setTimeout(() => {
+          setTimeout(() => {
             Alert.alert(
               "Success",
               `Your report has changed to ${newStatus.text}`
@@ -325,12 +335,14 @@ export default class Submissions extends React.Component {
                   }}
                   keyboardType="decimal-pad"
                   label="Amount Fined"
+                  defaultValue={report.fine}
                   containerStyle={{
                     width: 100,
                     alignSelf: "center"
                   }}
                 />
                 <Input
+                  defaultValue={report.points}
                   containerStyle={{
                     width: 100,
                     alignSelf: "center"
@@ -459,7 +471,10 @@ export default class Submissions extends React.Component {
               onPress={() => this.guiltyNotGuilty(report, "NOT_GUILTY")}
               title="Driver Not Guilty"
             />
-            <Button title="No Reason / Archive" />
+            <Button
+              onPress={() => this.changeStatus(report, "NO_REASON_ARCHIVE")}
+              title="No Reason / Archive"
+            />
           </View>
         </Card>
       </Overlay>
