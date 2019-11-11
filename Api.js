@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "https://reported-stats.herokuapp.com/staging/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -76,12 +76,12 @@ ax.interceptors.request.use(
             Platform.OS === "android"
               ? Constants.platform.android.versionCode
               : Constants.manifest.ios.buildNumber;
-          console.log("buildNumber", buildNumber);
+
           if (user) {
             config.headers.common["X-User-Id"] = user.id;
             config.headers.common["X-Session-Token"] = user.sessionToken;
             config.headers.common["X-Operating-System"] = Platform.OS;
-            config.headers.common["X-Build-Number"] = buildNumber;
+            config.headers.common["X-Build-Number"] = buildNumber ?? "-999";
           }
           resolve(config);
         })
@@ -492,6 +492,7 @@ export async function registerForPushNotificationsAsync() {
 
   // Get the token that uniquely identifies this device
   let token = await Notifications.getExpoPushTokenAsync();
+  console.log("token2", token);
   // POST the token to your backend server from where you can retrieve it to send push notifications.
   const result = await api.registerToken(token);
   return result;

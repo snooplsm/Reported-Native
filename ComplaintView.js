@@ -4,6 +4,7 @@ import {
   StyleSheet,
   Text,
   View,
+  FlatList,
   Keyboard,
   TouchableOpacity
 } from "react-native";
@@ -39,101 +40,35 @@ export default class ComplaintView extends React.Component {
     Keyboard.dismiss();
   }
 
+  _renderItem = ({ item: complaint }) => {
+    return (
+      <TouchableOpacity
+        key={complaint.id}
+        style={styles.renderItem}
+        onPress={() => {
+          const complaints = [...this.state.complaints, complaint];
+          let onComplaintsChanged =
+            this.props.onComplaintsChanged ?? (() => {});
+          onComplaintsChanged(complaints);
+        }}
+      >
+        <Text key={complaint.name} style={styles.text}>
+          {complaint.name}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   render() {
     const { query } = this.state;
     const data = this._filterData(query);
     return (
-      <>
-        <View style={styles.container}>
-          {this.state.complaints.map(complaint => {
-            return (
-              <Button
-                key={complaint.id}
-                containerStyle={styles.buttonContainer}
-                buttonStyle={styles.button}
-                title={complaint.name}
-                titleStyle={styles.buttonText}
-                onPress={() => {
-                  const state = Object.assign({}, this.state);
-                  const complaints = [...this.state.complaints].filter(
-                    x => x !== complaint
-                  );
-                  state.complaints = complaints;
-                  let onComplaintsChanged =
-                    this.props.onComplaintsChanged ?? (() => {});
-                  this.setState(state);
-                  onComplaintsChanged(complaints);
-                }}
-                /*icon={
-                <Icon
-                  color={'white'}
-                  type='material'
-                  name='close'/>
-              }
-              iconRight={true}*/
-              />
-            );
-          })}
-        </View>
-        <TouchSpoof onPress={() => {}}>
-          <View
-            style={[
-              {
-                padding: 0
-              },
-              styles.autocompleteContainer
-            ]}
-          >
-            <Autocomplete
-              data={data}
-              ref={this.auto}
-              defaultValue={this.state.query}
-              editable={false}
-              autoFocus={false}
-              hideResults={this.state.hideResults}
-              placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-              onFocus={() => {
-                const state = Object.assign({}, this.state);
-                state.hideResults = false;
-                this.setState(state);
-              }}
-              onChangeText={text => {
-                const state = Object.assign({}, this.state);
-                state.query = text;
-                state.hideResults = false;
-                this.setState(state);
-              }}
-              onBlur={() => {
-                const state = Object.assign({}, this.state);
-                state.hideResults = true;
-                this.setState(state);
-              }}
-              renderItem={({ item, i }) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.renderItem}
-                  onPress={() => {
-                    const state = Object.assign({}, this.state);
-                    state.hideResults = true;
-                    state.query = "";
-                    const complaints = [...state.complaints, item];
-                    state.complaints = complaints.filter(
-                      (x, index) => complaints.indexOf(x) == index
-                    );
-                    this.setState(state);
-                    this.auto.current.blur();
-                    let onComplaintsChanged =
-                      this.props.onComplaintsChanged ?? (() => {});
-                    onComplaintsChanged(complaints);
-                  }}
-                >
-                  <Text style={styles.text}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchSpoof>
-      </>
+      <FlatList
+        keyExtractor={(item, index) => `${index}`}
+        style={styles.container}
+        data={this.state.complaintTypes}
+        renderItem={this._renderItem}
+      />
     );
   }
 }
