@@ -78,36 +78,36 @@ export default class AddressView extends React.Component {
 
     const big = [ne, se, sw, nw];
     const precincts = (this._precincts || []).sort((a, b) => {});
-    console.log("big", big);
+    // // console.log("big", big);
     //this.setState({ big });
 
-    // console.log(big);
+    // // console.log(big);
     const some = precincts.filter(precinct => {
-      //console.log(precinct.id);
+      //// console.log(precinct.id);
       const some = precinct.polygons.some(polygon => {
         return polygon.some(point => {
-          console.log(point);
+          // // console.log(point);
           return isPointInPolygon(point, big);
         });
       });
       return some;
     });
-    console.log("found", some.length);
-    console.log("precinctsinbounds end", Date());
+    // // console.log("found", some.length);
+    // // console.log("precinctsinbounds end", Date());
     return some;
   };
 
   // precinctWithin = async location => {
   //   const start = Date();
-  //   console.log("precinctswithinstart", start);
+  //   // console.log("precinctswithinstart", start);
   //   const precincts = this._precincts || [];
   //   const point = { latitude: location.lat, longitude: location.lng };
   //   const result = precincts.find(precinct => {
   //     return precinct.polygons.some(polygon => {
   //       const isInPoly = isPointInPolygon(point, polygon);
-  //       //console.log(isInPoly);
+  //       //// console.log(isInPoly);
   //       if (isInPoly) {
-  //         console.log("found", precinct.id);
+  //         // console.log("found", precinct.id);
   //       }
   //       return isInPoly;
   //     });
@@ -116,7 +116,7 @@ export default class AddressView extends React.Component {
   // };
 
   doBgShit() {
-    console.log("dobgshit");
+    // // console.log("dobgshit");
     const { region } = this.state;
     if (!region) {
       return;
@@ -129,22 +129,22 @@ export default class AddressView extends React.Component {
     // const precincts = await this.precinctsInBounds();
     // const end2 = new Date().valueOf();
     //
-    // console.log("milliseconds ellapsed", end - start, end2 - start);
-    // console.log("precinct", precinct.name, precinct.id, precinct.social);
+    // // console.log("milliseconds ellapsed", end - start, end2 - start);
+    // // console.log("precinct", precinct.name, precinct.id, precinct.social);
     this.setState({ precinct: undefined });
 
     clearTimeout(this.debounce);
     this.debounce = setTimeout(() => {
-      console.log("after timeout", Date());
+      // // console.log("after timeout", Date());
       const { region } = this.state;
       if (!region) {
         return;
       }
-      console.log("debounce");
+      // // console.log("debounce");
       reverseGeocode(location)
         .then(data => {
-          //console.log(data);
-          console.log("reverse geocoded");
+          //// console.log(data);
+          // // console.log("reverse geocoded");
           const { results: pre } = data;
           if (pre) {
             const formattedAddress = {};
@@ -168,7 +168,7 @@ export default class AddressView extends React.Component {
           }
         })
         .catch(e => {
-          console.log(e);
+          // console.log(e);
         });
     }, 0);
   }
@@ -251,7 +251,7 @@ export default class AddressView extends React.Component {
           });
       })
       .catch(e => {
-        console.log("precincts error", e);
+        // console.log("precincts error", e);
       });
   }
 
@@ -260,17 +260,17 @@ export default class AddressView extends React.Component {
   };
 
   loadOffline = async () => {
-    console.log("load");
+    // console.log("load");
     AsyncStorage.getItem(this.key)
       .then(state => {
-        console.log("got state");
+        // console.log("got state");
         if (state) {
           const state2 = JSON.parse(state);
           super.setState(state2);
         }
       })
       .catch(e => {
-        console.log(e);
+        // console.log(e);
       });
   };
 
@@ -288,7 +288,7 @@ export default class AddressView extends React.Component {
     if (!selectedPrecinct) {
       return <></>;
     }
-    console.log(selectedPrecinct.social.twitter);
+    // console.log(selectedPrecinct.social.twitter);
     return (
       <Overlay
         isVisible={true}
@@ -347,8 +347,8 @@ export default class AddressView extends React.Component {
             }} // custom description render
             onPress={(data, details = null) => {
               // 'details' is provided when fetchDetails = true
-              // console.log("place", details);
-              // console.log("data", data);
+              // // console.log("place", details);
+              // // console.log("data", data);
               geocode(data.description).then(ok => {
                 this.props.onPress({
                   data: data,

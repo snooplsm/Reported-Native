@@ -102,7 +102,7 @@ export default class LicenseView extends React.Component {
         ])
       };
     });
-    //console.log('images length', images.length)
+    //// console.log('images length', images.length)
     Promise.all(
       images.map(x => {
         return new Promise((resolve, reject) => {

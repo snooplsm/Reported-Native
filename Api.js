@@ -12,7 +12,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/staging/",
+  dev: "https://reported-stats.herokuapp.com/prod/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -70,8 +70,8 @@ ax.interceptors.request.use(
     return new Promise((resolve, eject) => {
       isSignedIn()
         .then(user => {
-          // console.log(Constants);
-          console.log("ios", Constants.manifest.ios);
+          // // console.log(Constants);
+          // console.log("ios", Constants.manifest.ios);
           const buildNumber =
             Platform.OS === "android"
               ? Constants.platform.android.versionCode
@@ -110,7 +110,7 @@ export const uploadFile = (file, extra) => {
         }
       })
       .catch(e => {
-        console.log(e);
+        // console.log(e);
         throw e;
       })
       .then(fc => {
@@ -314,7 +314,7 @@ export const precincts = () => {
 };
 
 export const reverseGeocode = location => {
-  console.log("reverse geocode", location);
+  // console.log("reverse geocode", location);
   if (!location || !location.lat || !location.lng) {
     return Promise.reject(
       `illegal location ${location == null ? null : JSON.stringify(location)}`
@@ -323,7 +323,7 @@ export const reverseGeocode = location => {
   const key = `location.${location.lat}.${location.lng}`;
   return AsyncStorage.getItem(key).then(item => {
     if (item) {
-      console.log("found geo");
+      // console.log("found geo");
       return JSON.parse(item);
     }
     const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat.toFixed(
@@ -332,7 +332,7 @@ export const reverseGeocode = location => {
     return fetch(url)
       .then(res => res.json())
       .then(data => {
-        console.log("reverse geocoded!");
+        // console.log("reverse geocoded!");
         AsyncStorage.setItem(key, JSON.stringify(data));
         return data;
       });
@@ -404,7 +404,7 @@ export const api = {
   },
 
   changeStatus: payload => {
-    console.log(payload);
+    // console.log(payload);
     return ax.put("/report/change_status", payload);
   },
 
@@ -420,11 +420,11 @@ export const api = {
         when: filter.when && filter.when.allDates,
         complaints: filter.complaints.map(x => x.name)
       });
-    console.log("filter", f2);
+    // console.log("filter", f2);
     if (filter == null) {
       return ax.get(`/reports/all?skip=${skip}`);
     } else {
-      console.log("filter", f2);
+      // console.log("filter", f2);
       return ax.get(`/reports?skip=${skip}&filter=${JSON.stringify(f2)}`);
     }
   },
@@ -440,7 +440,7 @@ export const api = {
     if (filter == null) {
       return ax.get(`/reports?skip=${skip}`);
     } else {
-      console.log("filter", f2);
+      // console.log("filter", f2);
       return ax.get(
         `/reports?skip=${skip}&filter=${encodeURIComponent(JSON.stringify(f2))}`
       );
@@ -492,7 +492,7 @@ export async function registerForPushNotificationsAsync() {
 
   // Get the token that uniquely identifies this device
   let token = await Notifications.getExpoPushTokenAsync();
-  console.log("token2", token);
+  // console.log("token2", token);
   // POST the token to your backend server from where you can retrieve it to send push notifications.
   const result = await api.registerToken(token);
   return result;

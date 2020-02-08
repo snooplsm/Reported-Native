@@ -3,7 +3,7 @@
     "name": "Reported",
     "slug": "reported",
     "privacy": "unlisted",
-    "sdkVersion": "35.0.0",
+    "sdkVersion": "36.0.0",
     "platforms": ["ios", "android", "web"],
     "version": "3.0.7",
     "orientation": "portrait",
@@ -14,10 +14,13 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "com.reported.reported.beta",
+      "bundleIdentifier": "cab.reported.nyc",
       "buildNumber": "17",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the devices photos and videos to submit 311 reports with supporting evidence."
+      }
     },
     "android": {
       "package": "cab.reported.nyc",
@@ -32,7 +35,7 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 57,
+      "versionCode": 58,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
     },
     "updates": {
