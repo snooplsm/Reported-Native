@@ -158,7 +158,7 @@ export default class Submissions extends React.Component {
         });
       })
       .catch(err => {
-        console.log(err);
+        // console.log(err);
         let message = "";
         if (err.response) {
           if (err.response.status == 401) {
@@ -226,10 +226,10 @@ export default class Submissions extends React.Component {
       })
       .then(success => {
         const newStatus = statuses.find(s => {
-          console.log(s.key, status);
+          // console.log(s.key, status);
           return s.key === status;
         });
-        console.log("wtf", newStatus);
+        // console.log("wtf", newStatus);
         report.status = newStatus.sId;
         this.setState({ selectedRow: null, verdict: undefined }, () => {
           setTimeout(() => {
@@ -241,7 +241,7 @@ export default class Submissions extends React.Component {
         });
       })
       .catch(e => {
-        console.log("error changing status", e);
+        // console.log("error changing status", e);
       });
   }
 
@@ -264,7 +264,7 @@ export default class Submissions extends React.Component {
       })
       .then(yass => {
         const newStatus = statuses.find(key => key.key === status);
-        console.log("newStatus", newStatus);
+        // console.log("newStatus", newStatus);
         report.status = newStatus.sId;
         report.fine = type.fine;
         report.points = type.points;
@@ -278,7 +278,7 @@ export default class Submissions extends React.Component {
         });
       })
       .catch(err => {
-        console.log(err);
+        // console.log(err);
         alert("There was an error");
       });
   }
@@ -330,7 +330,7 @@ export default class Submissions extends React.Component {
                     try {
                       report.fine = parseFloat(t);
                     } catch (e) {
-                      console.log(e);
+                      // console.log(e);
                     }
                   }}
                   keyboardType="decimal-pad"
@@ -351,7 +351,7 @@ export default class Submissions extends React.Component {
                     try {
                       report.points = parseInt(t);
                     } catch (e) {
-                      console.log(e);
+                      // console.log(e);
                     }
                   }}
                   keyboardType="numeric"
@@ -552,7 +552,7 @@ export default class Submissions extends React.Component {
             }}
             renderHiddenItem={(data, rowMap) => {
               const { report, address } = data.item;
-              console.log("made it", report, address);
+              // console.log("made it", report, address);
               return (
                 <View style={styles.rowBack}>
                   {report.status > 0 && (

@@ -17,7 +17,7 @@ export default class App extends React.Component {
   }
 
   _handleNotification = notification => {
-    console.log(notification);
+    // console.log(notification);
     const data = notification.data;
     const url = data && data.url;
     if (url) {

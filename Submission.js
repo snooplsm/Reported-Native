@@ -36,7 +36,7 @@ import moment from "moment";
 import { ScrollView } from "react-navigation";
 import ordinal from "ordinal";
 import { IconStyle, colors } from "./Styles";
-import DateTimePicker from "react-native-modal-datetime-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import {
@@ -230,7 +230,7 @@ export default class Submission extends React.Component {
 
       await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
     } catch (error) {
-      console.log("async error", error);
+      // console.log("async error", error);
     }
   };
 
@@ -243,20 +243,19 @@ export default class Submission extends React.Component {
         this.setState(data);
       }
     } catch (error) {
-      console.log("erorr loading draft", error);
+      // console.log("erorr loading draft", error);
     }
   };
 
   setState(state, lambda) {
     super.setState(state, () => {
       if (this.modalsShowing) {
-        console.log("can go back!!");
         this.props.navigation.setParams({ canGoBack: true });
       } else {
         this.props.navigation.setParams({ canGoBack: false });
       }
       const diffy = diff(this.state, this.initialState);
-      //console.log("diff is", diffy);
+      //// console.log("diff is", diffy);
       const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
@@ -575,7 +574,7 @@ export default class Submission extends React.Component {
         this.state.license &&
         this.state.license.plate &&
         this.state.license.plate.image;
-      console.log("plate is ", plate);
+      // console.log("plate is ", plate);
       const total =
         this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
       const loaded =
@@ -589,7 +588,7 @@ export default class Submission extends React.Component {
         });
       })
       .catch(e => {
-        console.log(e);
+        // console.log(e);
       });
   }
 
@@ -633,7 +632,7 @@ export default class Submission extends React.Component {
         }
       })
         .then(uploaded => {
-          console.log("uploaded license plate");
+          // console.log("uploaded license plate");
           uploaded.type = "S3_IMAGE_LICENSE";
           const uploadedMedia = this.state.uploadedMedia;
           uploadedMedia[this.state.license.plate.image.url] = uploaded;
@@ -667,7 +666,7 @@ export default class Submission extends React.Component {
         })
         .catch(e => {
           this.alrt("Error uploading media", "Media upload failed.");
-          console.log("error upload", e);
+          // console.log("error upload", e);
         });
       return;
     }
@@ -774,10 +773,7 @@ export default class Submission extends React.Component {
     if (!timeofreport) {
       return null;
     }
-    if (typeof timeofreport === "string") {
-      return moment(timeofreport).toDate();
-    }
-    return timeofreport;
+    return moment(timeofreport).toDate();
   }
 
   clear(lambda) {
@@ -875,7 +871,7 @@ export default class Submission extends React.Component {
                 ref={r => (this._license = r)}
                 onPlateSelected={plate => {
                   const { candidate } = plate;
-                  console.log("candidate plate", candidate);
+                  // console.log("candidate plate", candidate);
                   if (
                     candidate &&
                     candidate.plate &&
@@ -890,29 +886,10 @@ export default class Submission extends React.Component {
                 alpr={this.state.alpr}
               />
 
-              {this.state.datePickerVisible && (
-                <DateTimePicker
-                  mode={"datetime"}
-                  titleIOS={"Time of incident"}
-                  isVisible={true}
-                  date={this.time || new Date()}
-                  onConfirm={date => {
-                    this._datePick.blur();
-                    this.setState({
-                      timeofreport: date,
-                      timeofreportstr: this.timeofreport(date),
-                      datePickerVisible: undefined
-                    });
-                  }}
-                  onCancel={() => {
-                    this.setState({ datePickerVisible: undefined });
-                  }}
-                />
-              )}
-
               <TouchSpoof
                 onPress={() => {
                   this.setState({
+                    tmpDate: this.time,
                     datePickerVisible: true
                   });
                 }}
@@ -954,6 +931,47 @@ export default class Submission extends React.Component {
               <View style={{ height: 100 }} />
             </View>
           </ScrollView>
+          {this.state.datePickerVisible && (
+            <View>
+              {Platform.OS === "ios" && (
+                <View
+                  style={{ flexDirection: "row", justifyContent: "flex-end" }}
+                >
+                  <Button
+                    title="Cancel"
+                    onPress={() => {
+                      this.setState({
+                        timeofreport: this.state.tmpDate,
+                        datePickerVisible: undefined
+                      });
+                    }}
+                  />
+                  <Button
+                    title="Set"
+                    onPress={() => {
+                      // console.log(this.state.tmpDate);
+                      this.setState({
+                        timeofreportstr: this.timeofreport(
+                          this.state.timeofreport
+                        ),
+                        datePickerVisible: undefined
+                      });
+                    }}
+                  />
+                </View>
+              )}
+              <DateTimePicker
+                mode={"datetime"}
+                titleIOS={"Time of incident"}
+                isVisible={true}
+                value={this.time || new Date()}
+                onChange={(event, date) => {
+                  // console.log(date);
+                  this.setState({ timeofreport: date });
+                }}
+              />
+            </View>
+          )}
           <View
             style={{
               width: "100%",
@@ -1031,7 +1049,7 @@ export default class Submission extends React.Component {
         const lats = lat;
         const lngs = lng;
 
-        //console.log(lats, lngs);
+        //// console.log(lats, lngs);
 
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
@@ -1046,10 +1064,10 @@ export default class Submission extends React.Component {
         if (!this.state.location) {
           reverseGeocode(image.location)
             .then(places => {
-              //console.log(places.results[0]);
+              //// console.log(places.results[0]);
               this.setState({ location: { place: places.results[0] } });
             })
-            .catch(e => console.log(e));
+            .catch(e => {});
         }
         if (!this.state.license) {
           let resize = null;
@@ -1058,7 +1076,7 @@ export default class Submission extends React.Component {
           } else {
             resize = { height: Math.min(1200, parseInt(height)) };
           }
-          console.log("manipulate", resize);
+          // console.log("manipulate", resize);
           const data = {
             original: image
           };
@@ -1074,7 +1092,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => console.log(e));
+            .catch(e => {});
         }
       }
 
@@ -1099,7 +1117,7 @@ export default class Submission extends React.Component {
       //     console.error(x);
       //   });
     };
-    console.log(permission.status);
+    // console.log(permission.status);
     if (permission.status !== "granted") {
       const newPermission = await Permissions.askAsync(Permissions.CAMERA_ROLL);
       if (newPermission.status === "granted") {

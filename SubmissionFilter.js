@@ -39,7 +39,7 @@ export default class SubmissionFilter extends React.Component {
       srid,
       when
     };
-    console.log("filterPressed", when);
+    // console.log("filterPressed", when);
     onFilterPressed(query);
   }
 
@@ -54,7 +54,7 @@ export default class SubmissionFilter extends React.Component {
 
   get addressString() {
     const { location } = this.state;
-    console.log("have location", location != null);
+    // console.log("have location", location != null);
     if (!location) {
       return null;
     }
@@ -67,7 +67,7 @@ export default class SubmissionFilter extends React.Component {
 
   get complaintModal() {
     if (this.state.showComplaintModal) {
-      console.log("show complaint");
+      // console.log("show complaint");
       return (
         <View
           style={{
@@ -92,8 +92,8 @@ export default class SubmissionFilter extends React.Component {
   }
 
   finds(address, key) {
-    console.log("find", address, key);
-    console.log(address.filter(x => x.types.includes(key)));
+    // console.log("find", address, key);
+    // console.log(address.filter(x => x.types.includes(key)));
     return address
       .filter(x => x.types.includes(key))
       .map(x => x.short_name)

@@ -171,7 +171,7 @@ export default class Register extends React.Component {
         } else {
           messaage = "Unknown error";
         }
-        console.log(message);
+        // console.log(message);
         this.setState({ error: message });
       });
   }

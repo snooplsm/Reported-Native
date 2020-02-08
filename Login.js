@@ -227,6 +227,7 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     marginTop: 125,
+    padding: 10,
     alignItems: "center"
   }
 });
