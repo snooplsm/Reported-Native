@@ -58,19 +58,17 @@ export default class Register extends React.Component {
   }
 
   onFirstNameBlur() {
-    let firstNameError = null;
-    if (this.state.firstName.length == 0) {
-      firstNameError = "First Name required";
-    }
-    this.setState({ firstNameError });
+    const { firstName } = this.state;
+    this.setState({
+      firstNameError: firstName.length == 0 ? "First Name required" : null
+    });
   }
 
   onLastNameBlur() {
-    let lastNameError = null;
-    if (this.state.lastName.length == 0) {
-      lastNameError = "Last Name required";
-    }
-    this.setState({ lastNameError });
+    const { lastName } = this.state;
+    this.setState({
+      lastNameError: lastName.length == 0 ? "Last Name required" : null
+    });
   }
 
   onPhoneChange(phone) {
