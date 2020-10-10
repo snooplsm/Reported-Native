@@ -150,7 +150,7 @@ export default class Register extends React.Component {
         email,
         password
       })
-      .then(success => {
+      .then(_success => {
         const {
           navigation: { navigate }
         } = this.props;
@@ -158,21 +158,13 @@ export default class Register extends React.Component {
         navigate("Home");
       })
       .catch(e => {
+        const { response: res } = e;
         this.setState({ registering: false });
-        let message = "";
-        if (x.response) {
-          if (x.response.status == 401) {
-            message = "Credentials not found";
-          } else {
-            message = x.response.data.message;
-          }
-        } else if (x.request) {
-          message = "Server was unresponsive";
-        } else {
-          messaage = "Unknown error";
-        }
-        // console.log(message);
-        this.setState({ error: message });
+        const errorMessage = {
+          401: "Credentials not found",
+          422: "Could not process information"
+        }[res.status] || "Unknown error";
+        this.setState({ error: errorMessage });
       });
   }
 
