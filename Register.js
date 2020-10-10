@@ -215,7 +215,7 @@ export default class Register extends React.Component {
           </View>
           <View style={{ marginTop: "10%" }} />
           <Input
-            label={"First Name"}
+            label="First Name"
             ref={this.firstName}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
@@ -225,7 +225,7 @@ export default class Register extends React.Component {
             leftIcon={<Icon type="material" name="person" />}
           />
           <Input
-            label={"Last Name"}
+            label="Last Name"
             ref={this.lastName}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
@@ -235,8 +235,8 @@ export default class Register extends React.Component {
             leftIcon={<Icon type="material" name="person" />}
           />
           <Input
-            label={"Phone"}
-            keyboardType={"phone-pad"}
+            label="Phone"
+            keyboardType="phone-pad"
             ref={this.phone}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
@@ -246,8 +246,8 @@ export default class Register extends React.Component {
             leftIcon={<Icon type="material-community" name="phone" />}
           />
           <Input
-            label={"Email"}
-            autoCapitalize={"none"}
+            label="Email"
+            autoCapitalize="none"
             keyboardType="email-address"
             ref={this.field}
             containerStyle={styles.field}
@@ -262,7 +262,7 @@ export default class Register extends React.Component {
           />
           <Input
             label="Password (optional)"
-            secureTextEntry={true}
+            secureTextEntry
             containerStyle={styles.field}
             onChangeText={password => this.setState({ password })}
             errorStyle={ErrorStyle.style}
