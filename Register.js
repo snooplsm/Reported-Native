@@ -41,16 +41,8 @@ export default class Register extends React.Component {
     };
   }
 
-  onEmailChange(email) {
-    this.setState({ email });
-  }
-
-  onFirstNameChange(firstName) {
-    this.setState({ firstName });
-  }
-
-  onLastNameChange(lastName) {
-    this.setState({ lastName });
+  onFieldChange(fieldName, val) {
+    this.setState({ [fieldName]: val })
   }
 
   onAlreadyRegistered() {
@@ -218,7 +210,7 @@ export default class Register extends React.Component {
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.firstNameError}
-            onChangeText={firstName => this.onFirstNameChange(firstName)}
+            onChangeText={firstName => this.onFieldChange('firstName', firstName)}
             onBlur={() => this.onFirstNameBlur()}
             leftIcon={<Icon type="material" name="person" />}
           />
@@ -228,7 +220,7 @@ export default class Register extends React.Component {
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.lastNameError}
-            onChangeText={lastName => this.onLastNameChange(lastName)}
+            onChangeText={lastName => this.onFieldChange('lastName', lastName)}
             onBlur={() => this.onLastNameBlur()}
             leftIcon={<Icon type="material" name="person" />}
           />
@@ -252,7 +244,7 @@ export default class Register extends React.Component {
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.emailError}
             onChangeText={email => {
-              this.onEmailChange(email);
+              this.onFieldChange('email', email);
               this.onEmailBlur(true);
             }}
             onBlur={() => this.onEmailBlur(false)}
