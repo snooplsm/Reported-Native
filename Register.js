@@ -96,9 +96,8 @@ export default class Register extends React.Component {
     let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
       emailError = "Invalid Email";
-    } else {
-      emailError = null;
     }
+
     if (this.state.emailError || !onlySuccess) {
       this.setState({ emailError });
     }
