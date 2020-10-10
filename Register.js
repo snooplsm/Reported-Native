@@ -110,34 +110,35 @@ export default class Register extends React.Component {
   }
 
   submit() {
-    if (this.state.firstName.length < 1) {
+    const { firstName, lastName, phone, testify, email, password } = this.state;
+    if (firstName.length < 1) {
       return Alert.alert(
         "First Name Required",
         "Name required to comply with 311 requirements."
       );
-    } else if (this.state.lastName.length < 1) {
+    } else if (lastName.length < 1) {
       return Alert.alert(
         "Last Name Required",
         "Name required to comply with 311 requirements."
       );
-    } else if (this.state.phone.replace(/\D/g, "").length != 10) {
+    } else if (phone.replace(/\D/g, "").length != 10) {
       return Alert.alert(
         "Phone number invalid",
         "Ten digit phone number required."
       );
-    } else if (!this.validateEmail(this.state.email)) {
+    } else if (!this.validateEmail(email)) {
       return Alert.alert(
         "Email invalid",
         "Valid Email required to communicate with 311."
       );
-    } else if (!this.state.testify) {
+    } else if (!testify) {
       return Alert.alert(
         "Testify required",
         "You must be willing to testify by phone to use Reported."
       );
     }
     this.setState({ registering: true });
-    const { firstName, lastName, phone, testify, email, password } = this.state;
+
     api
       .register({
         firstName,
