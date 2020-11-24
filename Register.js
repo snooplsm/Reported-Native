@@ -41,16 +41,8 @@ export default class Register extends React.Component {
     };
   }
 
-  onEmailChange(email) {
-    this.setState({ email });
-  }
-
-  onFirstNameChange(firstName) {
-    this.setState({ firstName });
-  }
-
-  onLastNameChange(lastName) {
-    this.setState({ lastName });
+  onFieldChange(fieldName, val) {
+    this.setState({ [fieldName]: val })
   }
 
   onAlreadyRegistered() {
@@ -58,19 +50,17 @@ export default class Register extends React.Component {
   }
 
   onFirstNameBlur() {
-    let firstNameError = null;
-    if (this.state.firstName.length == 0) {
-      firstNameError = "First Name required";
-    }
-    this.setState({ firstNameError });
+    const { firstName } = this.state;
+    this.setState({
+      firstNameError: firstName.length == 0 ? "First Name required" : null
+    });
   }
 
   onLastNameBlur() {
-    let lastNameError = null;
-    if (this.state.lastName.length == 0) {
-      lastNameError = "Last Name required";
-    }
-    this.setState({ lastNameError });
+    const { lastName } = this.state;
+    this.setState({
+      lastNameError: lastName.length == 0 ? "Last Name required" : null
+    });
   }
 
   onPhoneChange(phone) {
@@ -96,9 +86,8 @@ export default class Register extends React.Component {
     let emailError = null;
     if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
       emailError = "Invalid Email";
-    } else {
-      emailError = null;
     }
+
     if (this.state.emailError || !onlySuccess) {
       this.setState({ emailError });
     }
@@ -110,34 +99,35 @@ export default class Register extends React.Component {
   }
 
   submit() {
-    if (this.state.firstName.length < 1) {
+    const { firstName, lastName, phone, testify, email, password } = this.state;
+    if (firstName.length < 1) {
       return Alert.alert(
         "First Name Required",
         "Name required to comply with 311 requirements."
       );
-    } else if (this.state.lastName.length < 1) {
+    } else if (lastName.length < 1) {
       return Alert.alert(
         "Last Name Required",
         "Name required to comply with 311 requirements."
       );
-    } else if (this.state.phone.replace(/\D/g, "").length != 10) {
+    } else if (phone.replace(/\D/g, "").length != 10) {
       return Alert.alert(
         "Phone number invalid",
         "Ten digit phone number required."
       );
-    } else if (!this.validateEmail(this.state.email)) {
+    } else if (!this.validateEmail(email)) {
       return Alert.alert(
         "Email invalid",
         "Valid Email required to communicate with 311."
       );
-    } else if (!this.state.testify) {
+    } else if (!testify) {
       return Alert.alert(
         "Testify required",
         "You must be willing to testify by phone to use Reported."
       );
     }
     this.setState({ registering: true });
-    const { firstName, lastName, phone, testify, email, password } = this.state;
+
     api
       .register({
         firstName,
@@ -150,7 +140,7 @@ export default class Register extends React.Component {
         email,
         password
       })
-      .then(success => {
+      .then(_success => {
         const {
           navigation: { navigate }
         } = this.props;
@@ -158,21 +148,13 @@ export default class Register extends React.Component {
         navigate("Home");
       })
       .catch(e => {
+        const { response: res } = e;
         this.setState({ registering: false });
-        let message = "";
-        if (x.response) {
-          if (x.response.status == 401) {
-            message = "Credentials not found";
-          } else {
-            message = x.response.data.message;
-          }
-        } else if (x.request) {
-          message = "Server was unresponsive";
-        } else {
-          messaage = "Unknown error";
-        }
-        // console.log(message);
-        this.setState({ error: message });
+        const errorMessage = {
+          401: "Credentials not found",
+          422: "Could not process information"
+        }[res.status] || "Unknown error";
+        this.setState({ error: errorMessage });
       });
   }
 
@@ -223,28 +205,28 @@ export default class Register extends React.Component {
           </View>
           <View style={{ marginTop: "10%" }} />
           <Input
-            label={"First Name"}
+            label="First Name"
             ref={this.firstName}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.firstNameError}
-            onChangeText={firstName => this.onFirstNameChange(firstName)}
+            onChangeText={firstName => this.onFieldChange('firstName', firstName)}
             onBlur={() => this.onFirstNameBlur()}
             leftIcon={<Icon type="material" name="person" />}
           />
           <Input
-            label={"Last Name"}
+            label="Last Name"
             ref={this.lastName}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.lastNameError}
-            onChangeText={lastName => this.onLastNameChange(lastName)}
+            onChangeText={lastName => this.onFieldChange('lastName', lastName)}
             onBlur={() => this.onLastNameBlur()}
             leftIcon={<Icon type="material" name="person" />}
           />
           <Input
-            label={"Phone"}
-            keyboardType={"phone-pad"}
+            label="Phone"
+            keyboardType="phone-pad"
             ref={this.phone}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
@@ -254,15 +236,15 @@ export default class Register extends React.Component {
             leftIcon={<Icon type="material-community" name="phone" />}
           />
           <Input
-            label={"Email"}
-            autoCapitalize={"none"}
+            label="Email"
+            autoCapitalize="none"
             keyboardType="email-address"
             ref={this.field}
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             errorMessage={this.state.emailError}
             onChangeText={email => {
-              this.onEmailChange(email);
+              this.onFieldChange('email', email);
               this.onEmailBlur(true);
             }}
             onBlur={() => this.onEmailBlur(false)}
@@ -270,7 +252,7 @@ export default class Register extends React.Component {
           />
           <Input
             label="Password (optional)"
-            secureTextEntry={true}
+            secureTextEntry
             containerStyle={styles.field}
             onChangeText={password => this.setState({ password })}
             errorStyle={ErrorStyle.style}
