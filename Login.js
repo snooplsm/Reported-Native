@@ -9,12 +9,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import {
-  ErrorStyle,
-  HorizontalStyle,
-  ButtonContainerStyle,
-  ButtonStyle
-} from "./Styles";
+import { ErrorStyle } from "./Styles";
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
@@ -171,9 +166,9 @@ export default class Login extends React.Component {
           </View>
           <View style={{ marginTop: "10%" }} />
           <Input
-            label={"Email"}
-            autoCapitalize={"none"}
-            autoFocus={true}
+            label="Email"
+            autoCapitalize="none"
+            autoFocus
             keyboardType="email-address"
             ref={this.email}
             containerStyle={styles.email}
@@ -184,7 +179,7 @@ export default class Login extends React.Component {
           />
           <Input
             label="Password"
-            secureTextEntry={true}
+            secureTextEntry
             containerStyle={styles.field}
             errorStyle={ErrorStyle.style}
             onChangeText={password => this.setState({ password })}
