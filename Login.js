@@ -18,7 +18,7 @@ import {
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
-import { validateEmail } from "./helpers/AccountHelpers";
+import { validateEmail, seconds } from "./helpers/AccountHelpers";
 
 export default class Login extends React.Component {
   static navigationOptions = {
@@ -39,7 +39,8 @@ export default class Login extends React.Component {
       error: undefined,
       email: "",
       password: "",
-      loading: false
+      loading: false,
+      pw_reset_submitted_at: null,
     };
   }
 
@@ -61,7 +62,13 @@ export default class Login extends React.Component {
   }
 
   onForgotPassword() {
-    const { email } = this.state;
+    const { email, pw_reset_submitted_at } = this.state;
+
+    if (pw_reset_submitted_at > Date.now() - seconds(10)) {
+      Alert.alert("Duplicate request", "Please wait a few seconds before attempting to reset your password.");
+      return;
+    }
+
     if (!validateEmail(email)) {
       let message = "";
       if (email == "") {
@@ -71,26 +78,28 @@ export default class Login extends React.Component {
       }
       Alert.alert("Invalid Email", message);
     } else {
+      this.setState({ pw_reset_submitted_at: Date.now() });
+      Alert.alert("", "A password reset email has been sent. It may take a couple of minutes to receive it.");
+
       api
         .forgotPassword({ email })
-        .then(fun => {
-          Alert.alert("", "Password reset email has been sent.");
-        })
-        .catch(e => {
-          Alert.alert("", "There was an error.");
+        .then(_ => null)
+        .catch(_e => {
+          // NOTE: This error might appear up to 30s after the reset button is clicked due
+          // to a network timeout. 
+          Alert.alert("", "There was an error resetting your password. Please try again later.");
         });
     }
   }
 
   submitLogin() {
-    if (this.state.loading) {
-      return;
-    }
+    const { email, loading, password } = this.state;
+    if (loading) { return }
     const {
       navigation: { navigate }
     } = this.props;
     this.setState({ loading: true, error: null });
-    const { email, password } = this.state;
+
     api
       .login(email, password)
       .then(res => {
