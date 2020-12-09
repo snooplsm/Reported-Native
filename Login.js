@@ -18,6 +18,7 @@ import {
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
+import { validateEmail } from "./helpers/AccountHelpers";
 
 export default class Login extends React.Component {
   static navigationOptions = {
@@ -49,8 +50,9 @@ export default class Login extends React.Component {
   }
 
   onEmailBlur() {
+    const { email } = this.state;
     let emailError = null;
-    if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
+    if (email.length != 0 && !validateEmail(email)) {
       emailError = "Invalid Email";
     } else {
       emailError = null;
@@ -60,7 +62,7 @@ export default class Login extends React.Component {
 
   onForgotPassword() {
     const { email } = this.state;
-    if (!this.validateEmail(email)) {
+    if (!validateEmail(email)) {
       let message = "";
       if (email == "") {
         message = "Type in your email address to change the password.";
@@ -138,14 +140,8 @@ export default class Login extends React.Component {
   }
 
   isSubmitEnabled() {
-    return (
-      this.validateEmail(this.state.email) && this.state.password.length > 2
-    );
-  }
-
-  validateEmail(email) {
-    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email);
+    const { email, password } = this.state;
+    return validateEmail(email) && password.length > 2;
   }
 
   render() {
