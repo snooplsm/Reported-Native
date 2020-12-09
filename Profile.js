@@ -14,6 +14,7 @@ import LogoTitle from "./LogoTitle";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { api } from "./Api";
 import { signOut, isSignedIn } from "./Auth";
+import { validateEmail } from "./helpers/AccountHelpers";
 
 export default class Profile extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -152,17 +153,12 @@ export default class Profile extends React.Component {
 
   onEmailBlur() {
     let emailError = null;
-    if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
+    if (this.state.email.length != 0 && !validateEmail(this.state.email)) {
       emailError = "Invalid Email";
     } else {
       emailError = null;
     }
     this.setState({ emailError });
-  }
-
-  validateEmail(email) {
-    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email);
   }
 
   user() {

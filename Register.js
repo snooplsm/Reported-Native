@@ -13,6 +13,7 @@ import LogoTitle from "./LogoTitle";
 import { api } from "./Api";
 import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
+import { validateEmail } from "./helpers/AccountHelpers";
 
 export default class Register extends React.Component {
   static navigationOptions = {
@@ -84,18 +85,13 @@ export default class Register extends React.Component {
 
   onEmailBlur(onlySuccess) {
     let emailError = null;
-    if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
+    if (this.state.email.length != 0 && !validateEmail(this.state.email)) {
       emailError = "Invalid Email";
     }
 
     if (this.state.emailError || !onlySuccess) {
       this.setState({ emailError });
     }
-  }
-
-  validateEmail(email) {
-    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email);
   }
 
   submit() {
@@ -115,7 +111,7 @@ export default class Register extends React.Component {
         "Phone number invalid",
         "Ten digit phone number required."
       );
-    } else if (!this.validateEmail(email)) {
+    } else if (!validateEmail(email)) {
       return Alert.alert(
         "Email invalid",
         "Valid Email required to communicate with 311."
