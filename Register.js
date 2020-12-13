@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import LogoTitle from "./LogoTitle";
 import { api } from "./Api";
-import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
+import { ErrorStyle, ButtonStyle, globalStyles } from "./Styles";
 import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
@@ -184,7 +184,7 @@ export default class Register extends React.Component {
 
   render() {
     return (
-      <KeyboardAvoidingView behavior="padding" style={styles.container}>
+      <KeyboardAvoidingView behavior="height" style={globalStyles.mainContainer}>
         <ScrollView>
           <TouchableOpacity
             style={styles.alreadyRegistered}
@@ -265,33 +265,28 @@ export default class Register extends React.Component {
             title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
             checked={this.state.testify}
           />
-        </ScrollView>
-        <View>
-          <Button
-            onPress={() => this.submit()}
-            loading={this.state.registering}
-            containerStyle={{
-              marginBottom: this.state.keyboard ? 64 : 0
-            }}
-            buttonStyle={Object.assign(
-              {
+          <View>
+            <Button
+              onPress={() => this.submit()}
+              loading={this.state.registering}
+              containerStyle={{
+                marginBottom: this.state.keyboard ? 64 : 0
+              }}
+              buttonStyle={{
+                ...ButtonStyle.primary,
                 padding: 20,
                 borderRadius: 0
-              },
-              Button.primary
-            )}
-            title="Register"
-          />
-        </View>
+              }}
+              title="Register"
+            />
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     );
   }
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1
-  },
   email: {
     top: "20%"
   },
