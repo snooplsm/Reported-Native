@@ -3,17 +3,15 @@ import {
   Alert,
   KeyboardAvoidingView,
   Keyboard,
-  ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View
 } from "react-native";
 import {
   ErrorStyle,
-  HorizontalStyle,
-  ButtonContainerStyle,
-  ButtonStyle
+  colors,
+  ButtonStyle,
+  globalStyles,
 } from "./Styles";
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
@@ -150,9 +148,8 @@ export default class Login extends React.Component {
 
   render() {
     return (
-      <KeyboardAvoidingView behavior="padding" style={styles.container}>
-        <ScrollView style={styles.scrollView}>
-          <View style={{ marginTop: "10%" }} />
+      <KeyboardAvoidingView behavior='height' style={globalStyles.mainContainer}>
+        <View style={styles.scrollView}>
           <View
             style={{
               opacity: this.state.error ? 100 : 0,
@@ -164,7 +161,6 @@ export default class Login extends React.Component {
             <Badge status="error" />
             <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
           </View>
-          <View style={{ marginTop: "10%" }} />
           <Input
             label={"Email"}
             autoCapitalize={"none"}
@@ -184,50 +180,49 @@ export default class Login extends React.Component {
             errorStyle={ErrorStyle.style}
             onChangeText={password => this.setState({ password })}
           />
-          <TouchableOpacity
-            style={styles.forgotPassword}
+          <Button
+            loading={this.state.loading}
+            background={null}
             onPress={() => this.onForgotPassword()}
-          >
-            <Text>Forgot Password?</Text>
-          </TouchableOpacity>
-        </ScrollView>
-        <Button
-          disabled={!this.isSubmitEnabled()}
-          loading={this.state.loading}
-          onPress={() => {
-            this.submitLogin();
-          }}
-          containerStyle={{
-            marginBottom: this.state.keyboard ? 64 : 0
-          }}
-          buttonStyle={Object.assign(
-            {
-              padding: 20,
-              borderRadius: 0
-            },
-            Button.primary
-          )}
-          title="Login"
-        />
+            buttonStyle={{
+              ...ButtonStyle.outline,
+              height: 60,
+            }}
+            containerStyle={{
+              borderColor: colors.orange,
+              borderWidth: 2,
+              marginTop: 20,
+            }}
+            titleStyle={ButtonStyle.orangeText}
+            title="Forgot Password?"
+          />
+        </View>
+        <View>
+          <Button
+            disabled={!this.isSubmitEnabled()}
+            loading={this.state.loading}
+            onPress={() => {
+              this.submitLogin();
+            }}
+            buttonStyle={{
+              ...ButtonStyle.primary,
+              height: 60,
+            }}
+            title="Login"
+          />
+        </View>
       </KeyboardAvoidingView>
+
     );
   }
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1
-  },
   scrollView: {
-    paddingHorizontal: 20
+    flex: 1,
   },
-  email: {},
   field: {
-    marginTop: 40
+    marginTop: 20,
+    marginBottom: 20,
   },
-  forgotPassword: {
-    marginTop: 125,
-    padding: 10,
-    alignItems: "center"
-  }
 });

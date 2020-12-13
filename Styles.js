@@ -39,6 +39,14 @@ export const colors = {
   white: "#eeeeee"
 };
 
+export const globalStyles = StyleSheet.create({
+  mainContainer: {
+    flex: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
+  },
+});
+
 export const ButtonStyle = StyleSheet.create({
   primary: {
     backgroundColor: colors.orange
