@@ -1,9 +1,8 @@
 import React from "react";
 
-import { AppState, StyleSheet, Text, View, Linking } from "react-native";
+import { Linking } from "react-native";
 import { Notifications } from "expo";
 import { AppContainer } from "./Navigation";
-import { api } from "./Api";
 
 export default class App extends React.Component {
   constructor(props) {
