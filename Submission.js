@@ -176,7 +176,7 @@ export default class Submission extends React.Component {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
-        onPress: () => {}
+        onPress: () => { }
       },
       {
         text: "OK",
@@ -341,7 +341,7 @@ export default class Submission extends React.Component {
     const buttons = needsToEnablePush && [
       {
         text: "No",
-        onPress: () => {}
+        onPress: () => { }
       },
       {
         text: "Enable",
@@ -353,8 +353,8 @@ export default class Submission extends React.Component {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
-            result.thirtyDays
-          )} report within a thirty day timespan.`
+          result.thirtyDays
+        )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = needsToEnablePush
       ? "Your report has been submitted.  Enable push notifications to get future updates?"
@@ -566,7 +566,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    var promise = new Promise(function(resolve, reject) {
+    var promise = new Promise(function (resolve, reject) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -901,7 +901,7 @@ export default class Submission extends React.Component {
                   caretHidden={true}
                   autoFocus={false}
                   label={"When Incident Occurred"}
-                  onFocus={x => this.setState({ datePickerVisible: true })}
+                  onTouchEnd={() => this.setState({ datePickerVisible: true })}
                   placeholder={"Time you observed infraction"}
                   value={this.state.timeofreportstr}
                 />
@@ -942,19 +942,18 @@ export default class Submission extends React.Component {
                     onPress={() => {
                       this.setState({
                         timeofreport: this.state.tmpDate,
-                        datePickerVisible: undefined
+                        datePickerVisible: false,
                       });
                     }}
                   />
                   <Button
                     title="Set"
                     onPress={() => {
-                      // console.log(this.state.tmpDate);
                       this.setState({
                         timeofreportstr: this.timeofreport(
                           this.state.timeofreport
                         ),
-                        datePickerVisible: undefined
+                        datePickerVisible: false,
                       });
                     }}
                   />
@@ -966,9 +965,23 @@ export default class Submission extends React.Component {
                 isVisible={true}
                 value={this.time || new Date()}
                 onChange={(event, date) => {
-                  // console.log(date);
-                  this.setState({ timeofreport: date });
+                  console.log(date);
+                  if (Platform.OS !== "ios") {
+                    this.setState({
+                      timeofreport: date,
+                      timeofreportstr: this.timeofreport(
+                        date
+                      ),
+                      datePickerVisible: false,
+                    });
+                  } else {
+                    this.setState({
+                      timeofreport: date,
+                    });
+                  }
+
                 }}
+                on
               />
             </View>
           )}
@@ -1067,7 +1080,7 @@ export default class Submission extends React.Component {
               //// console.log(places.results[0]);
               this.setState({ location: { place: places.results[0] } });
             })
-            .catch(e => {});
+            .catch(e => { });
         }
         if (!this.state.license) {
           let resize = null;
@@ -1092,7 +1105,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => {});
+            .catch(e => { });
         }
       }
 
