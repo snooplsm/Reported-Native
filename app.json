@@ -4,7 +4,11 @@
     "slug": "reported",
     "privacy": "unlisted",
     "sdkVersion": "36.0.0",
-    "platforms": ["ios", "android", "web"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "version": "3.0.7",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -14,8 +18,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "cab.reported.nyc",
-      "buildNumber": "17",
+      "bundleIdentifier": "nyc.reported.app2",
+      "buildNumber": "19",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true,
       "infoPlist": {
@@ -41,6 +45,8 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"]
+    "assetBundlePatterns": [
+      "**/*"
+    ]
   }
 }
