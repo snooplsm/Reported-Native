@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Text,
   View,
-  KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
 import {
@@ -17,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
+import FloatingMainButton from "./FloatingMainButton";
 
 export default class Login extends React.Component {
   static navigationOptions = {
@@ -106,7 +106,7 @@ export default class Login extends React.Component {
         } else if (x.request) {
           message = "Server was unresponsive";
         } else {
-          messaage = "Unknown error";
+          message = "Unknown error";
         }
         this.setState({ loading: false, error: message });
       });
@@ -119,24 +119,26 @@ export default class Login extends React.Component {
   }
 
   validateEmail(email) {
-    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    const re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     return re.test(email);
   }
 
   render() {
+    const {error, loading} = this.state
+
     return (
       <SafeAreaView style={globalStyles.mainContainer}>
         <ScrollView>
           <View
             style={{
-              opacity: this.state.error ? 100 : 0,
+              opacity: error ? 100 : 0,
               justifyContent: "center",
               alignItems: "center",
               flexDirection: "row"
             }}
           >
             <Badge status="error" />
-            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+            <Text> {error ?? "TAKE UP SPACE"}</Text>
           </View>
           <Input
             label={"Email"}
@@ -158,7 +160,7 @@ export default class Login extends React.Component {
             onChangeText={password => this.setState({ password })}
           />
           <Button
-            loading={this.state.loading}
+            loading={loading}
             background={null}
             onPress={() => this.onForgotPassword()}
             buttonStyle={{
@@ -174,29 +176,18 @@ export default class Login extends React.Component {
             title="Forgot Password?"
           />
         </ScrollView>
-        <KeyboardAvoidingView keyboardVerticalOffset={-500} behavior='padding'>
-          <Button
-            disabled={!this.isSubmitEnabled()}
-            loading={this.state.loading}
-            onPress={() => {
-              this.submitLogin();
-            }}
-            buttonStyle={{
-              ...ButtonStyle.primary,
-              height: 60,
-            }}
-            title="Login"
-          />
-        </KeyboardAvoidingView>
+        <FloatingMainButton
+            isEnabled={this.isSubmitEnabled()}
+            isLoading={loading}
+            onPress={this.submitLogin}
+            title={'Login'}
+        />
       </SafeAreaView>
     );
   }
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
   field: {
     marginTop: 20,
     marginBottom: 20,
