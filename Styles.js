@@ -29,7 +29,7 @@ export const ButtonContainerStyle = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  //Потом вырежем это
+  //Потом вырежем это TODO
   bottom: {
     flex: 1,
     position: "absolute",
