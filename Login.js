@@ -4,7 +4,8 @@ import {
   Keyboard,
   StyleSheet,
   Text,
-  View
+  View,
+  ScrollView,
 } from "react-native";
 import {
   ErrorStyle,
@@ -151,53 +152,54 @@ export default class Login extends React.Component {
     const { keyboard } = this.state;
     return (
       <SafeAreaView style={globalStyles.mainContainer}>
-        <View
-          style={{
-            opacity: this.state.error ? 100 : 0,
-            justifyContent: "center",
-            alignItems: "center",
-            flexDirection: "row"
-          }}
-        >
-          <Badge status="error" />
-          <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
-        </View>
-        <Input
-          label={"Email"}
-          autoCapitalize={"none"}
-          autoFocus={true}
-          keyboardType="email-address"
-          ref={this.email}
-          containerStyle={styles.email}
-          errorStyle={ErrorStyle.style}
-          errorMessage={this.state.emailError}
-          onChangeText={email => this.onEmailChange(email)}
-          onBlur={() => this.onEmailBlur()}
-        />
-        <Input
-          label="Password"
-          secureTextEntry={true}
-          containerStyle={styles.field}
-          errorStyle={ErrorStyle.style}
-          onChangeText={password => this.setState({ password })}
-        />
-        <Button
-          loading={this.state.loading}
-          background={null}
-          onPress={() => this.onForgotPassword()}
-          buttonStyle={{
-            ...ButtonStyle.outline,
-            height: 60,
-          }}
-          containerStyle={{
-            borderColor: colors.orange,
-            borderWidth: 2,
-            marginTop: 20,
-            display: !keyboard ? "flex" : "none",
-          }}
-          titleStyle={ButtonStyle.orangeText}
-          title="Forgot Password?"
-        />
+        <ScrollView>
+          <View
+            style={{
+              opacity: this.state.error ? 100 : 0,
+              justifyContent: "center",
+              alignItems: "center",
+              flexDirection: "row"
+            }}
+          >
+            <Badge status="error" />
+            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+          </View>
+          <Input
+            label={"Email"}
+            autoCapitalize={"none"}
+            autoFocus={true}
+            keyboardType="email-address"
+            ref={this.email}
+            containerStyle={styles.email}
+            errorStyle={ErrorStyle.style}
+            errorMessage={this.state.emailError}
+            onChangeText={email => this.onEmailChange(email)}
+            onBlur={() => this.onEmailBlur()}
+          />
+          <Input
+            label="Password"
+            secureTextEntry={true}
+            containerStyle={styles.field}
+            errorStyle={ErrorStyle.style}
+            onChangeText={password => this.setState({ password })}
+          />
+          <Button
+            loading={this.state.loading}
+            background={null}
+            onPress={() => this.onForgotPassword()}
+            buttonStyle={{
+              ...ButtonStyle.outline,
+              height: 60,
+            }}
+            containerStyle={{
+              borderColor: colors.orange,
+              borderWidth: 2,
+              ...styles.field,
+            }}
+            titleStyle={ButtonStyle.orangeText}
+            title="Forgot Password?"
+          />
+        </ScrollView>
         <View style={!keyboard ? ButtonContainerStyle.bottomItemsContainer : styles.field}>
           <Button
             disabled={!this.isSubmitEnabled()}
