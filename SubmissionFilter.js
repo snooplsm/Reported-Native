@@ -2,8 +2,6 @@ import React from "react";
 
 import {
   View,
-  Text,
-  SafeAreaView,
   StyleSheet,
   Modal,
   TouchableOpacity
@@ -39,7 +37,6 @@ export default class SubmissionFilter extends React.Component {
       srid,
       when
     };
-    // console.log("filterPressed", when);
     onFilterPressed(query);
   }
 
@@ -54,7 +51,6 @@ export default class SubmissionFilter extends React.Component {
 
   get addressString() {
     const { location } = this.state;
-    // console.log("have location", location != null);
     if (!location) {
       return null;
     }
