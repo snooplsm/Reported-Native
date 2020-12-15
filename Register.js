@@ -9,9 +9,15 @@ import {
   ScrollView,
   View
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LogoTitle from "./LogoTitle";
 import { api } from "./Api";
-import { ErrorStyle, ButtonStyle, globalStyles } from "./Styles";
+import {
+  ErrorStyle,
+  ButtonStyle,
+  globalStyles,
+  ButtonContainerStyle,
+} from "./Styles";
 import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
@@ -183,89 +189,92 @@ export default class Register extends React.Component {
   }
 
   render() {
+    const { keyboard } = this.state;
     return (
-      <KeyboardAvoidingView behavior="height" style={globalStyles.mainContainer}>
-        <ScrollView>
-          <TouchableOpacity
-            style={styles.alreadyRegistered}
-            onPress={() => this.onAlreadyRegistered()}
-          >
-            <Text>Already Registered? Login</Text>
-          </TouchableOpacity>
-          <View
-            style={{
-              opacity: this.state.error ? 100 : 0,
-              justifyContent: "center",
-              alignItems: "center",
-              flexDirection: "row"
-            }}
-          >
-            <Badge status="error" />
-            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
-          </View>
-          <View style={{ marginTop: "10%" }} />
-          <Input
-            label="First Name"
-            ref={this.firstName}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.firstNameError}
-            onChangeText={firstName => this.onFieldChange('firstName', firstName)}
-            onBlur={() => this.onFirstNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label="Last Name"
-            ref={this.lastName}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.lastNameError}
-            onChangeText={lastName => this.onFieldChange('lastName', lastName)}
-            onBlur={() => this.onLastNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label="Phone"
-            keyboardType="phone-pad"
-            ref={this.phone}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.phoneError}
-            onChangeText={email => this.onPhoneChange(email)}
-            onBlur={() => this.onPhoneBlur()}
-            leftIcon={<Icon type="material-community" name="phone" />}
-          />
-          <Input
-            label="Email"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            ref={this.field}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => {
-              this.onFieldChange('email', email);
-              this.onEmailBlur(true);
-            }}
-            onBlur={() => this.onEmailBlur(false)}
-            leftIcon={<Icon type="material-community" name="email" />}
-          />
-          <Input
-            label="Password (optional)"
-            secureTextEntry
-            containerStyle={styles.field}
-            onChangeText={password => this.setState({ password })}
-            errorStyle={ErrorStyle.style}
-            leftIcon={<Icon type="material-community" name="lock" />}
-          />
+      <KeyboardAvoidingView behavior="height" style={styles.mainWrapper}>
+        <SafeAreaView style={globalStyles.mainContainer}>
+          <ScrollView>
+            <TouchableOpacity
+              style={styles.alreadyRegistered}
+              onPress={() => this.onAlreadyRegistered()}
+            >
+              <Text>Already Registered? Login</Text>
+            </TouchableOpacity>
+            <View
+              style={{
+                opacity: this.state.error ? 100 : 0,
+                justifyContent: "center",
+                alignItems: "center",
+                flexDirection: "row"
+              }}
+            >
+              <Badge status="error" />
+              <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+            </View>
+            <View style={{ marginTop: "10%" }} />
+            <Input
+              label="First Name"
+              ref={this.firstName}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.firstNameError}
+              onChangeText={firstName => this.onFieldChange('firstName', firstName)}
+              onBlur={() => this.onFirstNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+            <Input
+              label="Last Name"
+              ref={this.lastName}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.lastNameError}
+              onChangeText={lastName => this.onFieldChange('lastName', lastName)}
+              onBlur={() => this.onLastNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+            <Input
+              label="Phone"
+              keyboardType="phone-pad"
+              ref={this.phone}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.phoneError}
+              onChangeText={email => this.onPhoneChange(email)}
+              onBlur={() => this.onPhoneBlur()}
+              leftIcon={<Icon type="material-community" name="phone" />}
+            />
+            <Input
+              label="Email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              ref={this.field}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.emailError}
+              onChangeText={email => {
+                this.onFieldChange('email', email);
+                this.onEmailBlur(true);
+              }}
+              onBlur={() => this.onEmailBlur(false)}
+              leftIcon={<Icon type="material-community" name="email" />}
+            />
+            <Input
+              label="Password (optional)"
+              secureTextEntry
+              containerStyle={styles.field}
+              onChangeText={password => this.setState({ password })}
+              errorStyle={ErrorStyle.style}
+              leftIcon={<Icon type="material-community" name="lock" />}
+            />
 
-          <CheckBox
-            containerStyle={styles.field}
-            onPress={() => this.setState({ testify: !this.state.testify })}
-            title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
-            checked={this.state.testify}
-          />
-          <View>
+            <CheckBox
+              containerStyle={styles.field}
+              onPress={() => this.setState({ testify: !this.state.testify })}
+              title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
+              checked={this.state.testify}
+            />
+          </ScrollView>
+          <View style={keyboard && styles.buttonContainerWithKeyboard}>
             <Button
               onPress={() => this.submit()}
               loading={this.state.registering}
@@ -280,7 +289,7 @@ export default class Register extends React.Component {
               title="Register"
             />
           </View>
-        </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     );
   }
@@ -289,6 +298,12 @@ export default class Register extends React.Component {
 const styles = StyleSheet.create({
   email: {
     top: "20%"
+  },
+  mainWrapper: {
+    flex: 1,
+  },
+  buttonContainerWithKeyboard: {
+    marginBottom: 15,
   },
   field: {
     marginTop: 30
