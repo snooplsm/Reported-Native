@@ -1,10 +1,10 @@
 import React from "react";
 import {
   Alert,
-  Keyboard,
   StyleSheet,
   Text,
   View,
+  KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
 import {
@@ -12,7 +12,6 @@ import {
   colors,
   ButtonStyle,
   globalStyles,
-  ButtonContainerStyle,
 } from "./Styles";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LogoTitle from "./LogoTitle";
@@ -113,30 +112,6 @@ export default class Login extends React.Component {
       });
   }
 
-  _keyboardDidShow() {
-    this.setState({ keyboard: true });
-  }
-
-  _keyboardDidHide() {
-    this.setState({ keyboard: false });
-  }
-
-  componentDidMount() {
-    this.keyboardDidShowListener = Keyboard.addListener(
-      "keyboardDidShow",
-      this._keyboardDidShow.bind(this)
-    );
-    this.keyboardDidHideListener = Keyboard.addListener(
-      "keyboardDidHide",
-      this._keyboardDidHide.bind(this)
-    );
-  }
-
-  componentWillUnmount() {
-    this.keyboardDidShowListener.remove();
-    this.keyboardDidHideListener.remove();
-  }
-
   isSubmitEnabled() {
     return (
       this.validateEmail(this.state.email) && this.state.password.length > 2
@@ -149,7 +124,6 @@ export default class Login extends React.Component {
   }
 
   render() {
-    const { keyboard } = this.state;
     return (
       <SafeAreaView style={globalStyles.mainContainer}>
         <ScrollView>
@@ -200,7 +174,7 @@ export default class Login extends React.Component {
             title="Forgot Password?"
           />
         </ScrollView>
-        <View style={!keyboard ? ButtonContainerStyle.bottomItemsContainer : styles.field}>
+        <KeyboardAvoidingView keyboardVerticalOffset={-500} behavior='padding'>
           <Button
             disabled={!this.isSubmitEnabled()}
             loading={this.state.loading}
@@ -213,7 +187,7 @@ export default class Login extends React.Component {
             }}
             title="Login"
           />
-        </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
