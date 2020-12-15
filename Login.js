@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Alert,
-  KeyboardAvoidingView,
   Keyboard,
   StyleSheet,
   Text,
@@ -12,7 +11,9 @@ import {
   colors,
   ButtonStyle,
   globalStyles,
+  ButtonContainerStyle,
 } from "./Styles";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
@@ -147,57 +148,57 @@ export default class Login extends React.Component {
   }
 
   render() {
+    const { keyboard } = this.state;
     return (
-      <KeyboardAvoidingView behavior='height' style={globalStyles.mainContainer}>
-        <View style={styles.scrollView}>
-          <View
-            style={{
-              opacity: this.state.error ? 100 : 0,
-              justifyContent: "center",
-              alignItems: "center",
-              flexDirection: "row"
-            }}
-          >
-            <Badge status="error" />
-            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
-          </View>
-          <Input
-            label={"Email"}
-            autoCapitalize={"none"}
-            autoFocus={true}
-            keyboardType="email-address"
-            ref={this.email}
-            containerStyle={styles.email}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => this.onEmailChange(email)}
-            onBlur={() => this.onEmailBlur()}
-          />
-          <Input
-            label="Password"
-            secureTextEntry={true}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            onChangeText={password => this.setState({ password })}
-          />
-          <Button
-            loading={this.state.loading}
-            background={null}
-            onPress={() => this.onForgotPassword()}
-            buttonStyle={{
-              ...ButtonStyle.outline,
-              height: 60,
-            }}
-            containerStyle={{
-              borderColor: colors.orange,
-              borderWidth: 2,
-              marginTop: 20,
-            }}
-            titleStyle={ButtonStyle.orangeText}
-            title="Forgot Password?"
-          />
+      <SafeAreaView style={globalStyles.mainContainer}>
+        <View
+          style={{
+            opacity: this.state.error ? 100 : 0,
+            justifyContent: "center",
+            alignItems: "center",
+            flexDirection: "row"
+          }}
+        >
+          <Badge status="error" />
+          <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
         </View>
-        <View>
+        <Input
+          label={"Email"}
+          autoCapitalize={"none"}
+          autoFocus={true}
+          keyboardType="email-address"
+          ref={this.email}
+          containerStyle={styles.email}
+          errorStyle={ErrorStyle.style}
+          errorMessage={this.state.emailError}
+          onChangeText={email => this.onEmailChange(email)}
+          onBlur={() => this.onEmailBlur()}
+        />
+        <Input
+          label="Password"
+          secureTextEntry={true}
+          containerStyle={styles.field}
+          errorStyle={ErrorStyle.style}
+          onChangeText={password => this.setState({ password })}
+        />
+        <Button
+          loading={this.state.loading}
+          background={null}
+          onPress={() => this.onForgotPassword()}
+          buttonStyle={{
+            ...ButtonStyle.outline,
+            height: 60,
+          }}
+          containerStyle={{
+            borderColor: colors.orange,
+            borderWidth: 2,
+            marginTop: 20,
+            display: !keyboard ? "flex" : "none",
+          }}
+          titleStyle={ButtonStyle.orangeText}
+          title="Forgot Password?"
+        />
+        <View style={!keyboard ? ButtonContainerStyle.bottomItemsContainer : styles.field}>
           <Button
             disabled={!this.isSubmitEnabled()}
             loading={this.state.loading}
@@ -211,8 +212,7 @@ export default class Login extends React.Component {
             title="Login"
           />
         </View>
-      </KeyboardAvoidingView>
-
+      </SafeAreaView>
     );
   }
 }
