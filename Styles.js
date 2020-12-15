@@ -25,6 +25,11 @@ export const ButtonContainerStyle = StyleSheet.create({
     bottom: "45%",
     padding: 0
   },
+  bottomItemsContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  //Потом вырежем это
   bottom: {
     flex: 1,
     position: "absolute",
