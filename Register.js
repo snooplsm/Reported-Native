@@ -193,7 +193,7 @@ export default class Register extends React.Component {
     return (
       <KeyboardAvoidingView behavior="height" style={styles.mainWrapper}>
         <SafeAreaView style={globalStyles.mainContainer}>
-          <ScrollView>
+          <ScrollView style={{ marginBottom: 50 }}>
             <TouchableOpacity
               style={styles.alreadyRegistered}
               onPress={() => this.onAlreadyRegistered()}
@@ -274,23 +274,22 @@ export default class Register extends React.Component {
               checked={this.state.testify}
             />
           </ScrollView>
-
+          <View style={styles.floatingButton}>
+            <Button
+              onPress={() => this.submit()}
+              loading={this.state.registering}
+              containerStyle={{
+                marginBottom: this.state.keyboard ? 64 : 0
+              }}
+              buttonStyle={{
+                ...ButtonStyle.primary,
+                padding: 20,
+                borderRadius: 0
+              }}
+              title="Register"
+            />
+          </View>
         </SafeAreaView>
-        <View style={styles.floatingButton}>
-          <Button
-            onPress={() => this.submit()}
-            loading={this.state.registering}
-            containerStyle={{
-              marginBottom: this.state.keyboard ? 64 : 0
-            }}
-            buttonStyle={{
-              ...ButtonStyle.primary,
-              padding: 20,
-              borderRadius: 0
-            }}
-            title="Register"
-          />
-        </View>
       </KeyboardAvoidingView>
     );
   }
