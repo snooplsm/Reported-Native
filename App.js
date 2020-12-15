@@ -4,6 +4,7 @@ import { AppState, StyleSheet, Text, View, Linking } from "react-native";
 import { Notifications } from "expo";
 import { AppContainer } from "./Navigation";
 import { api } from "./Api";
+import {SafeAreaProvider} from "react-native-safe-area-context/src/index";
 
 export default class App extends React.Component {
   constructor(props) {
@@ -27,6 +28,10 @@ export default class App extends React.Component {
   };
 
   render() {
-    return <AppContainer />;
+    return (
+        <SafeAreaProvider>
+          <AppContainer />
+        </SafeAreaProvider>
+    )
   }
 }
