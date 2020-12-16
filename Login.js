@@ -127,8 +127,8 @@ export default class Login extends React.Component {
     const { error, loading } = this.state
 
     return (
-      <SafeAreaView style={globalStyles.mainContainer}>
-        <ScrollView>
+      <SafeAreaView style={globalStyles.flex1}>
+        <ScrollView style={globalStyles.mainContainer}>
           <View
             style={{
               opacity: error ? 100 : 0,
@@ -185,6 +185,7 @@ export default class Login extends React.Component {
           isLoading={loading}
           onPress={this.submitLogin}
           title={'Login'}
+          containerStyle={styles.loginButtonWrapper}
         />
       </SafeAreaView>
     );
@@ -200,4 +201,8 @@ const styles = StyleSheet.create({
     marginLeft: -8,
     marginRight: -8,
   },
+  loginButtonWrapper: {
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  }
 });
