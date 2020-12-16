@@ -165,15 +165,13 @@ export default class Login extends React.Component {
           </View>
           <Button
             loading={loading}
-            background={null}
+            backgroundColor={'white' }
             onPress={() => this.onForgotPassword()}
             buttonStyle={{
               ...ButtonStyle.outline,
               height: 60,
             }}
             containerStyle={{
-              borderColor: colors.orange,
-              borderWidth: 2,
               ...styles.field,
             }}
             titleStyle={ButtonStyle.orangeText}

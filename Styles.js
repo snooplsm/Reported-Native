@@ -41,7 +41,7 @@ export const ButtonContainerStyle = StyleSheet.create({
 
 export const colors = {
   orange: "#ec682c",
-  white: "#eeeeee"
+  white: "#ffffff"
 };
 
 export const globalStyles = StyleSheet.create({
@@ -64,7 +64,8 @@ export const ButtonStyle = StyleSheet.create({
     backgroundColor: colors.white
   },
   whiteText: {
-    color: colors.white
+    color: colors.white,
+    backgroundColor: colors.white
   },
   orangeText: {
     color: colors.orange

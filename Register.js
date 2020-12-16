@@ -18,6 +18,7 @@ import {
 } from "./Styles";
 import FloatingMainButton from "./FloatingMainButton";
 import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
+import {KeyboardAwareScrollView} from "react-native-keyboard-aware-scroll-view";
 
 export default class Register extends React.Component {
   static navigationOptions = {
@@ -167,7 +168,7 @@ export default class Register extends React.Component {
     const { registering } = this.state;
     return (
       <SafeAreaView style={styles.mainWrapper}>
-        <ScrollView style={globalStyles.mainContainer}>
+        <KeyboardAwareScrollView style={globalStyles.mainContainer}>
           <TouchableOpacity
             style={styles.alreadyRegistered}
             onPress={() => this.onAlreadyRegistered()}
@@ -258,7 +259,7 @@ export default class Register extends React.Component {
               checked={this.state.testify}
             />
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
         <FloatingMainButton
           isLoading={registering}
           onPress={this.submit}
