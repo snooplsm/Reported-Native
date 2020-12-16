@@ -262,7 +262,7 @@ export default class Register extends React.Component {
         </KeyboardAwareScrollView>
         <FloatingMainButton
           isLoading={registering}
-          onPress={this.submit}
+          onPress={() => this.submit()}
           title={'Register'}
           containerStyle={styles.registerButton}
         />

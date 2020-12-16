@@ -181,7 +181,7 @@ export default class Login extends React.Component {
         <FloatingMainButton
           isEnabled={this.isSubmitEnabled()}
           isLoading={loading}
-          onPress={this.submitLogin}
+          onPress={() => this.submitLogin()}
           title={'Login'}
           containerStyle={styles.loginButtonWrapper}
         />
