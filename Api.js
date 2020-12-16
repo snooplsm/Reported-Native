@@ -88,7 +88,7 @@ ax.interceptors.request.use(
         .catch(err => resolve(config));
     });
   },
-  function(error) {
+  function (error) {
     // Do something with request error
     return Promise.reject(error);
   }
@@ -311,7 +311,7 @@ export const precincts = () => {
         return json;
       });
   });
-};ltsy-qnxu-wssu-qdeg
+};
 
 export const reverseGeocode = location => {
   // console.log("reverse geocode", location);
