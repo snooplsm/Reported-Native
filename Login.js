@@ -124,7 +124,7 @@ export default class Login extends React.Component {
   }
 
   render() {
-    const {error, loading} = this.state
+    const { error, loading } = this.state
 
     return (
       <SafeAreaView style={globalStyles.mainContainer}>
@@ -140,25 +140,29 @@ export default class Login extends React.Component {
             <Badge status="error" />
             <Text> {error ?? "TAKE UP SPACE"}</Text>
           </View>
-          <Input
-            label={"Email"}
-            autoCapitalize={"none"}
-            autoFocus={true}
-            keyboardType="email-address"
-            ref={this.email}
-            containerStyle={styles.email}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => this.onEmailChange(email)}
-            onBlur={() => this.onEmailBlur()}
-          />
-          <Input
-            label="Password"
-            secureTextEntry={true}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            onChangeText={password => this.setState({ password })}
-          />
+          <View style={styles.inputWrapper}>
+            <Input
+              label={"Email"}
+              autoCapitalize={"none"}
+              autoFocus={true}
+              keyboardType="email-address"
+              ref={this.email}
+              containerStyle={styles.email}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.emailError}
+              onChangeText={email => this.onEmailChange(email)}
+              onBlur={() => this.onEmailBlur()}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Password"
+              secureTextEntry={true}
+              containerStyle={{ ...styles.field, ...styles.inputFix }}
+              errorStyle={ErrorStyle.style}
+              onChangeText={password => this.setState({ password })}
+            />
+          </View>
           <Button
             loading={loading}
             background={null}
@@ -177,10 +181,10 @@ export default class Login extends React.Component {
           />
         </ScrollView>
         <FloatingMainButton
-            isEnabled={this.isSubmitEnabled()}
-            isLoading={loading}
-            onPress={this.submitLogin}
-            title={'Login'}
+          isEnabled={this.isSubmitEnabled()}
+          isLoading={loading}
+          onPress={this.submitLogin}
+          title={'Login'}
         />
       </SafeAreaView>
     );
@@ -191,5 +195,9 @@ const styles = StyleSheet.create({
   field: {
     marginTop: 20,
     marginBottom: 20,
+  },
+  inputWrapper: {
+    marginLeft: -8,
+    marginRight: -8,
   },
 });

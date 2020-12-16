@@ -47,7 +47,7 @@ export const colors = {
 export const globalStyles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    paddingHorizontal: 5,
+    marginHorizontal: 10,
     paddingVertical: 5,
   },
 });
