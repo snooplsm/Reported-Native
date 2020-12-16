@@ -25,6 +25,11 @@ export const ButtonContainerStyle = StyleSheet.create({
     bottom: "45%",
     padding: 0
   },
+  bottomItemsContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  //Потом вырежем это TODO
   bottom: {
     flex: 1,
     position: "absolute",
@@ -36,8 +41,19 @@ export const ButtonContainerStyle = StyleSheet.create({
 
 export const colors = {
   orange: "#ec682c",
-  white: "#eeeeee"
+  white: "#ffffff"
 };
+
+export const globalStyles = StyleSheet.create({
+  flex1: {
+    flex: 1,
+  },
+  mainContainer: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
+  },
+});
 
 export const ButtonStyle = StyleSheet.create({
   primary: {
@@ -48,7 +64,8 @@ export const ButtonStyle = StyleSheet.create({
     backgroundColor: colors.white
   },
   whiteText: {
-    color: colors.white
+    color: colors.white,
+    backgroundColor: colors.white
   },
   orangeText: {
     color: colors.orange
