@@ -16,6 +16,7 @@ import {
   ButtonStyle,
   globalStyles,
 } from "./Styles";
+import FloatingMainButton from "./FloatingMainButton";
 import { Badge, Button, CheckBox, Input, Icon } from "react-native-elements";
 
 export default class Register extends React.Component {
@@ -163,6 +164,7 @@ export default class Register extends React.Component {
   }
 
   render() {
+    const { registering } = this.state;
     return (
       <SafeAreaView style={globalStyles.mainContainer}>
         <ScrollView>
@@ -184,80 +186,84 @@ export default class Register extends React.Component {
             <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
           </View>
           <View style={{ marginTop: "10%" }} />
-          <Input
-            label="First Name"
-            ref={this.firstName}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.firstNameError}
-            onChangeText={firstName => this.onFieldChange('firstName', firstName)}
-            onBlur={() => this.onFirstNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label="Last Name"
-            ref={this.lastName}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.lastNameError}
-            onChangeText={lastName => this.onFieldChange('lastName', lastName)}
-            onBlur={() => this.onLastNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label="Phone"
-            keyboardType="phone-pad"
-            ref={this.phone}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.phoneError}
-            onChangeText={email => this.onPhoneChange(email)}
-            onBlur={() => this.onPhoneBlur()}
-            leftIcon={<Icon type="material-community" name="phone" />}
-          />
-          <Input
-            label="Email"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            ref={this.field}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => {
-              this.onFieldChange('email', email);
-              this.onEmailBlur(true);
-            }}
-            onBlur={() => this.onEmailBlur(false)}
-            leftIcon={<Icon type="material-community" name="email" />}
-          />
-          <Input
-            label="Password (optional)"
-            secureTextEntry
-            containerStyle={styles.field}
-            onChangeText={password => this.setState({ password })}
-            errorStyle={ErrorStyle.style}
-            leftIcon={<Icon type="material-community" name="lock" />}
-          />
-
-          <CheckBox
-            containerStyle={styles.field}
-            onPress={() => this.setState({ testify: !this.state.testify })}
-            title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
-            checked={this.state.testify}
-          />
+          <View style={styles.inputWrapper}>
+            <Input
+              label="First Name"
+              ref={this.firstName}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.firstNameError}
+              onChangeText={firstName => this.onFieldChange('firstName', firstName)}
+              onBlur={() => this.onFirstNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Last Name"
+              ref={this.lastName}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.lastNameError}
+              onChangeText={lastName => this.onFieldChange('lastName', lastName)}
+              onBlur={() => this.onLastNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Phone"
+              keyboardType="phone-pad"
+              ref={this.phone}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.phoneError}
+              onChangeText={email => this.onPhoneChange(email)}
+              onBlur={() => this.onPhoneBlur()}
+              leftIcon={<Icon type="material-community" name="phone" />}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              ref={this.field}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.emailError}
+              onChangeText={email => {
+                this.onFieldChange('email', email);
+                this.onEmailBlur(true);
+              }}
+              onBlur={() => this.onEmailBlur(false)}
+              leftIcon={<Icon type="material-community" name="email" />}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Password (optional)"
+              secureTextEntry
+              containerStyle={styles.field}
+              onChangeText={password => this.setState({ password })}
+              errorStyle={ErrorStyle.style}
+              leftIcon={<Icon type="material-community" name="lock" />}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <CheckBox
+              containerStyle={styles.field}
+              onPress={() => this.setState({ testify: !this.state.testify })}
+              title={`I'm willing to testify at a hearing, which can be done by phone. I allow reported to use my images, locations, and descriptions publicly except when explicitly noted for private use.\n\nNote: The majority of complaints do not require a hearing. I understand that the information I submit in a report will be submitted to 311 via webform. I understand that my personal information is required to submit a complaint or compliment to 311.`}
+              checked={this.state.testify}
+            />
+          </View>
         </ScrollView>
-        <KeyboardAvoidingView keyboardVerticalOffset={-500} behavior='padding'>
-          <Button
-            onPress={() => this.submit()}
-            loading={this.state.registering}
-            buttonStyle={{
-              ...ButtonStyle.primary,
-              padding: 20,
-              borderRadius: 0
-            }}
-            title="Register"
-          />
-        </KeyboardAvoidingView>
+        <FloatingMainButton
+          isLoading={registering}
+          onPress={this.submit}
+          title={'Register'}
+        />
       </SafeAreaView>
     );
   }
@@ -272,6 +278,10 @@ const styles = StyleSheet.create({
   },
   field: {
     marginTop: 30
+  },
+  inputWrapper: {
+    marginLeft: -8,
+    marginRight: -8,
   },
   alreadyRegistered: {
     marginTop: 10,
