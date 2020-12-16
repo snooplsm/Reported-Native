@@ -45,10 +45,13 @@ export const colors = {
 };
 
 export const globalStyles = StyleSheet.create({
+  flex1: {
+    flex: 1,
+  },
   mainContainer: {
     flex: 1,
-    marginHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
   },
 });
 

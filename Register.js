@@ -166,8 +166,8 @@ export default class Register extends React.Component {
   render() {
     const { registering } = this.state;
     return (
-      <SafeAreaView style={globalStyles.mainContainer}>
-        <ScrollView>
+      <SafeAreaView style={styles.mainWrapper}>
+        <ScrollView style={globalStyles.mainContainer}>
           <TouchableOpacity
             style={styles.alreadyRegistered}
             onPress={() => this.onAlreadyRegistered()}
@@ -263,6 +263,7 @@ export default class Register extends React.Component {
           isLoading={registering}
           onPress={this.submit}
           title={'Register'}
+          containerStyle={styles.registerButton}
         />
       </SafeAreaView>
     );
@@ -287,5 +288,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     padding: 5,
     alignItems: "center"
+  },
+  registerButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5
   }
 });
