@@ -1,23 +1,22 @@
 import React from "react";
 import {
   Alert,
-  KeyboardAvoidingView,
-  Keyboard,
-  ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View
+  View,
+  ScrollView,
 } from "react-native";
 import {
   ErrorStyle,
-  HorizontalStyle,
-  ButtonContainerStyle,
-  ButtonStyle
+  colors,
+  ButtonStyle,
+  globalStyles,
 } from "./Styles";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
+import FloatingMainButton from "./FloatingMainButton";
 
 export default class Login extends React.Component {
   static navigationOptions = {
@@ -107,34 +106,10 @@ export default class Login extends React.Component {
         } else if (x.request) {
           message = "Server was unresponsive";
         } else {
-          messaage = "Unknown error";
+          message = "Unknown error";
         }
         this.setState({ loading: false, error: message });
       });
-  }
-
-  _keyboardDidShow() {
-    this.setState({ keyboard: true });
-  }
-
-  _keyboardDidHide() {
-    this.setState({ keyboard: false });
-  }
-
-  componentDidMount() {
-    this.keyboardDidShowListener = Keyboard.addListener(
-      "keyboardDidShow",
-      this._keyboardDidShow.bind(this)
-    );
-    this.keyboardDidHideListener = Keyboard.addListener(
-      "keyboardDidHide",
-      this._keyboardDidHide.bind(this)
-    );
-  }
-
-  componentWillUnmount() {
-    this.keyboardDidShowListener.remove();
-    this.keyboardDidHideListener.remove();
   }
 
   isSubmitEnabled() {
@@ -144,90 +119,88 @@ export default class Login extends React.Component {
   }
 
   validateEmail(email) {
-    var re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    const re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     return re.test(email);
   }
 
   render() {
+    const { error, loading } = this.state
+
     return (
-      <KeyboardAvoidingView behavior="padding" style={styles.container}>
-        <ScrollView style={styles.scrollView}>
-          <View style={{ marginTop: "10%" }} />
+      <SafeAreaView style={globalStyles.flex1}>
+        <ScrollView style={globalStyles.mainContainer}>
           <View
             style={{
-              opacity: this.state.error ? 100 : 0,
+              opacity: error ? 100 : 0,
               justifyContent: "center",
               alignItems: "center",
               flexDirection: "row"
             }}
           >
             <Badge status="error" />
-            <Text> {this.state.error ?? "TAKE UP SPACE"}</Text>
+            <Text> {error ?? "TAKE UP SPACE"}</Text>
           </View>
-          <View style={{ marginTop: "10%" }} />
-          <Input
-            label={"Email"}
-            autoCapitalize={"none"}
-            autoFocus={true}
-            keyboardType="email-address"
-            ref={this.email}
-            containerStyle={styles.email}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => this.onEmailChange(email)}
-            onBlur={() => this.onEmailBlur()}
-          />
-          <Input
-            label="Password"
-            secureTextEntry={true}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            onChangeText={password => this.setState({ password })}
-          />
-          <TouchableOpacity
-            style={styles.forgotPassword}
+          <View style={styles.inputWrapper}>
+            <Input
+              label={"Email"}
+              autoCapitalize={"none"}
+              autoFocus={true}
+              keyboardType="email-address"
+              ref={this.email}
+              containerStyle={styles.email}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.emailError}
+              onChangeText={email => this.onEmailChange(email)}
+              onBlur={() => this.onEmailBlur()}
+            />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Input
+              label="Password"
+              secureTextEntry={true}
+              containerStyle={{ ...styles.field, ...styles.inputFix }}
+              errorStyle={ErrorStyle.style}
+              onChangeText={password => this.setState({ password })}
+            />
+          </View>
+          <Button
+            loading={loading}
+            backgroundColor={'white' }
             onPress={() => this.onForgotPassword()}
-          >
-            <Text>Forgot Password?</Text>
-          </TouchableOpacity>
+            buttonStyle={{
+              ...ButtonStyle.outline,
+              height: 60,
+            }}
+            containerStyle={{
+              ...styles.field,
+            }}
+            titleStyle={ButtonStyle.orangeText}
+            title="Forgot Password?"
+          />
         </ScrollView>
-        <Button
-          disabled={!this.isSubmitEnabled()}
-          loading={this.state.loading}
-          onPress={() => {
-            this.submitLogin();
-          }}
-          containerStyle={{
-            marginBottom: this.state.keyboard ? 64 : 0
-          }}
-          buttonStyle={Object.assign(
-            {
-              padding: 20,
-              borderRadius: 0
-            },
-            Button.primary
-          )}
-          title="Login"
+        <FloatingMainButton
+          isEnabled={this.isSubmitEnabled()}
+          isLoading={loading}
+          onPress={this.submitLogin}
+          title={'Login'}
+          containerStyle={styles.loginButtonWrapper}
         />
-      </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1
-  },
-  scrollView: {
-    paddingHorizontal: 20
-  },
-  email: {},
   field: {
-    marginTop: 40
+    marginTop: 20,
+    marginBottom: 20,
   },
-  forgotPassword: {
-    marginTop: 125,
-    padding: 10,
-    alignItems: "center"
+  inputWrapper: {
+    marginLeft: -8,
+    marginRight: -8,
+  },
+  loginButtonWrapper: {
+    paddingHorizontal: 10,
+    paddingVertical: 5
   }
 });

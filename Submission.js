@@ -103,7 +103,6 @@ export default class Submission extends React.Component {
       license: undefined,
       alpr: undefined,
       location: undefined,
-      license: undefined,
       keyboard: undefined
     };
   }
