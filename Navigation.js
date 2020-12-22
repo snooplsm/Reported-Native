@@ -17,8 +17,12 @@ import { createBottomTabNavigator } from "react-navigation-tabs";
 
 const defaultNavigationOptions = {
   headerStyle: {
+    height: 10,
+    marginTop: 10,
     elevation: 0,
-    shadowOpacity: 0
+    shadowOpacity: 0,
+  },
+  headerTitleStyle: {
   }
 };
 
