@@ -4,39 +4,29 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Text,
-  TouchableOpacity,
   View,
   StyleSheet,
   Platform
 } from "react-native";
-import ComplaintView from "./ComplaintView";
-import { categories } from "./Categories.js";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
-import * as FileSystem from "expo-file-system";
 import * as Constants from "expo-constants";
 import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
 import {
-  Badge,
   Button,
   Icon,
-  Image,
   Input,
-  Overlay
 } from "react-native-elements";
-import { BackHandler, Modal, Picker } from "react-native";
+import { BackHandler } from "react-native";
 import ImageViewer from "react-native-image-zoom-viewer";
-import AddressView from "./AddressView";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
 import { ScrollView } from "react-navigation";
 import ordinal from "ordinal";
-import { IconStyle, colors } from "./Styles";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { colors } from "./Styles";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import {
@@ -90,8 +80,6 @@ export default class Submission extends React.Component {
       media: [],
       resizedImages: [],
       datePickerVisible: undefined,
-      showComplaintModal: undefined,
-      showAddressModal: undefined,
       timeofreport: undefined,
       timeofreportstr: undefined,
       complaints: [],
@@ -305,35 +293,6 @@ export default class Submission extends React.Component {
     }
   }
 
-  get addressModal() {
-    if (this.state.showAddressModal) {
-      return (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            backgroundColor: "white"
-          }}
-        >
-          <AddressView
-            location={this.state.location}
-            onPress={({ data, place }) => {
-              this._address.blur();
-              this.setState({
-                showAddressModal: false,
-                location: { place }
-              });
-            }}
-          />
-        </View>
-      );
-    }
-  }
-
   reportSubmitted = async result => {
     const canRegister = pushTokenNeedsRegisteringAsync();
     const needsToEnablePush = canRegister && Platform.OS !== "android";
@@ -360,33 +319,6 @@ export default class Submission extends React.Component {
       : `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg, buttons);
   };
-
-  get complaintModal() {
-    if (this.state.showComplaintModal) {
-      return (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            backgroundColor: "white"
-          }}
-        >
-          <ComplaintView
-            onComplaintsChanged={c => {
-              this._complaint.blur();
-              this.setState({ showComplaintModal: false, complaints: c });
-            }}
-          />
-        </View>
-      );
-    } else {
-      return <></>;
-    }
-  }
 
   get imageModal() {
     if (this.state.imageModal !== undefined) {
@@ -592,15 +524,24 @@ export default class Submission extends React.Component {
   }
 
   submit() {
-    if (this.state.complaints.length < 1) {
+    const { location, complaints, timeofreport } = this.state;
+    if (complaints.length < 1) {
       this.alrt(
         "Missing Complaint",
         "Select a complaint type: Blocked Bike Lane, Crosswalk, etc."
       );
       return;
     }
-    if (!this.state.location) {
-      this.alrt("Address Missing", "Location of incident is missing.");
+    if (!location) {
+      this.alrt(
+        'Missing Complaint',
+        `Can't extract location data from photo. Please, select proper photo.`
+      );
+      return;
+    }
+
+    if (!timeofreport) {
+      this.alrt('Missing Complaint', `Can't extract time. Please, select proper photo.`);
       return;
     }
 
@@ -612,7 +553,7 @@ export default class Submission extends React.Component {
     if (okPlate === undefined) {
       return;
     }
-    if (!this.state.timeofreport) {
+    if (!timeofreport) {
       this.alrt(
         "Incident Time Missing",
         "Time you observed infraction is missing."
@@ -669,7 +610,21 @@ export default class Submission extends React.Component {
         });
       return;
     }
-
+    const place = location.place;
+    const address = place.address_components;
+    const city = finds(address, "locality");
+    if (city.toUpperCase() !== 'NEW YORK') {
+      this.alrt(
+        'Error geo coordinates',
+        'Photo geo coordinates not in NYC, please, load proper photo.'
+      );
+      this.setState({
+        timeofreport: undefined,
+        location: undefined,
+        timeofreportstr: undefined,
+      });
+      return;
+    }
     this.setState({ submitting: true });
 
     const license = Object.assign(
@@ -684,27 +639,22 @@ export default class Submission extends React.Component {
       this.state.license
     );
 
-    const complaints = this.state.complaints ?? [];
     if (
       this.state.license &&
       this.state.uploadedMedia[this.state.license.url]
     ) {
       license.media = this.state.uploadedMedia[this.state.license.plate.url];
     }
-    const place = this.state.location.place;
-    const address = place.address_components;
 
-    const geo = this.state.location.place.geometry.location;
+    const geo = place.geometry.location;
     const building = finds(address, "street_number");
     const street = finds(address, "route");
-    const city = finds(address, "locality");
     const sublocality = finds(address, "sublocality");
     const premise = finds(address, "premise");
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
-    this.setState({ submitting: true });
     api
       .report({
         description: this.state.description,
@@ -726,7 +676,7 @@ export default class Submission extends React.Component {
           sublocality,
           location: geo
         }),
-        timeofincident: this.state.timeofreport,
+        timeofincident: timeofreport,
         media: this.state.media
           .map(x => this.state.uploadedMedia[x.url])
           .concat(
@@ -811,14 +761,12 @@ export default class Submission extends React.Component {
   }
 
   render() {
+    const { media, timeofreportstr } = this.state;
     return (
       <>
         <KeyboardAvoidingView behavior="padding" style={styles.container}>
           <ScrollView>
             <View style={styles.container}>
-              {/*<ComplaintView
-          onComplaintsChanged={c => this.setState({ complaints: c })}
-        />*/}
               <Button
                 type="outline"
                 buttonStyle={styles.addPhoto}
@@ -827,13 +775,19 @@ export default class Submission extends React.Component {
                 title={this.addPhotoText}
               />
 
+              {/* <Button     <-- For the future debug button
+                type="outline"
+                buttonStyle={styles.addPhoto}
+                containerStyle={styles.addPhotoContainer}
+                onPress={() => console.log('MEDIA DATA', media)}
+                title={'CONSOLE MEDIA'}
+              /> */}
               <ImageCarousel
                 onItemPressed={({ item, index }) => {
                   this.setState({ imageModal: index });
                 }}
-                entries={this.state.media}
+                entries={media}
               />
-
               <View>
                 <TouchSpoof
                   onPress={() => this.setState({ showComplaintModal: true })}
@@ -849,28 +803,22 @@ export default class Submission extends React.Component {
                   />
                 </TouchSpoof>
               </View>
-
-              <View>
-                <TouchableOpacity
-                  onPress={() => this.setState({ showAddressModal: true })}
-                >
-                  <Input
-                    ref={r => (this._address = r)}
-                    caretHidden={true}
-                    autoFocus={false}
-                    onFocus={x => this.setState({ showAddressModal: true })}
-                    label={"Address"}
-                    placeholder={"Where you observed infraction"}
-                    value={this.addressString}
-                  />
-                </TouchableOpacity>
-              </View>
-
+              <Input
+                editable={false}
+                label={"Address"}
+                placeholder={"Automatically will be extracted from photo"}
+                value={this.addressString}
+              />
+              <Input
+                editable={false}
+                label={"When Incident Occurred"}
+                placeholder={"Automatically will be extracted from photo"}
+                value={timeofreportstr}
+              />
               <LicenseView
                 ref={r => (this._license = r)}
                 onPlateSelected={plate => {
                   const { candidate } = plate;
-                  // console.log("candidate plate", candidate);
                   if (
                     candidate &&
                     candidate.plate &&
@@ -884,27 +832,6 @@ export default class Submission extends React.Component {
                 license={this.state.license}
                 alpr={this.state.alpr}
               />
-
-              <TouchSpoof
-                onPress={() => {
-                  this.setState({
-                    tmpDate: this.time,
-                    datePickerVisible: true
-                  });
-                }}
-              >
-                <Input
-                  ref={r => {
-                    this._datePick = r;
-                  }}
-                  caretHidden={true}
-                  autoFocus={false}
-                  label={"When Incident Occurred"}
-                  onTouchEnd={() => this.setState({ datePickerVisible: true })}
-                  placeholder={"Time you observed infraction"}
-                  value={this.state.timeofreportstr}
-                />
-              </TouchSpoof>
               <Input
                 label={"Incident Description (optional)"}
                 onChangeText={v => {
@@ -930,60 +857,6 @@ export default class Submission extends React.Component {
               <View style={{ height: 100 }} />
             </View>
           </ScrollView>
-          {this.state.datePickerVisible && (
-            <View>
-              {Platform.OS === "ios" && (
-                <View
-                  style={{ flexDirection: "row", justifyContent: "flex-end" }}
-                >
-                  <Button
-                    title="Cancel"
-                    onPress={() => {
-                      this.setState({
-                        timeofreport: this.state.tmpDate,
-                        datePickerVisible: false,
-                      });
-                    }}
-                  />
-                  <Button
-                    title="Set"
-                    onPress={() => {
-                      this.setState({
-                        timeofreportstr: this.timeofreport(
-                          this.state.timeofreport
-                        ),
-                        datePickerVisible: false,
-                      });
-                    }}
-                  />
-                </View>
-              )}
-              <DateTimePicker
-                mode={"datetime"}
-                titleIOS={"Time of incident"}
-                isVisible={true}
-                value={this.time || new Date()}
-                onChange={(event, date) => {
-                  console.log(date);
-                  if (Platform.OS !== "ios") {
-                    this.setState({
-                      timeofreport: date,
-                      timeofreportstr: this.timeofreport(
-                        date
-                      ),
-                      datePickerVisible: false,
-                    });
-                  } else {
-                    this.setState({
-                      timeofreport: date,
-                    });
-                  }
-
-                }}
-                on
-              />
-            </View>
-          )}
           <View
             style={{
               width: "100%",
@@ -1022,17 +895,13 @@ export default class Submission extends React.Component {
           />
         </KeyboardAvoidingView>
         {this.imageModal}
-        {this.complaintModal}
-        {this.addressModal}
       </>
     );
   }
 
   _pickImage = async () => {
+    const { locaton, license } = this.state;
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
-    // const permission2 = await Permissions.getAsync(
-    //   Permissions.WRITE_EXTERNAL_STORAGE
-    // );
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
       mediaTypes: ImagePicker.MediaTypeOptions.All
@@ -1041,8 +910,7 @@ export default class Submission extends React.Component {
       if (result.cancelled) {
         return;
       }
-      const { width, height, uri, type, duration } = result;
-      const { exif } = result;
+      const { width, height, uri, type, duration, exif } = result;
       const image = {
         url: uri,
         width: width,
@@ -1050,6 +918,7 @@ export default class Submission extends React.Component {
         duration: duration,
         type: type
       };
+
       if (exif) {
         const {
           DateTimeOriginal: timeofreport,
@@ -1057,12 +926,6 @@ export default class Submission extends React.Component {
           GPSLatitude: lat,
           GPSLongitude: lng
         } = exif;
-
-        const lats = lat;
-        const lngs = lng;
-
-        //// console.log(lats, lngs);
-
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
@@ -1070,25 +933,24 @@ export default class Submission extends React.Component {
           timeofreport: timeof,
           takenAt: timeof,
           altitude: altitude,
-          location: { lat: lats, lng: lngs }
+          location: { lat, lng }
         });
 
-        if (!this.state.location) {
+        if (!locaton) {
           reverseGeocode(image.location)
             .then(places => {
-              //// console.log(places.results[0]);
-              this.setState({ location: { place: places.results[0] } });
+              const place = places.results[0];
+              this.setState({ location: { place } });
             })
             .catch(e => { });
         }
-        if (!this.state.license) {
+        if (!license) {
           let resize = null;
           if (width > height) {
             resize = { width: Math.min(1200, parseInt(width)) };
           } else {
             resize = { height: Math.min(1200, parseInt(height)) };
           }
-          // console.log("manipulate", resize);
           const data = {
             original: image
           };
@@ -1120,25 +982,11 @@ export default class Submission extends React.Component {
 
       const media = [...this.state.media, image];
       this.setState({ media: media });
-      // this.resizeImages()
-      //   .then(x => {
-      //     this.setState({ resizedImages: x });
-      //   })
-      //   .then(r => {})
-      //   .catch(x => {
-      //     console.error(x);
-      //   });
     };
-    // console.log(permission.status);
     if (permission.status !== "granted") {
       const newPermission = await Permissions.askAsync(Permissions.CAMERA_ROLL);
       if (newPermission.status === "granted") {
-        // const newPermission2 = await Permissions.askAsync(
-        //   Permissions.PERMISSIONS.WRITE_EXTERNAL_STORAGE
-        // );
-        // if (newPermission2.status === "granted") {
         imageLaunch.then(success);
-        // }
       }
     } else {
       imageLaunch.then(success);
