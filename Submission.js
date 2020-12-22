@@ -33,12 +33,14 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from "react-navigation";
 import ordinal from "ordinal";
-import { IconStyle, colors } from "./Styles";
+import { IconStyle, colors, globalStyles } from "./Styles";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
+import FloatingMainButton from "./FloatingMainButton";
 import {
   alpr,
   finds,
@@ -813,8 +815,8 @@ export default class Submission extends React.Component {
   render() {
     return (
       <>
-        <KeyboardAvoidingView behavior="padding" style={styles.container}>
-          <ScrollView>
+        <SafeAreaView style={globalStyles.flex1}>
+          <ScrollView style={globalStyles.mainContainer}>
             <View style={styles.container}>
               {/*<ComplaintView
           onComplaintsChanged={c => this.setState({ complaints: c })}
@@ -1003,24 +1005,14 @@ export default class Submission extends React.Component {
               }}
             />
           </View>
-          <Button
+          <FloatingMainButton
+            isEnabled
+            isLoading={this.state.submitting}
             onPress={() => this.submit()}
-            title="SUBMIT"
-            loading={this.state.submitting}
-            titleStyle={{
-              fontSize: 24,
-              fontWeight: "bold",
-              opacity: this.percentageOpacity
-            }}
-            containerStyle={{
-              marginBottom: this.state.keyboard ? 64 : 0
-            }}
-            buttonStyle={[
-              { padding: 20, borderRadius: 0 },
-              styles.submitButtonStyle
-            ]}
+            title={'SUBMIT'}
+            containerStyle={styles.submitButtonWrapper}
           />
-        </KeyboardAvoidingView>
+        </SafeAreaView>
         {this.imageModal}
         {this.complaintModal}
         {this.addressModal}
@@ -1170,5 +1162,9 @@ const styles = StyleSheet.create({
     backgroundColor: "yellow",
     width: 200,
     height: 200
-  }
+  },
+  submitButtonWrapper: {
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  },
 });
