@@ -22,8 +22,6 @@ const defaultNavigationOptions = {
     elevation: 0,
     shadowOpacity: 0,
   },
-  headerTitleStyle: {
-  }
 };
 
 const UserHomeStack = createStackNavigator(
