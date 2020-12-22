@@ -38,6 +38,7 @@ import {
   pushTokenNeedsRegisteringAsync,
   registerForPushNotificationsAsync
 } from "./Api";
+import {getLocationDataFromExif} from './Utils/locations'
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -900,7 +901,7 @@ export default class Submission extends React.Component {
   }
 
   _pickImage = async () => {
-    const { locaton, license } = this.state;
+    const { location, license } = this.state;
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
@@ -922,10 +923,12 @@ export default class Submission extends React.Component {
       if (exif) {
         const {
           DateTimeOriginal: timeofreport,
-          GPSAltitude: altitude,
-          GPSLatitude: lat,
-          GPSLongitude: lng
         } = exif;
+
+        const {
+          lat, lng, altitude
+        } = getLocationDataFromExif(exif)
+
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
@@ -936,7 +939,7 @@ export default class Submission extends React.Component {
           location: { lat, lng }
         });
 
-        if (!locaton) {
+        if (!location) {
           reverseGeocode(image.location)
             .then(places => {
               const place = places.results[0];
