@@ -40,7 +40,7 @@ import {
   pushTokenNeedsRegisteringAsync,
   registerForPushNotificationsAsync
 } from "./Api";
-import {getLocationDataFromExif} from './Utils/locations'
+import { getLocationDataFromExif } from './Utils/locations'
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -770,14 +770,15 @@ export default class Submission extends React.Component {
         <SafeAreaView style={globalStyles.flex1}>
           <ScrollView style={globalStyles.mainContainer}>
             <View style={styles.container}>
-              <Button
-                type="outline"
-                buttonStyle={styles.addPhoto}
-                containerStyle={styles.addPhotoContainer}
-                onPress={this._pickImage}
-                title={this.addPhotoText}
-              />
-
+              <View style={styles.inputWrapper}>
+                <Button
+                  type="outline"
+                  buttonStyle={styles.addPhoto}
+                  containerStyle={styles.addPhotoContainer}
+                  onPress={this._pickImage}
+                  title={this.addPhotoText}
+                />
+              </View>
               {/* <Button     <-- For the future debug button
                 type="outline"
                 buttonStyle={styles.addPhoto}
@@ -791,7 +792,7 @@ export default class Submission extends React.Component {
                 }}
                 entries={media}
               />
-              <View>
+              <View style={styles.inputWrapper}>
                 <TouchSpoof
                   onPress={() => this.setState({ showComplaintModal: true })}
                 >
@@ -806,57 +807,67 @@ export default class Submission extends React.Component {
                   />
                 </TouchSpoof>
               </View>
-              <Input
-                editable={false}
-                label={"Address"}
-                placeholder={"Automatically will be extracted from photo"}
-                value={this.addressString}
-              />
-              <Input
-                editable={false}
-                label={"When Incident Occurred"}
-                placeholder={"Automatically will be extracted from photo"}
-                value={timeofreportstr}
-              />
-              <LicenseView
-                ref={r => (this._license = r)}
-                onPlateSelected={plate => {
-                  const { candidate } = plate;
-                  if (
-                    candidate &&
-                    candidate.plate &&
-                    candidate.plate.length > 0
-                  ) {
-                    this.setState({ license: plate });
-                  } else {
-                    this.setState({ license: undefined });
+              <View style={styles.inputWrapper}>
+                <Input
+                  editable={false}
+                  label={"Address"}
+                  placeholder={"Automatically will be extracted from photo"}
+                  value={this.addressString}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  editable={false}
+                  label={"When Incident Occurred"}
+                  placeholder={"Automatically will be extracted from photo"}
+                  value={timeofreportstr}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <LicenseView
+                  ref={r => (this._license = r)}
+                  onPlateSelected={plate => {
+                    const { candidate } = plate;
+                    if (
+                      candidate &&
+                      candidate.plate &&
+                      candidate.plate.length > 0
+                    ) {
+                      this.setState({ license: plate });
+                    } else {
+                      this.setState({ license: undefined });
+                    }
+                  }}
+                  license={this.state.license}
+                  alpr={this.state.alpr}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  label={"Incident Description (optional)"}
+                  onChangeText={v => {
+                    this.setState({ description: v });
+                  }}
+                  multiline={true}
+                  numberOfLines={3}
+                  placeholder={"Add any additional details to provide to 311"}
+                  textAlignVertical={"top"}
+                  value={this.state.description}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  label={"Notes (optional and private)"}
+                  onChangeText={v => this.setState({ notes: v })}
+                  multiline={true}
+                  numberOfLines={3}
+                  placeholder={
+                    "Notes that only you will see and will not be sent to 311"
                   }
-                }}
-                license={this.state.license}
-                alpr={this.state.alpr}
-              />
-              <Input
-                label={"Incident Description (optional)"}
-                onChangeText={v => {
-                  this.setState({ description: v });
-                }}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={"Add any additional details to provide to 311"}
-                textAlignVertical={"top"}
-                value={this.state.description}
-              />
-              <Input
-                label={"Notes (optional and private)"}
-                onChangeText={v => this.setState({ notes: v })}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={
-                  "Notes that only you will see and will not be sent to 311"
-                }
-                textAlignVertical={"top"}
-                value={this.state.notes}
-              />
+                  textAlignVertical={"top"}
+                  value={this.state.notes}
+                />
+              </View>
               <View style={{ height: 100 }} />
             </View>
           </ScrollView>
@@ -1017,5 +1028,9 @@ const styles = StyleSheet.create({
   submitButtonWrapper: {
     paddingHorizontal: 10,
     paddingVertical: 5
+  },
+  inputWrapper: {
+    marginLeft: -8,
+    marginRight: -8,
   },
 });
