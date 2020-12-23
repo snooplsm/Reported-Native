@@ -41,6 +41,7 @@ import {
   registerForPushNotificationsAsync
 } from "./Api";
 import { getLocationDataFromExif } from './Utils/locations'
+import ComplaintView from "./ComplaintView";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -322,6 +323,33 @@ export default class Submission extends React.Component {
       : `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg, buttons);
   };
+
+  get complaintModal() {
+    if (this.state.showComplaintModal) {
+      return (
+          <View
+              style={{
+                position: "absolute",
+                bottom: 0,
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 9999,
+                backgroundColor: "white"
+              }}
+          >
+            <ComplaintView
+                onComplaintsChanged={c => {
+                  this._complaint.blur();
+                  this.setState({ showComplaintModal: false, complaints: c });
+                }}
+            />
+          </View>
+      );
+    } else {
+      return <></>;
+    }
+  }
 
   get imageModal() {
     if (this.state.imageModal !== undefined) {
@@ -619,7 +647,7 @@ export default class Submission extends React.Component {
     if (city.toUpperCase() !== 'NEW YORK') {
       this.alrt(
         'Error geo coordinates',
-        'Photo geo coordinates not in NYC, please, load proper photo.'
+        'The location is outside of NYC. Reported only works in NYC.'
       );
       this.setState({
         timeofreport: undefined,
@@ -779,13 +807,6 @@ export default class Submission extends React.Component {
                   title={this.addPhotoText}
                 />
               </View>
-              {/* <Button     <-- For the future debug button
-                type="outline"
-                buttonStyle={styles.addPhoto}
-                containerStyle={styles.addPhotoContainer}
-                onPress={() => console.log('MEDIA DATA', media)}
-                title={'CONSOLE MEDIA'}
-              /> */}
               <ImageCarousel
                 onItemPressed={({ item, index }) => {
                   this.setState({ imageModal: index });
@@ -899,6 +920,7 @@ export default class Submission extends React.Component {
           />
         </View>
         {this.imageModal}
+        {this.complaintModal}
       </>
     );
   }
