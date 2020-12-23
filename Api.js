@@ -114,7 +114,8 @@ export const uploadFile = (file, extra) => {
         throw e;
       })
       .then(fc => {
-        data.fc = fc;
+        const tmp = Object.assign({}, fc)
+        data.fc = tmp;
         return FileSystem.getInfoAsync(fc.uri || fc.url, {
           md5: true
         });
@@ -262,10 +263,11 @@ const urlToBlob = url =>
   });
 
 export const finds = (address, key) => {
-  return address
+  const res = address
     .filter(x => x.types.includes(key))
     .map(x => x.short_name)
-    .shift();
+    .shift()
+  return res
 };
 
 export const geocode = address => {
