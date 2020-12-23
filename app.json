@@ -19,7 +19,7 @@
     },
     "ios": {
       "bundleIdentifier": "nyc.reported.app2",
-      "buildNumber": "20",
+      "buildNumber": "23",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true,
       "infoPlist": {

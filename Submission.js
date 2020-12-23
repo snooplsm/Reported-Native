@@ -744,6 +744,7 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
+        Alert.alert(JSON.stringify(Object.assign({}, e).response.status ), Object.assign({}, e).response.data)
         console.warn(Object.assign({}, e))
       });
   }

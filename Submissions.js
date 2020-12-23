@@ -17,7 +17,6 @@ import ListSpoof from "./ListSpoof";
 import LogoTitle from "./LogoTitle";
 import { api, uploadFile } from "./Api";
 import * as DocumentPicker from "expo-document-picker";
-import { colors } from "./Styles";
 import ReportView from "./ReportView";
 import moment from "moment";
 import Swipeout from "react-native-swipeout";
