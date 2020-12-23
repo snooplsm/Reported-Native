@@ -767,7 +767,7 @@ export default class Submission extends React.Component {
     const { media, timeofreportstr } = this.state;
     return (
       <>
-        <SafeAreaView style={globalStyles.flex1}>
+        <View style={globalStyles.flex1}>
           <ScrollView style={globalStyles.mainContainer}>
             <View style={styles.container}>
               <View style={styles.inputWrapper}>
@@ -897,7 +897,7 @@ export default class Submission extends React.Component {
             title={'SUBMIT'}
             containerStyle={styles.submitButtonWrapper}
           />
-        </SafeAreaView>
+        </View>
         {this.imageModal}
       </>
     );
