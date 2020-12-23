@@ -100,7 +100,7 @@ export default class ReportView extends React.Component {
   imageModal() {
     if (this.state.imageModalImages) {
       return (
-        <Modal visible={true} onRequestClose={() => {}} transparent={false}>
+        <Modal visible={true} onRequestClose={() => { }} transparent={false}>
           <ImageViewer
             onClick={() => this.closeModal()}
             imageUrls={this.state.imageModalImages}
@@ -159,16 +159,16 @@ export default class ReportView extends React.Component {
                     height: 200
                   }}
                   initialRegion={{
-                    latitude: address.location.lat,
-                    longitude: address.location.lng,
+                    latitude: report.location.lat,
+                    longitude: report.location.lng,
                     latitudeDelta: 0.01,
                     longitudeDelta: 0.01
                   }}
                 >
                   <Marker
                     coordinate={{
-                      latitude: address.location.lat,
-                      longitude: address.location.lng
+                      latitude: report.location.lat,
+                      longitude: report.location.lng
                     }}
                   />
                 </MapView>
