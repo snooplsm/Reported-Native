@@ -3,7 +3,6 @@ import {
   AsyncStorage,
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
   View,
   StyleSheet,
   Platform
@@ -24,7 +23,6 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from "react-navigation";
 import ordinal from "ordinal";
 import { colors, globalStyles } from "./Styles";
@@ -42,6 +40,7 @@ import {
 } from "./Api";
 import { getLocationDataFromExif } from './Utils/locations'
 import ComplaintView from "./ComplaintView";
+import {checkForNoNullValuesInArray} from "./Utils/others";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -536,7 +535,6 @@ export default class Submission extends React.Component {
         this.state.license &&
         this.state.license.plate &&
         this.state.license.plate.image;
-      // console.log("plate is ", plate);
       const total =
         this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
       const loaded =
@@ -565,7 +563,6 @@ export default class Submission extends React.Component {
     }
     if (!location) {
       this.alrt(
-        'Missing Complaint',
         `Can't extract location data from photo. Please, select proper photo.`
       );
       return;
@@ -582,6 +579,16 @@ export default class Submission extends React.Component {
       return;
     }
     if (okPlate === undefined) {
+      return;
+    }
+    const place = location.place;
+    const address = place.address_components;
+    const city = finds(address, "locality");
+    if (city.toUpperCase() !== 'NEW YORK') {
+      this.alrt(
+          'Error geo coordinates',
+          'The location is outside of NYC. Reported only works in NYC.'
+      );
       return;
     }
     if (!timeofreport) {
@@ -603,7 +610,6 @@ export default class Submission extends React.Component {
         }
       })
         .then(uploaded => {
-          // console.log("uploaded license plate");
           uploaded.type = "S3_IMAGE_LICENSE";
           const uploadedMedia = this.state.uploadedMedia;
           uploadedMedia[this.state.license.plate.image.url] = uploaded;
@@ -641,21 +647,6 @@ export default class Submission extends React.Component {
         });
       return;
     }
-    const place = location.place;
-    const address = place.address_components;
-    const city = finds(address, "locality");
-    if (city.toUpperCase() !== 'NEW YORK') {
-      this.alrt(
-        'Error geo coordinates',
-        'The location is outside of NYC. Reported only works in NYC.'
-      );
-      this.setState({
-        timeofreport: undefined,
-        location: undefined,
-        timeofreportstr: undefined,
-      });
-      return;
-    }
     this.setState({ submitting: true });
 
     const license = Object.assign(
@@ -686,6 +677,16 @@ export default class Submission extends React.Component {
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
+    const areAddressFieldsNonNull = checkForNoNullValuesInArray([
+        formatted_address, building, street, city, county, state, zip, sublocality
+    ])
+    if (!areAddressFieldsNonNull) {
+      this.alrt(
+          "Invalid location",
+          "The location is not a valid street address."
+      );
+      return;
+    }
     api
       .report({
         description: this.state.description,
@@ -722,10 +723,8 @@ export default class Submission extends React.Component {
         });
       })
       .catch(e => {
-        const request = e.request;
-        const response = request && request.response;
-        const error = response && JSON.parse(response);
-        const code = error && error.code;
+        const response = e.response;
+        const code = response && response.code;
         if (code) {
           switch (code) {
             case 216:
@@ -745,6 +744,7 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
+        console.warn(Object.assign({}, e))
       });
   }
 
@@ -964,14 +964,12 @@ export default class Submission extends React.Component {
           location: { lat, lng }
         });
 
-        if (!location) {
-          reverseGeocode(image.location)
-            .then(places => {
-              const place = places.results[0];
-              this.setState({ location: { place } });
-            })
-            .catch(e => { });
-        }
+        reverseGeocode(image.location)
+          .then(places => {
+            const place = places.results[0];
+            this.setState({ location: { place } });
+          })
+          .catch(e => { });
         if (!license) {
           let resize = null;
           if (width > height) {
