@@ -10,6 +10,7 @@ import { Notifications } from "expo";
 import * as Permissions from "expo-permissions";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
+import {Alert} from "react-native";
 
 const apiUrl = {
   dev: "https://reported-stats.herokuapp.com/prod/",
@@ -108,12 +109,14 @@ export const uploadFile = (file, extra) => {
         } else {
           return file;
         }
+        console.log('Upload then 1')
       })
       .catch(e => {
         // console.log(e);
         throw e;
       })
       .then(fc => {
+        console.log('Upload then 2')
         const tmp = Object.assign({}, fc)
         data.fc = tmp;
         return FileSystem.getInfoAsync(fc.uri || fc.url, {
@@ -121,10 +124,12 @@ export const uploadFile = (file, extra) => {
         });
       })
       .then(fc => {
+        console.log('Upload then 3')
         data.fc.md5 = fc.md5;
         return urlToBlob(data.fc.uri || data.fc.url);
       })
       .then(blob => {
+        console.log('Upload then 4')
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
         let ext = data.fc.uri || data.fc.url;
         ext =
@@ -164,6 +169,7 @@ export const uploadFile = (file, extra) => {
           metadata: metaData,
           contentType: contentType
         }).then(res => {
+          console.log('Upload then 5')
           resolve({
             url: `https://${BUCKET}.s3.amazonaws.com/uploads/${res.key}`,
             meta: data.meta,
@@ -174,6 +180,8 @@ export const uploadFile = (file, extra) => {
             size: data.size,
             takenAt: file.takenAt
           });
+        }).catch(e => {
+          reject(e)
         });
       });
   });
