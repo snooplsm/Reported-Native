@@ -58,6 +58,7 @@
     "react-navigation": "^4.0.6",
     "react-navigation-stack": "^1.8.1",
     "react-navigation-tabs": "^2.5.5",
+    "sentry-expo": "^3.0.4",
     "sharp": "^0.23.0"
   },
   "devDependencies": {

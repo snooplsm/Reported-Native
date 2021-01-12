@@ -47,6 +47,18 @@
     },
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "hooks": {
+      "postPublish": [
+        {
+          "file": "sentry-expo/upload-sourcemaps",
+          "config": {
+            "organization": "doberman-it",
+            "project": "nyc-reported",
+            "authToken": "608980367bc24583b35ff1c6e4b1b0d018266a8e32954a348e3a4b453ccfce2d"
+          }
+        }
+      ]
+    }
   }
 }
