@@ -556,6 +556,7 @@ export default class Submission extends React.Component {
   submit() {
     const { location, complaints, timeofreport } = this.state;
     console.log('STARTING SUBMIT')
+    Sentry.Native.captureException(new Error('not an error, sentry test'))
     if (complaints.length < 1) {
       this.alrt(
         "Missing Complaint",
