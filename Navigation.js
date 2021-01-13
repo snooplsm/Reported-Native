@@ -14,6 +14,7 @@ import { createAppContainer, createSwitchNavigator } from "react-navigation";
 
 import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
+import {Platform} from "react-native";
 
 const defaultNavigationOptions = {
     headerStyle: {
@@ -107,6 +108,7 @@ const SignedInNavigator = createBottomTabNavigator(
   {
     defaultNavigationOptions,
     tabBarOptions: {
+      keyboardHidesTabBar: Platform.OS === "ios" ? false : true,
       activeTintColor: colors.orange,
       // activeBackgroundColor: "yellow", //Doesn't work
       showIcon: true,
