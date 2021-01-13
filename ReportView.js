@@ -100,7 +100,7 @@ export default class ReportView extends React.Component {
   imageModal() {
     if (this.state.imageModalImages) {
       return (
-        <Modal visible={true} onRequestClose={() => {}} transparent={false}>
+        <Modal visible={true} onRequestClose={() => { }} transparent={false}>
           <ImageViewer
             onClick={() => this.closeModal()}
             imageUrls={this.state.imageModalImages}
@@ -151,33 +151,37 @@ export default class ReportView extends React.Component {
               }
             ]}
           >
-            <Tooltip
-              popover={
-                <MapView
-                  style={{
-                    width: 200,
-                    height: 200
-                  }}
-                  initialRegion={{
-                    latitude: address.location.lat,
-                    longitude: address.location.lng,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01
-                  }}
+            {
+              address.location ?
+                <Tooltip
+                  popover={
+                    <MapView
+                      style={{
+                        width: 200,
+                        height: 200
+                      }}
+                      initialRegion={{
+                        latitude: address.location.lat,
+                        longitude: address.location.lng,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01
+                      }}
+                    >
+                      <Marker
+                        coordinate={{
+                          latitude: address.location.lat,
+                          longitude: address.location.lng
+                        }}
+                      />
+                    </MapView>
+                  }
                 >
-                  <Marker
-                    coordinate={{
-                      latitude: address.location.lat,
-                      longitude: address.location.lng
-                    }}
-                  />
-                </MapView>
-              }
-            >
-              <Text>
-                {address.building} {address.street} {address.city}
-              </Text>
-            </Tooltip>
+                  <Text>
+                    {address.building} {address.street} {address.city}
+                  </Text>
+                </Tooltip> :
+                <View />
+            }
             <Tooltip
               popover={
                 <Text style={{ color: "white", fontWeight: "bold" }}>

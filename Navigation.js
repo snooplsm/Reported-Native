@@ -16,10 +16,10 @@ import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
 
 const defaultNavigationOptions = {
-  headerStyle: {
-    elevation: 0,
-    shadowOpacity: 0
-  }
+    headerStyle: {
+        elevation: 0,
+        shadowOpacity: 0
+    }
 };
 
 const UserHomeStack = createStackNavigator(
