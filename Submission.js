@@ -41,6 +41,7 @@ import {
 import { getLocationDataFromExif } from './Utils/locations'
 import ComplaintView from "./ComplaintView";
 import {checkForNoNullValuesInArray} from "./Utils/others";
+import * as Sentry from 'sentry-expo';
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -554,7 +555,7 @@ export default class Submission extends React.Component {
 
   submit() {
     const { location, complaints, timeofreport } = this.state;
-    console.log('#######################################STARTING SUBMIT##############################################')
+    console.log('STARTING SUBMIT')
     if (complaints.length < 1) {
       this.alrt(
         "Missing Complaint",
@@ -599,21 +600,22 @@ export default class Submission extends React.Component {
       );
       return;
     }
-    console.log('#######################################STARTING UPLOAD##############################################')
+    console.log('STARTING UPLOAD')
     const plateNeedsUploading = okPlate && this.state.license.plate.image;
     const plateUploaded =
       !plateNeedsUploading ||
       this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
       this.setState({ submitting: true });
-      console.log('#######################################call upload file##############################################')
+      console.log('call upload file')
+      console.log(this.state.license.plate.image)
       uploadFile(this.state.license.plate.image, {
         listener: progress => {
           this.progressListener(progress);
         }
       })
         .then(uploaded => {
-          console.log('#######################################done LP upload successfully##############################################')
+          console.log('done LP upload successfully')
           uploaded.type = "S3_IMAGE_LICENSE";
           const uploadedMedia = this.state.uploadedMedia;
           uploadedMedia[this.state.license.plate.image.url] = uploaded;
@@ -621,7 +623,8 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          console.log('#######################################done LP upload unsuccessfully##############################################')
+          Sentry.Native.captureException(new Error(e))
+          console.log('done LP upload unsuccessfully')
           this.alrt("Error uploading image", "Image upload failed.");
         });
       return;
@@ -632,12 +635,13 @@ export default class Submission extends React.Component {
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
       this.setState({ submitting: true });
-      console.log('#######################################upload media call##############################################')
+      console.log('upload media call')
+      console.log(file)
       uploadFile(file, {
         listener: this.progressListener
       })
         .then(uploaded => {
-          console.log('#######################################done media upload successfully##############################################')
+          console.log('done media upload successfully')
           if (file.type == "image") {
             uploaded.type = "S3_IMAGE";
           } else {
@@ -649,8 +653,8 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          console.log('#######################################done media upload UNsuccessfully##############################################')
-
+          console.log('done media upload UNsuccessfully')
+          Sentry.Native.captureException(new Error(e))
           this.alrt("Error uploading media", JSON.stringify(e));
           console.log("error upload", e);
         });
@@ -696,7 +700,7 @@ export default class Submission extends React.Component {
       );
       return;
     }
-    console.log('#######################################api.report##############################################')
+    console.log('api.report')
     api
       .report({
         description: this.state.description,

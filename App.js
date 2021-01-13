@@ -13,7 +13,6 @@ Sentry.init({
   debug: true, // Sentry will try to print out useful debugging information if something goes wrong with sending an event. Set this to `false` in production.
 });
 
-Sentry.Native.captureException(new Error('Oops!'))
 
 export default class App extends React.Component {
   constructor(props) {
