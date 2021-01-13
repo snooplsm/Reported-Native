@@ -3,7 +3,6 @@
     "name": "Reported",
     "slug": "reported",
     "privacy": "unlisted",
-    "sdkVersion": "36.0.0",
     "platforms": [
       "ios",
       "android",
