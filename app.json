@@ -3,7 +3,6 @@
     "name": "Reported",
     "slug": "reported",
     "privacy": "unlisted",
-    "sdkVersion": "36.0.0",
     "platforms": [
       "ios",
       "android",
@@ -19,7 +18,7 @@
     },
     "ios": {
       "bundleIdentifier": "nyc.reported.app2",
-      "buildNumber": "19",
+      "buildNumber": "23",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true,
       "infoPlist": {
