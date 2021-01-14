@@ -40,7 +40,7 @@ import {
 } from "./Api";
 import { getLocationDataFromExif } from './Utils/locations'
 import ComplaintView from "./ComplaintView";
-import {checkForNoNullValuesInArray} from "./Utils/others";
+import { checkForNoNullValuesInArray } from "./Utils/others";
 import * as Sentry from 'sentry-expo';
 
 const isEqual = require("react-fast-compare");
@@ -278,6 +278,7 @@ export default class Submission extends React.Component {
     if (!place) {
       return null;
     }
+    return place.formatted_address;
     const { address_components: address } = place;
     const premise = finds(address, "premise");
     const building = finds(address, "street_number");
@@ -327,24 +328,24 @@ export default class Submission extends React.Component {
   get complaintModal() {
     if (this.state.showComplaintModal) {
       return (
-          <View
-              style={{
-                position: "absolute",
-                bottom: 0,
-                top: 0,
-                left: 0,
-                right: 0,
-                zIndex: 9999,
-                backgroundColor: "white"
-              }}
-          >
-            <ComplaintView
-                onComplaintsChanged={c => {
-                  this._complaint.blur();
-                  this.setState({ showComplaintModal: false, complaints: c });
-                }}
-            />
-          </View>
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            backgroundColor: "white"
+          }}
+        >
+          <ComplaintView
+            onComplaintsChanged={c => {
+              this._complaint.blur();
+              this.setState({ showComplaintModal: false, complaints: c });
+            }}
+          />
+        </View>
       );
     } else {
       return <></>;
@@ -589,8 +590,8 @@ export default class Submission extends React.Component {
     const city = finds(address, "locality");
     if (city.toUpperCase() !== 'NEW YORK') {
       this.alrt(
-          'Error geo coordinates',
-          'The location is outside of NYC. Reported only works in NYC.'
+        'Error geo coordinates',
+        'The location is outside of NYC. Reported only works in NYC.'
       );
       return;
     }
@@ -692,12 +693,12 @@ export default class Submission extends React.Component {
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
     const areAddressFieldsNonNull = checkForNoNullValuesInArray([
-        formatted_address, building, street, city, county, state, zip, sublocality
+      formatted_address, building, street, city, county, state, zip, sublocality
     ])
     if (!areAddressFieldsNonNull) {
       this.alrt(
-          "Invalid location",
-          "The location is not a valid street address."
+        "Invalid location",
+        "The location is not a valid street address."
       );
       return;
     }
@@ -759,7 +760,7 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
-        Alert.alert(JSON.stringify(Object.assign({}, e).response.status ), Object.assign({}, e).response.data)
+        Alert.alert(JSON.stringify(Object.assign({}, e).response.status), Object.assign({}, e).response.data)
         console.warn(Object.assign({}, e))
       });
   }
@@ -845,12 +846,14 @@ export default class Submission extends React.Component {
                 </TouchSpoof>
               </View>
               <View style={styles.inputWrapper}>
-                <Input
-                  editable={false}
-                  label={"Address"}
-                  placeholder={"Automatically will be extracted from photo"}
-                  value={this.addressString}
-                />
+                <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
+                  <Input
+                    editable={false}
+                    label={"Address"}
+                    placeholder={"Automatically will be extracted from photo"}
+                    value={this.addressString}
+                  />
+                </ScrollView>
               </View>
               <View style={styles.inputWrapper}>
                 <Input
@@ -979,7 +982,6 @@ export default class Submission extends React.Component {
           altitude: altitude,
           location: { lat, lng }
         });
-
         reverseGeocode(image.location)
           .then(places => {
             const place = places.results[0];
