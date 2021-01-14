@@ -4,16 +4,16 @@ import {
   Alert,
   StyleSheet,
   Text,
-  View,
-  SafeAreaView,
-  TouchableOpacity,
-  KeyboardAvoidingView
+  TouchableOpacity, View,
 } from "react-native";
-import { Button, Input, Icon } from "react-native-elements";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Input, Icon } from "react-native-elements";
 import LogoTitle from "./LogoTitle";
-import { ErrorStyle, ButtonContainerStyle, ButtonStyle } from "./Styles";
+import { ErrorStyle, globalStyles } from "./Styles";
 import { api } from "./Api";
 import { signOut, isSignedIn } from "./Auth";
+import FloatingMainButton from "./FloatingMainButton";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 export default class Profile extends React.Component {
   static navigationOptions = ({ navigation }) => {
@@ -42,7 +42,7 @@ export default class Profile extends React.Component {
   };
 
   logoutPressed = () => {
-    signOut().then(r => {
+    signOut().then(() => {
       this.props.navigation.navigate("Auth");
     });
   };
@@ -89,16 +89,8 @@ export default class Profile extends React.Component {
     });
   }
 
-  onEmailChange(email) {
-    this.setState({ email });
-  }
-
-  onFirstNameChange(firstName) {
-    this.setState({ firstName });
-  }
-
-  onLastNameChange(lastName) {
-    this.setState({ lastName });
+  onChange = field => value => {
+    this.setState({ [field]: value });
   }
 
   onFirstNameBlur() {
@@ -121,12 +113,7 @@ export default class Profile extends React.Component {
     this.setState({ lastNameError });
   }
 
-  onPhoneChange(phone) {
-    this.setState({ phone });
-  }
-
   onPhoneBlur() {
-    const state = this.state;
     const phone = this.state.phone.replace(/\D/g, "");
     let phoneError = "";
     if (phone.length == 0) {
@@ -140,7 +127,6 @@ export default class Profile extends React.Component {
   }
 
   onLastNameBlur() {
-    const state = this.state;
     let lastNameError = null;
     if (this.state.lastName.length == 0) {
       lastNameError = "Last Name required";
@@ -165,74 +151,8 @@ export default class Profile extends React.Component {
     return re.test(email);
   }
 
-  user() {
-    if (!this.state.user) {
-      return null;
-    }
-    const { user } = this.state;
-    return (
-      <>
-        <KeyboardAvoidingView style={styles.container}>
-          <Input
-            label={"First Name"}
-            ref={this.firstName}
-            editable={this.state.editable}
-            containerStyle={styles.field}
-            value={this.state.firstName}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.firstNameError}
-            onChangeText={firstName => this.onFirstNameChange(firstName)}
-            onBlur={() => this.onFirstNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label={"Last Name"}
-            ref={this.firstName}
-            value={this.state.lastName}
-            editable={this.state.editable}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.lastNameError}
-            onChangeText={lastName => this.onLastNameChange(lastName)}
-            onBlur={() => this.onLastNameBlur()}
-            leftIcon={<Icon type="material" name="person" />}
-          />
-          <Input
-            label={"Phone"}
-            keyboardType={"phone-pad"}
-            editable={this.state.editable}
-            value={this.state.phone}
-            ref={this.phone}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.phoneError}
-            onChangeText={email => this.onPhoneChange(email)}
-            onBlur={() => this.onPhoneBlur()}
-            leftIcon={<Icon type="material-community" name="phone" />}
-          />
-          <Input
-            label={"Email"}
-            autoCapitalize={"none"}
-            keyboardType="email-address"
-            editable={this.state.editable}
-            ref={this.email}
-            value={this.state.email}
-            containerStyle={styles.field}
-            errorStyle={ErrorStyle.style}
-            errorMessage={this.state.emailError}
-            onChangeText={email => this.onEmailChange(email)}
-            onBlur={() => this.onEmailBlur()}
-            leftIcon={<Icon type="material-community" name="email" />}
-          />
-        </KeyboardAvoidingView>
-      </>
-    );
-  }
-
   updateUser() {
-    const user = {};
     const { email, phone, firstName, lastName } = this.state;
-    const { email: e, phone: p, firstName: f, lastName: l } = this.state.user;
     const newUser = { email, phone, firstName, lastName };
     api
       .updateUser(newUser)
@@ -241,35 +161,80 @@ export default class Profile extends React.Component {
         this.setData(success);
         this.editPressed();
       })
-      .catch(e => {
+      .catch(() => {
         Alert.alert("Problem", "Could not update.");
       });
   }
 
   render() {
-    const {
-      navigation: { navigate }
-    } = this.props;
-
+    const { editable, user } = this.state;
     return (
-      <>
-        {this.user()}
-        <Button
-          containerStyle={{
-            bottom: 0,
-            opacity: this.state.editable ? 100 : 0,
-            width: "100%",
-            position: "absolute"
-          }}
-          buttonStyle={{
-            padding: 20
-          }}
-          title="Save"
-          onPress={() => {
-            this.updateUser();
-          }}
-        />
-      </>
+      <View style={styles.mainWrapper}>
+        {user &&
+          <KeyboardAwareScrollView style={globalStyles.mainContainer}>
+            <Input
+              label={"First Name"}
+              ref={this.firstName}
+              editable={this.state.editable}
+              containerStyle={styles.field}
+              value={this.state.firstName}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.firstNameError}
+              onChangeText={this.onChange('firstName')}
+              onBlur={() => this.onFirstNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+            <Input
+              label={"Last Name"}
+              ref={this.firstName}
+              value={this.state.lastName}
+              editable={this.state.editable}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.lastNameError}
+              onChangeText={this.onChange('lastName')}
+              onBlur={() => this.onLastNameBlur()}
+              leftIcon={<Icon type="material" name="person" />}
+            />
+            <Input
+              label={"Phone"}
+              keyboardType={"phone-pad"}
+              editable={this.state.editable}
+              value={this.state.phone}
+              ref={this.phone}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.phoneError}
+              onChangeText={this.onChange('phone')}
+              onBlur={() => this.onPhoneBlur()}
+              leftIcon={<Icon type="material-community" name="phone" />}
+            />
+            <Input
+              label={"Email"}
+              autoCapitalize={"none"}
+              keyboardType="email-address"
+              editable={this.state.editable}
+              ref={this.email}
+              value={this.state.email}
+              containerStyle={styles.field}
+              errorStyle={ErrorStyle.style}
+              errorMessage={this.state.emailError}
+              onChangeText={this.onChange('email')}
+              onBlur={() => this.onEmailBlur()}
+              leftIcon={<Icon type="material-community" name="email" />}
+            />
+          </KeyboardAwareScrollView>
+        }
+        {
+          editable &&
+          <FloatingMainButton
+            isEnabled
+            onPress={() => this.updateUser()}
+            title={'Save'}
+            containerStyle={styles.saveButton}
+          />
+        }
+      </View>
     );
   }
 }
@@ -290,5 +255,12 @@ const styles = StyleSheet.create({
   alreadyRegistered: {
     marginTop: 30,
     alignItems: "center"
-  }
+  },
+  saveButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5
+  },
+  mainWrapper: {
+    flex: 1,
+  },
 });
