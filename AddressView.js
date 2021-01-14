@@ -22,7 +22,6 @@ import marker from "./assets/car-marker.png";
 import { geocode, reverseGeocode, finds, precincts } from "./Api";
 const polylineUtil = require("@mapbox/polyline");
 import { isPointInPolygon } from "geolib";
-import ordinal from "ordinal";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 
 export default class AddressView extends React.Component {

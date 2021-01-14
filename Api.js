@@ -165,6 +165,8 @@ export const uploadFile = (file, extra) => {
         const callback = extra && extra.listener;
         console.log('key', key)
         console.log('blob', blob)
+        console.log('metaData', metaData)
+        console.log('contentType', contentType)
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
