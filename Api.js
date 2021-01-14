@@ -136,6 +136,9 @@ export const uploadFile = (file, extra) => {
           ext.lastIndexOf(".") != -1 &&
           ext.lastIndexOf(".") != ext.length - 1 &&
           ext.substring(ext.lastIndexOf(".") + 1).toLowerCase();
+        console.log(data)
+        console.log(time)
+        console.log(ext)
         const key = `${data.user.id}/${time}.${ext}`;
         const metaData = Object.assign({
           "User-Id": data.user.id,
@@ -160,6 +163,8 @@ export const uploadFile = (file, extra) => {
           contentType = "video/mp4";
         }
         const callback = extra && extra.listener;
+        console.log('key', key)
+        console.log('blob', blob)
         Storage.put(key, blob, {
           customPrefix: {
             public: "uploads/"
