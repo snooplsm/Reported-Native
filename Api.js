@@ -10,7 +10,6 @@ import { Notifications } from "expo";
 import * as Permissions from "expo-permissions";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
-import {Alert} from "react-native";
 
 const apiUrl = {
   dev: "https://reported-stats.herokuapp.com/prod/",
@@ -49,7 +48,8 @@ Amplify.configure({
   },
   Storage: {
     AWSS3: {
-      bucket: BUCKET
+      bucket: BUCKET,
+      region: "us-east-1"
     }
   }
 });
