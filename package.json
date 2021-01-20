@@ -11,6 +11,7 @@
     "@react-native-community/datetimepicker": "2.2.2",
     "@react-native-community/netinfo": "^5.9.10",
     "aws-amplify": "^2.3.0",
+    "aws-sdk": "^2.829.0",
     "axios": "^0.21.1",
     "deep-diff": "^1.0.2",
     "expo": "^37.0.0",
