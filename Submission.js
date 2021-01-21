@@ -692,16 +692,6 @@ export default class Submission extends React.Component {
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
-    const areAddressFieldsNonNull = checkForNoNullValuesInArray([
-      formatted_address, building, street, city, county, state, zip, sublocality
-    ])
-    if (!areAddressFieldsNonNull) {
-      this.alrt(
-        "Invalid location",
-        "The location is not a valid street address."
-      );
-      return;
-    }
     console.log('api.report')
     api
       .report({
