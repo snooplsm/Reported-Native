@@ -72,8 +72,6 @@ ax.interceptors.request.use(
     return new Promise((resolve, eject) => {
       isSignedIn()
         .then(user => {
-          // // console.log(Constants);
-          // console.log("ios", Constants.manifest.ios);
           const buildNumber =
             Platform.OS === "android"
               ? Constants.platform.android.versionCode
@@ -121,7 +119,6 @@ const uploadImageOnS3 = (key, contentType, file) => {
 };
 
 export const uploadFile = (file, extra) => {
-  console.log('file to upload', file);
   return new Promise((resolve, reject) => {
     const data = {};
     isSignedIn()
@@ -135,14 +132,11 @@ export const uploadFile = (file, extra) => {
         } else {
           return file;
         }
-        console.log('Upload then 1')
       })
       .catch(e => {
-        // console.log(e);
         throw e;
       })
       .then(fc => {
-        console.log('Upload then 2')
         const tmp = Object.assign({}, fc)
         data.fc = tmp;
         return FileSystem.getInfoAsync(fc.uri || fc.url, {
@@ -150,21 +144,16 @@ export const uploadFile = (file, extra) => {
         });
       })
       .then(fc => {
-        console.log('Upload then 3')
         data.fc.md5 = fc.md5;
         return urlToBlob(data.fc.uri || data.fc.url);
       })
       .then(blob => {
-        console.log('Upload then 4');
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
         let ext = data.fc.uri || data.fc.url;
         ext =
           ext.lastIndexOf(".") != -1 &&
           ext.lastIndexOf(".") != ext.length - 1 &&
           ext.substring(ext.lastIndexOf(".") + 1).toLowerCase();
-        console.log(data)
-        console.log(time)
-        console.log(ext)
         const key = `${data.user.id}/${time}.${ext}`;
         const metaData = Object.assign({
           "User-Id": data.user.id,
@@ -188,12 +177,6 @@ export const uploadFile = (file, extra) => {
         } else {
           ContentType = "video/mp4";
         }
-        const callback = extra && extra.listener;
-        console.log('key', key)
-        console.log('blob', blob)
-        console.log('metaData', metaData)
-        console.log('ContentType', ContentType)
-        console.log('FILE LOG BEFORE UPLOAD', file);
 
         return uploadImageOnS3(key, ContentType, blob);
       })
