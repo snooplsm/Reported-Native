@@ -94,6 +94,16 @@ ax.interceptors.request.use(
   }
 );
 
+ax.interceptors.request.use(request => {
+  console.log('Starting Request', JSON.stringify(request, null, 2))
+  return request
+})
+
+ax.interceptors.response.use(response => {
+  console.log('Response:', JSON.stringify(response, null, 2))
+  return response
+})
+
 const uploadImageOnS3 = (key, contentType, file) => {
   return new Promise((resolve, reject) => {
     const s3bucket = new S3({

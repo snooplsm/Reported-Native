@@ -32,7 +32,6 @@ export default class SubmissionFilter extends React.Component {
     const query = {
       keywords,
       location,
-      location,
       complaints,
       srid,
       when
