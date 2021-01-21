@@ -1,8 +1,11 @@
 import axios from "axios";
 import { isSignedIn } from "./Auth";
+
+import S3 from "aws-sdk/clients/s3";
+import { Credentials } from "aws-sdk";
+
 import { AsyncStorage } from "react-native";
 import { USER_KEY } from "./Auth";
-import Amplify, { Storage } from "aws-amplify";
 import moment from "moment";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
@@ -16,6 +19,17 @@ const apiUrl = {
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
+
+const access = new Credentials({
+  accessKeyId: 'AKIAWXBK5VSMACYJ7YUY',
+  secretAccessKey: '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',
+});
+
+const s3 = new S3({
+  credentials: access,
+  region: 'us-east-1',
+  signatureVersion: 'v4',
+});
 
 function getApiUrl() {
   if (__DEV__) {
@@ -40,19 +54,6 @@ function getBucketUrl() {
 const BASE_URL = getApiUrl();
 
 const BUCKET = getBucketUrl();
-
-Amplify.configure({
-  Auth: {
-    identityPoolId: "us-east-1:ccbbb41a-4490-4b85-af8d-a047aabeec5d", //REQUIRED - Amazon Cognito Identity Pool ID
-    region: "us-east-1" // REQUIRED - Amazon Cognito Region
-  },
-  Storage: {
-    AWSS3: {
-      bucket: BUCKET,
-      region: "us-east-1"
-    }
-  }
-});
 
 const ax = axios.create({
   baseURL: BASE_URL
@@ -95,7 +96,32 @@ ax.interceptors.request.use(
   }
 );
 
+const uploadImageOnS3 = (key, contentType, file) => {
+  return new Promise((resolve, reject) => {
+    const s3bucket = new S3({
+      accessKeyId: 'AKIAWXBK5VSMACYJ7YUY',
+      secretAccessKey: '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',
+      Bucket: BUCKET,
+      signatureVersion: 'v4',
+    });
+    const params = {
+      Bucket: `${BUCKET}/uploads`,
+      Key: key,
+      Acl: "public-read",
+      Body: file,
+      ContentType: contentType,
+    };
+    s3bucket.upload(params, (err, data) => {
+      if (err) {
+        reject('error in callback');
+      }
+      resolve(data.Location);
+    });
+  });
+};
+
 export const uploadFile = (file, extra) => {
+  console.log('file to upload', file);
   return new Promise((resolve, reject) => {
     const data = {};
     isSignedIn()
@@ -129,7 +155,7 @@ export const uploadFile = (file, extra) => {
         return urlToBlob(data.fc.uri || data.fc.url);
       })
       .then(blob => {
-        console.log('Upload then 4')
+        console.log('Upload then 4');
         const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
         let ext = data.fc.uri || data.fc.url;
         ext =
@@ -154,42 +180,36 @@ export const uploadFile = (file, extra) => {
         });
         data.size = blob.size;
         data.meta = metaData;
-        let contentType = null;
+        let ContentType = null;
         if (file.type === "image" || ext === "jpg") {
-          contentType = "image/jpeg";
+          ContentType = "image/jpeg";
         } else if (file.type === "pdf" || ext === "pdf") {
-          contentType = "application/pdf";
+          ContentType = "application/pdf";
         } else {
-          contentType = "video/mp4";
+          ContentType = "video/mp4";
         }
         const callback = extra && extra.listener;
         console.log('key', key)
         console.log('blob', blob)
         console.log('metaData', metaData)
-        console.log('contentType', contentType)
-        Storage.put(key, blob, {
-          customPrefix: {
-            public: "uploads/"
-          },
-          level: "public",
-          progressCallback: callback,
-          metadata: metaData,
-          contentType: contentType
-        }).then(res => {
-          console.log('Upload then 5')
-          resolve({
-            url: `https://${BUCKET}.s3.amazonaws.com/uploads/${res.key}`,
-            meta: data.meta,
-            width: data.fc.width,
-            height: data.fc.height,
-            duration: file.duration,
-            etag: data.fc.md5,
-            size: data.size,
-            takenAt: file.takenAt
-          });
-        }).catch(e => {
-          reject(e)
-        });
+        console.log('ContentType', ContentType)
+        console.log('FILE LOG BEFORE UPLOAD', file);
+
+        return uploadImageOnS3(key, ContentType, blob);
+      })
+      .then(dataLocation => {
+        resolve({
+          url: dataLocation,
+          meta: data.meta,
+          width: data.fc.width,
+          height: data.fc.height,
+          duration: file.duration,
+          etag: data.fc.md5,
+          size: data.size,
+          takenAt: file.takenAt
+        })
+      }).catch(e => {
+        reject(e)
       });
   });
 };

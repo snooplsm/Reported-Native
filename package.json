@@ -13,6 +13,7 @@
     "aws-amplify": "^2.3.0",
     "aws-sdk": "^2.829.0",
     "axios": "^0.21.1",
+    "base64-arraybuffer": "^0.2.0",
     "deep-diff": "^1.0.2",
     "expo": "^37.0.0",
     "expo-av": "~8.1.0",
