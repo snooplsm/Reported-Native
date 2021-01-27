@@ -116,11 +116,9 @@ export default class Submissions extends React.Component {
     this.setState({ refreshing: true });
 
     const fetchReportsFunction = this._forUser ? api.myReports : api.reports;
-    console.log(this.state.filter);
     api
       .reports(this.state.filter)
       .then(res => {
-        console.log(res)
         this.setState({ refreshing: false, error: undefined });
         const addressMap = res.data.addresses.reduce((map, x) => {
           map[x.id] = x;
