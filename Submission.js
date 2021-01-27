@@ -115,7 +115,6 @@ export default class Submission extends React.Component {
       onClearPressed: this.onClearPressed
     });
     this.loadOffline();
-    this.registerToken();
     this.keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
       this._keyboardDidShow.bind(this)
@@ -155,13 +154,6 @@ export default class Submission extends React.Component {
   _keyboardDidHide() {
     this.setState({ keyboard: undefined });
   }
-
-  registerToken = async () => {
-    const needsRegistering = await pushTokenNeedsRegisteringAsync();
-    if (needsRegistering) {
-      const result = await registerForPushNotificationsAsync();
-    }
-  };
 
   onClearPressed = () => {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
@@ -299,30 +291,14 @@ export default class Submission extends React.Component {
   }
 
   reportSubmitted = async result => {
-    const canRegister = pushTokenNeedsRegisteringAsync();
-    const needsToEnablePush = canRegister && Platform.OS !== "android";
-    const buttons = needsToEnablePush && [
-      {
-        text: "No",
-        onPress: () => { }
-      },
-      {
-        text: "Enable",
-        onPress: () => {
-          this.registerToken();
-        }
-      }
-    ];
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
           result.thirtyDays
         )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
-    let msg = needsToEnablePush
-      ? "Your report has been submitted.  Enable push notifications to get future updates?"
-      : `Your report has been submitted.  ${thirty}`;
-    Alert.alert("Report Submitted", msg, buttons);
+    let msg = `Your report has been submitted.  ${thirty}`;
+    Alert.alert("Report Submitted", msg);
   };
 
   get complaintModal() {
