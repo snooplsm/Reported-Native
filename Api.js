@@ -345,7 +345,6 @@ export const precincts = () => {
 
 export const reverseGeocode = location => {
   // console.log("reverse geocode", location);
-  console.log('LOCATION', location.lat.toFixed(4), location.lng.toFixed(4));
   if (!location || !location.lat || !location.lng) {
     return Promise.reject(
       `illegal location ${location == null ? null : JSON.stringify(location)}`

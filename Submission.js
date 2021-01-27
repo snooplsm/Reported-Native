@@ -974,7 +974,6 @@ export default class Submission extends React.Component {
         });
         reverseGeocode(image.location)
           .then(places => {
-            console.log('places', places);
             const place = places.results[0];
             this.setState({ location: { place } });
           })
