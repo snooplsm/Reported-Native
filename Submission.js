@@ -532,7 +532,6 @@ export default class Submission extends React.Component {
 
   submit() {
     const { location, complaints, timeofreport } = this.state;
-    console.log('STARTING SUBMIT')
     Sentry.Native.captureException(new Error('not an error, sentry test'))
     if (complaints.length < 1) {
       this.alrt(
@@ -563,8 +562,8 @@ export default class Submission extends React.Component {
     }
     const place = location.place;
     const address = place.address_components;
-    const city = finds(address, "locality");
-    if (city.toUpperCase() !== 'NEW YORK') {
+    const administrative_area_level_1 = finds(address, "administrative_area_level_1");
+    if (!administrative_area_level_1 || administrative_area_level_1.toUpperCase() !== 'NY') {
       this.alrt(
         'Error geo coordinates',
         'The location is outside of NYC. Reported only works in NYC.'
@@ -578,22 +577,18 @@ export default class Submission extends React.Component {
       );
       return;
     }
-    console.log('STARTING UPLOAD')
     const plateNeedsUploading = okPlate && this.state.license.plate.image;
     const plateUploaded =
       !plateNeedsUploading ||
       this.state.uploadedMedia[this.state.license.plate.image.url];
     if (!plateUploaded) {
       this.setState({ submitting: true });
-      console.log('call upload file')
-      console.log(this.state.license.plate.image)
       uploadFile(this.state.license.plate.image, {
         listener: progress => {
           this.progressListener(progress);
         }
       })
         .then(uploaded => {
-          console.log('done LP upload successfully')
           uploaded.type = "S3_IMAGE_LICENSE";
           const uploadedMedia = this.state.uploadedMedia;
           uploadedMedia[this.state.license.plate.image.url] = uploaded;
@@ -602,7 +597,6 @@ export default class Submission extends React.Component {
         })
         .catch(e => {
           Sentry.Native.captureException(new Error(e))
-          console.log('done LP upload unsuccessfully')
           this.alrt("Error uploading image", "Image upload failed.");
         });
       return;
@@ -613,13 +607,10 @@ export default class Submission extends React.Component {
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
       this.setState({ submitting: true });
-      console.log('upload media call')
-      console.log(file)
       uploadFile(file, {
         listener: this.progressListener
       })
         .then(uploaded => {
-          console.log('done media upload successfully')
           if (file.type == "image") {
             uploaded.type = "S3_IMAGE";
           } else {
@@ -631,10 +622,8 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          console.log('done media upload UNsuccessfully')
           Sentry.Native.captureException(new Error(e))
           this.alrt("Error uploading media", JSON.stringify(e));
-          console.log("error upload", e);
         });
       return;
     }
@@ -664,11 +653,21 @@ export default class Submission extends React.Component {
     const street = finds(address, "route");
     const sublocality = finds(address, "sublocality");
     const premise = finds(address, "premise");
+    const city = finds(address, "locality");
     const county = finds(address, "administrative_area_level_2");
     const state = finds(address, "administrative_area_level_1");
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
-    console.log('api.report')
+    const areAddressFieldsNonNull = checkForNoNullValuesInArray([
+      building, street
+    ])
+    if (!areAddressFieldsNonNull) {
+      this.alrt(
+        "Invalid location",
+        "The location is not a valid street address."
+      );
+      return;
+    }
     api
       .report({
         description: this.state.description,
