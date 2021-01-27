@@ -772,9 +772,9 @@ export default class Submission extends React.Component {
 
   get addPhotoText() {
     if (this.state.media && this.state.media.length > 0) {
-      return "Add Another Photo/Video";
+      return "Add Another Photo";
     } else {
-      return "Add Photo/Video";
+      return "Add Photo";
     }
   }
 
@@ -939,7 +939,7 @@ export default class Submission extends React.Component {
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.All
+      mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
     const success = result => {
       if (result.cancelled) {
@@ -974,6 +974,7 @@ export default class Submission extends React.Component {
         });
         reverseGeocode(image.location)
           .then(places => {
+            console.log('places', places);
             const place = places.results[0];
             this.setState({ location: { place } });
           })
