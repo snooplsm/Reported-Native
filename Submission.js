@@ -5,7 +5,6 @@ import {
   Keyboard,
   View,
   StyleSheet,
-  Platform
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
@@ -35,13 +34,10 @@ import {
   api,
   uploadFile,
   reverseGeocode,
-  pushTokenNeedsRegisteringAsync,
-  registerForPushNotificationsAsync
 } from "./Api";
 import { getLocationDataFromExif } from './Utils/locations'
 import ComplaintView from "./ComplaintView";
 import { checkForNoNullValuesInArray } from "./Utils/others";
-import * as Sentry from 'sentry-expo';
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -174,7 +170,7 @@ export default class Submission extends React.Component {
     if (!this.state) {
       return false;
     }
-    if (this.state.imageModal != undefined) {
+    if (this.state.imageModal !== undefined) {
       this.setState({ imageModal: undefined });
       return true;
     }
@@ -209,8 +205,6 @@ export default class Submission extends React.Component {
 
   saveOffline = async () => {
     try {
-      const state = Object.assign(this.state, {});
-
       await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
     } catch (error) {
       // console.log("async error", error);
@@ -238,7 +232,6 @@ export default class Submission extends React.Component {
         this.props.navigation.setParams({ canGoBack: false });
       }
       const diffy = diff(this.state, this.initialState);
-      //// console.log("diff is", diffy);
       const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
@@ -505,7 +498,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    var promise = new Promise(function (resolve, reject) {
+    const promise = new Promise(function (resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -520,7 +513,7 @@ export default class Submission extends React.Component {
       resolve({ total, loaded });
     });
     promise
-      .then(prog => {
+      .then(() => {
         setState({
           progress: loaded / total
         });
@@ -532,7 +525,6 @@ export default class Submission extends React.Component {
 
   submit() {
     const { location, complaints, timeofreport } = this.state;
-    Sentry.Native.captureException(new Error('not an error, sentry test'))
     if (complaints.length < 1) {
       this.alrt(
         "Missing Complaint",
@@ -595,8 +587,7 @@ export default class Submission extends React.Component {
           this.setState({ uploadedMedia });
           this.submit();
         })
-        .catch(e => {
-          Sentry.Native.captureException(new Error(e))
+        .catch(() => {
           this.alrt("Error uploading image", "Image upload failed.");
         });
       return;
@@ -611,7 +602,7 @@ export default class Submission extends React.Component {
         listener: this.progressListener
       })
         .then(uploaded => {
-          if (file.type == "image") {
+          if (file.type === "image") {
             uploaded.type = "S3_IMAGE";
           } else {
             uploaded.type = "S3_VIDEO";
@@ -622,7 +613,6 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          Sentry.Native.captureException(new Error(e))
           this.alrt("Error uploading media", JSON.stringify(e));
         });
       return;
