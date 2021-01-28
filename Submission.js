@@ -17,9 +17,9 @@ import { colors, globalStyles } from "./Styles";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
-import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
+import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 import ComplaintView from "./ComplaintView";
-import { getLocationDataFromExif, checkAddressNotBelongsToNY } from "./utils/locations";
+import { getLocationDataFromExif, checkAddressNotBelongsToNY, findInLocation } from "./utils/locations";
 import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -519,14 +519,14 @@ export default class Submission extends React.Component {
     }
 
     const geo = place.geometry.location;
-    const building = finds(address, "street_number");
-    const street = finds(address, "route");
-    const sublocality = finds(address, "sublocality");
-    const premise = finds(address, "premise");
-    const city = finds(address, "locality");
-    const county = finds(address, "administrative_area_level_2");
-    const state = finds(address, "administrative_area_level_1");
-    const zip = finds(address, "postal_code");
+    const building = findInLocation(address, "street_number");
+    const street = findInLocation(address, "route");
+    const sublocality = findInLocation(address, "sublocality");
+    const premise = findInLocation(address, "premise");
+    const city = findInLocation(address, "locality");
+    const county = findInLocation(address, "administrative_area_level_2");
+    const state = findInLocation(address, "administrative_area_level_1");
+    const zip = findInLocation(address, "postal_code");
     const formatted_address = place.formatted_address;
     const areAddressFieldsNonNull = checkForNoNullValuesInArray([
       building,
