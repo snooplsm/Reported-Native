@@ -18,8 +18,9 @@ import { Button, Icon, Input, Overlay } from "react-native-elements";
 import { AutoStyle } from "./Styles";
 import Autolink from "react-native-autolink";
 import { addresses } from "./Addresses.js";
+import { findInLocation } from "./utils/locations";
 import marker from "./assets/car-marker.png";
-import { geocode, reverseGeocode, finds, precincts } from "./Api";
+import { geocode, reverseGeocode, precincts } from "./Api";
 const polylineUtil = require("@mapbox/polyline");
 import { isPointInPolygon } from "geolib";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
@@ -76,7 +77,7 @@ export default class AddressView extends React.Component {
     };
 
     const big = [ne, se, sw, nw];
-    const precincts = (this._precincts || []).sort((a, b) => {});
+    const precincts = (this._precincts || []).sort((a, b) => { });
     // // console.log("big", big);
     //this.setState({ big });
 
@@ -150,9 +151,9 @@ export default class AddressView extends React.Component {
             const results = [];
             pre.forEach((x, index) => {
               const { address_components: address } = x;
-              const premise = finds(address, "premise");
-              const building = finds(address, "street_number");
-              const street = finds(address, "route");
+              const premise = findInLocation(address, "premise");
+              const building = findInLocation(address, "street_number");
+              const street = findInLocation(address, "route");
               if (!premise && !building && !street) {
                 //alert("no dice", premise, building, street);
               } else {
@@ -191,9 +192,9 @@ export default class AddressView extends React.Component {
 
   _renderItem = ({ item }) => {
     const { address_components: address } = item;
-    const premise = finds(address, "premise");
-    const building = finds(address, "street_number");
-    const street = finds(address, "route");
+    const premise = findInLocation(address, "premise");
+    const building = findInLocation(address, "street_number");
+    const street = findInLocation(address, "route");
     let title = "";
     if (premise) {
       title = [premise, street].filter(x => x).join(" ");

@@ -290,14 +290,6 @@ const urlToBlob = url =>
     xhr.send();
   });
 
-export const finds = (address, key) => {
-  const res = address
-    .filter(x => x.types.includes(key))
-    .map(x => x.short_name)
-    .shift()
-  return res
-};
-
 export const geocode = address => {
   if (!address) {
     return Promise.reject(`illegal address ${address}`);
@@ -344,17 +336,17 @@ export const precincts = () => {
 };
 
 export const reverseGeocode = location => {
-  // console.log("reverse geocode", location);
-  if (!location || !location.lat || !location.lng) {
-    return Promise.reject(
-      `illegal location ${location == null ? null : JSON.stringify(location)}`
-    );
-  }
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat},${location.lng}&result_type=street_address`;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyDiBYFqZLwPsNkMbRNqr1_63h-w9fcZNVM&latlng=${location.lat},${location.lng}&result_type=street_address&rankBy=distance`;
   return fetch(url)
     .then(res => res.json())
     .then(data => {
       return data;
+    })
+    .catch(e => {
+      //
+      //Here you can log/handle error messages from Google API
+      //
+      return Promise.reject('The location does not appear to be a valid street address.')
     });
 };
 
