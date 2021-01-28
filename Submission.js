@@ -1,23 +1,12 @@
 import React from "react";
-import {
-  AsyncStorage,
-  Alert,
-  Keyboard,
-  View,
-  StyleSheet,
-} from "react-native";
+import { AsyncStorage, Alert, Keyboard, View, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
 import * as Constants from "expo-constants";
 import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
-import {
-  Button,
-  Icon,
-  Input,
-} from "react-native-elements";
+import { Button, Icon, Input } from "react-native-elements";
 import { BackHandler } from "react-native";
-import ImageViewer from "react-native-image-zoom-viewer";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
@@ -28,16 +17,11 @@ import { colors, globalStyles } from "./Styles";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
-import {
-  alpr,
-  finds,
-  api,
-  uploadFile,
-  reverseGeocode,
-} from "./Api";
-import { getLocationDataFromExif } from './Utils/locations'
+import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
+import { getLocationDataFromExif } from "./Utils/locations";
 import ComplaintView from "./ComplaintView";
 import { checkForNoNullValuesInArray } from "./Utils/others";
+import ImageViewer from "./components/ImageViewer";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -155,7 +139,7 @@ export default class Submission extends React.Component {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
-        onPress: () => { }
+        onPress: () => {}
       },
       {
         text: "OK",
@@ -243,11 +227,11 @@ export default class Submission extends React.Component {
     });
   }
 
-  closeModal() {
+  closeModal = () => {
     this.setState({ imageModal: undefined });
   }
 
-  removeImage(index) {
+  removeImage = (index) => {
     const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
@@ -255,31 +239,10 @@ export default class Submission extends React.Component {
   }
 
   get addressString() {
-    const { location } = this.state;
-    if (!location) {
+    try {
+      return this.state.location.place.formatted_address;
+    } catch (e) {
       return null;
-    }
-    const { place } = location;
-    if (!place) {
-      return null;
-    }
-    return place.formatted_address;
-    const { address_components: address } = place;
-    const premise = finds(address, "premise");
-    const building = finds(address, "street_number");
-    const street = finds(address, "route");
-    const locality = finds(address, "locality");
-    const sublocality = finds(address, "neighborhood");
-    let toUse = null;
-    if (sublocality && sublocality !== locality) {
-      toUse = sublocality;
-    } else {
-      toUse = locality;
-    }
-    if (premise) {
-      return [premise, toUse].filter(x => x).join(" ");
-    } else {
-      return [[building, street].join(" "), toUse].filter(x => x).join(", ");
     }
   }
 
@@ -287,8 +250,8 @@ export default class Submission extends React.Component {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
-          result.thirtyDays
-        )} report within a thirty day timespan.`
+            result.thirtyDays
+          )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg);
@@ -297,17 +260,7 @@ export default class Submission extends React.Component {
   get complaintModal() {
     if (this.state.showComplaintModal) {
       return (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            backgroundColor: "white"
-          }}
-        >
+        <View style={styles.complaintModal}>
           <ComplaintView
             onComplaintsChanged={c => {
               this._complaint.blur();
@@ -322,65 +275,19 @@ export default class Submission extends React.Component {
   }
 
   get imageModal() {
+    console.log('getting')
+    console.log(String(this.state.imageModal))
     if (this.state.imageModal !== undefined) {
       return (
         <ImageViewer
-          ref={ref => {
-            this._imageViewer = ref;
-          }}
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0
-          }}
-          onClick={() => this.closeModal()}
-          footerContainerStyle={{
-            bottom: 0,
-            left: 0,
-            right: 0,
-            position: "absolute",
-            zIndex: 9999
-          }}
-          renderFooter={index => {
-            return (
-              <View
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  flexWrap: "nowrap",
-                  justifyContent: "flex-end"
-                }}
-              >
-                <Icon
-                  iconStyle={{
-                    padding: 14
-                  }}
-                  size={26}
-                  color="white"
-                  type="material"
-                  name="remove-circle-outline"
-                  onPress={() => this.removeImage(index)}
-                />
-              </View>
-            );
-          }}
-          imageUrls={this.state.media}
+          imagesURLs={this.state.media}
+          onCloseModal={this.closeModal}
+          onRemoveImage={this.removeImage}
         />
       );
     } else {
-      return <></>;
+      return null;
     }
-  }
-
-  componentWillMount() {
-    this.timeofreportinterval = setInterval(() => {
-      const time = this.timeofreport(this.state.timeofreport);
-      if (this.state.timeofreportstr !== time) {
-        this.setState({ timeofreportstr: time });
-      }
-    }, 60000);
   }
 
   componentWillUnmount() {
@@ -498,7 +405,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    const promise = new Promise(function (resolve) {
+    const promise = new Promise(function(resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -540,7 +447,10 @@ export default class Submission extends React.Component {
     }
 
     if (!timeofreport) {
-      this.alrt('Missing Complaint', `Can't extract time. Please, select proper photo.`);
+      this.alrt(
+        "Missing Complaint",
+        `Can't extract time. Please, select proper photo.`
+      );
       return;
     }
 
@@ -554,11 +464,17 @@ export default class Submission extends React.Component {
     }
     const place = location.place;
     const address = place.address_components;
-    const administrative_area_level_1 = finds(address, "administrative_area_level_1");
-    if (!administrative_area_level_1 || administrative_area_level_1.toUpperCase() !== 'NY') {
+    const administrative_area_level_1 = finds(
+      address,
+      "administrative_area_level_1"
+    );
+    if (
+      !administrative_area_level_1 ||
+      administrative_area_level_1.toUpperCase() !== "NY"
+    ) {
       this.alrt(
-        'Error geo coordinates',
-        'The location is outside of NYC. Reported only works in NYC.'
+        "Error geo coordinates",
+        "The location is outside of NYC. Reported only works in NYC."
       );
       return;
     }
@@ -649,8 +565,9 @@ export default class Submission extends React.Component {
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
     const areAddressFieldsNonNull = checkForNoNullValuesInArray([
-      building, street
-    ])
+      building,
+      street
+    ]);
     if (!areAddressFieldsNonNull) {
       this.alrt(
         "Invalid location",
@@ -715,8 +632,11 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
-        Alert.alert(JSON.stringify(Object.assign({}, e).response.status), Object.assign({}, e).response.data)
-        console.warn(Object.assign({}, e))
+        Alert.alert(
+          JSON.stringify(Object.assign({}, e).response.status),
+          Object.assign({}, e).response.data
+        );
+        console.warn(Object.assign({}, e));
       });
   }
 
@@ -801,7 +721,10 @@ export default class Submission extends React.Component {
                 </TouchSpoof>
               </View>
               <View style={styles.inputWrapper}>
-                <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
+                <ScrollView
+                  horizontal={true}
+                  showsHorizontalScrollIndicator={false}
+                >
                   <Input
                     editable={false}
                     label={"Address"}
@@ -889,7 +812,7 @@ export default class Submission extends React.Component {
             isEnabled
             isLoading={this.state.submitting}
             onPress={() => this.submit()}
-            title={'SUBMIT'}
+            title={"SUBMIT"}
             containerStyle={styles.submitButtonWrapper}
           />
         </View>
@@ -920,13 +843,9 @@ export default class Submission extends React.Component {
       };
 
       if (exif) {
-        const {
-          DateTimeOriginal: timeofreport,
-        } = exif;
+        const { DateTimeOriginal: timeofreport } = exif;
 
-        const {
-          lat, lng, altitude
-        } = getLocationDataFromExif(exif)
+        const { lat, lng, altitude } = getLocationDataFromExif(exif);
 
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
@@ -942,7 +861,7 @@ export default class Submission extends React.Component {
             const place = places.results[0];
             this.setState({ location: { place } });
           })
-          .catch(e => { });
+          .catch(e => {});
         if (!license) {
           let resize = null;
           if (width > height) {
@@ -965,7 +884,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => { });
+            .catch(e => {});
         }
       }
 
@@ -995,7 +914,6 @@ export default class Submission extends React.Component {
 
 const styles = StyleSheet.create({
   addPhoto: {
-    // height: 100
     height: 55
   },
   addPhotoContainer: {
@@ -1024,6 +942,15 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     marginLeft: -8,
-    marginRight: -8,
+    marginRight: -8
   },
+  complaintModal: {
+    position: "absolute",
+    bottom: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    backgroundColor: "white"
+  }
 });
