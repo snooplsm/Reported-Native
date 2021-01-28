@@ -19,7 +19,7 @@ export const getLocationDataFromExif = (exif) => {
   }
 }
 
-export const checkAdressNotBelongsToNY = (place) => {
+export const checkAddressNotBelongsToNY = (place) => {
   const address = place.address_components;
   const administrative_area_level_1 = finds(address, "administrative_area_level_1");
   return !!(!administrative_area_level_1 || administrative_area_level_1.toUpperCase() !== 'NY');
