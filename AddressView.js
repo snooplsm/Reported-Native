@@ -20,7 +20,7 @@ import Autolink from "react-native-autolink";
 import { addresses } from "./Addresses.js";
 import { findInLocation } from "./utils/locations";
 import marker from "./assets/car-marker.png";
-import { geocode, reverseGeocode, findInLocation, precincts } from "./Api";
+import { geocode, reverseGeocode, precincts } from "./Api";
 const polylineUtil = require("@mapbox/polyline");
 import { isPointInPolygon } from "geolib";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
