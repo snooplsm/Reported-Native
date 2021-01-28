@@ -23,7 +23,7 @@ import { getLocationDataFromExif, checkAddressNotBelongsToNY } from "./utils/loc
 import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import {SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL} from "./common/dimen";
+import { SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL } from "./common/dimen";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -141,7 +141,7 @@ export default class Submission extends React.Component {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
-        onPress: () => {}
+        onPress: () => { }
       },
       {
         text: "OK",
@@ -252,8 +252,8 @@ export default class Submission extends React.Component {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
-            result.thirtyDays
-          )} report within a thirty day timespan.`
+          result.thirtyDays
+        )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg);
@@ -405,7 +405,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    const promise = new Promise(function(resolve) {
+    const promise = new Promise(function (resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -652,9 +652,9 @@ export default class Submission extends React.Component {
     return (
       <>
         <KeyboardAwareScrollView
-            style={globalStyles.mainContainer}
-            viewIsInsideTabBar
-            extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
+          style={globalStyles.mainContainer}
+          viewIsInsideTabBar
+          extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
           <View style={styles.container}>
             <View style={styles.inputWrapper}>
               <Button
@@ -821,7 +821,7 @@ export default class Submission extends React.Component {
       // Check if exif exists
       if (!exif) {
         this.alrt(
-          'Missing Complaint',
+          'Missing exif data',
           `Can't extract exif data from photo.\nPlease, select proper photo.`
         );
         return;
@@ -829,14 +829,14 @@ export default class Submission extends React.Component {
         const { DateTimeOriginal: timeofreport } = exif;
         // Check time image was picked
         if (!timeofreport) {
-          this.alrt('Missing Complaint', `Can't extract time.\nPlease, select proper photo.`);
+          this.alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
           return;
         }
         const { lat, lng, altitude } = getLocationDataFromExif(exif);
         // Check if location exists
         if (!lat || !lng) {
           this.alrt(
-            'Missing Complaint',
+            'Missing photo location',
             'This photo does not contain location data.\nPlease select a photo that has valid location data'
           );
           return;
@@ -877,7 +877,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => {});
+            .catch(e => { });
         }
       }
 
