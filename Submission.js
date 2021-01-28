@@ -19,7 +19,7 @@ import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
 import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
 import ComplaintView from "./ComplaintView";
-import { getLocationDataFromExif, checkAdressNotBelongsToNY } from "./utils/locations";
+import { getLocationDataFromExif, checkAddressNotBelongsToNY } from "./utils/locations";
 import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -790,7 +790,7 @@ export default class Submission extends React.Component {
     return await reverseGeocode(image.location)
       .then(places => {
         const place = places.results[0];
-        if (!checkAdressNotBelongsToNY(place)) {
+        if (!checkAddressNotBelongsToNY(place)) {
           return Promise.resolve(place);
         } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
       })
