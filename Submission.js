@@ -1,23 +1,12 @@
 import React from "react";
-import {
-  AsyncStorage,
-  Alert,
-  Keyboard,
-  View,
-  StyleSheet,
-} from "react-native";
+import { AsyncStorage, Alert, Keyboard, View, StyleSheet } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
 import * as Constants from "expo-constants";
 import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
-import {
-  Button,
-  Icon,
-  Input,
-} from "react-native-elements";
+import { Button, Icon, Input } from "react-native-elements";
 import { BackHandler } from "react-native";
-import ImageViewer from "react-native-image-zoom-viewer";
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
@@ -28,19 +17,13 @@ import { colors, globalStyles } from "./Styles";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
-import {
-  alpr,
-  finds,
-  api,
-  uploadFile,
-  reverseGeocode,
-} from "./Api";
-import {
-  getLocationDataFromExif,
-  checkAdressNotBelongsToNY,
-} from './Utils/locations'
+import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
 import ComplaintView from "./ComplaintView";
-import { checkForNoNullValuesInArray } from "./Utils/others";
+import { getLocationDataFromExif, checkAdressNotBelongsToNY } from "./utils/locations";
+import { checkForNoNullValuesInArray } from "./utils/others";
+import ImageViewer from "./components/ImageViewer";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import {SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL} from "./common/dimen";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -158,7 +141,7 @@ export default class Submission extends React.Component {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
-        onPress: () => { }
+        onPress: () => {}
       },
       {
         text: "OK",
@@ -173,7 +156,7 @@ export default class Submission extends React.Component {
     if (!this.state) {
       return false;
     }
-    if (this.state.imageModal != undefined) {
+    if (this.state.imageModal !== undefined) {
       this.setState({ imageModal: undefined });
       return true;
     }
@@ -208,8 +191,6 @@ export default class Submission extends React.Component {
 
   saveOffline = async () => {
     try {
-      const state = Object.assign(this.state, {});
-
       await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
     } catch (error) {
       // console.log("async error", error);
@@ -237,7 +218,6 @@ export default class Submission extends React.Component {
         this.props.navigation.setParams({ canGoBack: false });
       }
       const diffy = diff(this.state, this.initialState);
-      //// console.log("diff is", diffy);
       const okEqual = isEqual(this.state, this.initialState);
       this.props.navigation.setParams({
         isInitialState: this.modalsShowing || okEqual
@@ -249,43 +229,22 @@ export default class Submission extends React.Component {
     });
   }
 
-  closeModal() {
+  closeModal = () => {
     this.setState({ imageModal: undefined });
-  }
+  };
 
-  removeImage(index) {
+  removeImage = index => {
     const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
     this.setState({ media: newImages, imageModal: undefined });
-  }
+  };
 
   get addressString() {
-    const { location } = this.state;
-    if (!location) {
+    try {
+      return this.state.location.place.formatted_address;
+    } catch (e) {
       return null;
-    }
-    const { place } = location;
-    if (!place) {
-      return null;
-    }
-    return place.formatted_address;
-    const { address_components: address } = place;
-    const premise = finds(address, "premise");
-    const building = finds(address, "street_number");
-    const street = finds(address, "route");
-    const locality = finds(address, "locality");
-    const sublocality = finds(address, "neighborhood");
-    let toUse = null;
-    if (sublocality && sublocality !== locality) {
-      toUse = sublocality;
-    } else {
-      toUse = locality;
-    }
-    if (premise) {
-      return [premise, toUse].filter(x => x).join(" ");
-    } else {
-      return [[building, street].join(" "), toUse].filter(x => x).join(", ");
     }
   }
 
@@ -293,8 +252,8 @@ export default class Submission extends React.Component {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
-          result.thirtyDays
-        )} report within a thirty day timespan.`
+            result.thirtyDays
+          )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg);
@@ -303,17 +262,7 @@ export default class Submission extends React.Component {
   get complaintModal() {
     if (this.state.showComplaintModal) {
       return (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            backgroundColor: "white"
-          }}
-        >
+        <View style={styles.complaintModal}>
           <ComplaintView
             onComplaintsChanged={c => {
               this._complaint.blur();
@@ -331,62 +280,14 @@ export default class Submission extends React.Component {
     if (this.state.imageModal !== undefined) {
       return (
         <ImageViewer
-          ref={ref => {
-            this._imageViewer = ref;
-          }}
-          style={{
-            position: "absolute",
-            bottom: 0,
-            top: 0,
-            left: 0,
-            right: 0
-          }}
-          onClick={() => this.closeModal()}
-          footerContainerStyle={{
-            bottom: 0,
-            left: 0,
-            right: 0,
-            position: "absolute",
-            zIndex: 9999
-          }}
-          renderFooter={index => {
-            return (
-              <View
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  flexWrap: "nowrap",
-                  justifyContent: "flex-end"
-                }}
-              >
-                <Icon
-                  iconStyle={{
-                    padding: 14
-                  }}
-                  size={26}
-                  color="white"
-                  type="material"
-                  name="remove-circle-outline"
-                  onPress={() => this.removeImage(index)}
-                />
-              </View>
-            );
-          }}
-          imageUrls={this.state.media}
+          imagesURLs={this.state.media}
+          onCloseModal={this.closeModal}
+          onRemoveImage={this.removeImage}
         />
       );
     } else {
-      return <></>;
+      return null;
     }
-  }
-
-  componentWillMount() {
-    this.timeofreportinterval = setInterval(() => {
-      const time = this.timeofreport(this.state.timeofreport);
-      if (this.state.timeofreportstr !== time) {
-        this.setState({ timeofreportstr: time });
-      }
-    }, 60000);
   }
 
   componentWillUnmount() {
@@ -504,7 +405,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    var promise = new Promise(function (resolve, reject) {
+    const promise = new Promise(function(resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -519,7 +420,7 @@ export default class Submission extends React.Component {
       resolve({ total, loaded });
     });
     promise
-      .then(prog => {
+      .then(() => {
         setState({
           progress: loaded / total
         });
@@ -566,7 +467,7 @@ export default class Submission extends React.Component {
           this.setState({ uploadedMedia });
           this.submit();
         })
-        .catch(e => {
+        .catch(() => {
           this.alrt("Error uploading image", "Image upload failed.");
         });
       return;
@@ -581,7 +482,7 @@ export default class Submission extends React.Component {
         listener: this.progressListener
       })
         .then(uploaded => {
-          if (file.type == "image") {
+          if (file.type === "image") {
             uploaded.type = "S3_IMAGE";
           } else {
             uploaded.type = "S3_VIDEO";
@@ -628,8 +529,9 @@ export default class Submission extends React.Component {
     const zip = finds(address, "postal_code");
     const formatted_address = place.formatted_address;
     const areAddressFieldsNonNull = checkForNoNullValuesInArray([
-      building, street
-    ])
+      building,
+      street
+    ]);
     if (!areAddressFieldsNonNull) {
       this.alrt(
         "Invalid location",
@@ -694,8 +596,11 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
-        Alert.alert(JSON.stringify(Object.assign({}, e).response.status), Object.assign({}, e).response.data)
-        console.warn(Object.assign({}, e))
+        Alert.alert(
+          JSON.stringify(Object.assign({}, e).response.status),
+          Object.assign({}, e).response.data
+        );
+        console.warn(Object.assign({}, e));
       });
   }
 
@@ -746,132 +651,135 @@ export default class Submission extends React.Component {
     const { media, timeofreportstr } = this.state;
     return (
       <>
-        <View style={globalStyles.flex1}>
-          <ScrollView style={globalStyles.mainContainer}>
-            <View style={styles.container}>
-              <View style={styles.inputWrapper}>
-                <Button
-                  type="outline"
-                  buttonStyle={styles.addPhoto}
-                  containerStyle={styles.addPhotoContainer}
-                  onPress={this._pickImage}
-                  title={this.addPhotoText}
-                />
-              </View>
-              <ImageCarousel
-                onItemPressed={({ item, index }) => {
-                  this.setState({ imageModal: index });
-                }}
-                entries={media}
+        <KeyboardAwareScrollView
+            style={globalStyles.mainContainer}
+            viewIsInsideTabBar
+            extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
+          <View style={styles.container}>
+            <View style={styles.inputWrapper}>
+              <Button
+                type="outline"
+                buttonStyle={styles.addPhoto}
+                containerStyle={styles.addPhotoContainer}
+                onPress={this._pickImage}
+                title={this.addPhotoText}
               />
-              <View style={styles.inputWrapper}>
-                <TouchSpoof
-                  onPress={() => this.setState({ showComplaintModal: true })}
-                >
-                  <Input
-                    ref={r => (this._complaint = r)}
-                    caretHidden={true}
-                    autoFocus={false}
-                    onFocus={x => this.setState({ showComplaintModal: true })}
-                    label={"Complaint"}
-                    placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-                    value={this.state.complaints.map(x => x.name).join(", ")}
-                  />
-                </TouchSpoof>
-              </View>
-              <View style={styles.inputWrapper}>
-                <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
-                  <Input
-                    editable={false}
-                    label={"Address"}
-                    placeholder={"Automatically will be extracted from photo"}
-                    value={this.addressString}
-                  />
-                </ScrollView>
-              </View>
-              <View style={styles.inputWrapper}>
+            </View>
+            <ImageCarousel
+              onItemPressed={({ item, index }) => {
+                this.setState({ imageModal: index });
+              }}
+              entries={media}
+            />
+            <View style={styles.inputWrapper}>
+              <TouchSpoof
+                onPress={() => this.setState({ showComplaintModal: true })}
+              >
+                <Input
+                  ref={r => (this._complaint = r)}
+                  caretHidden={true}
+                  autoFocus={false}
+                  onFocus={x => this.setState({ showComplaintModal: true })}
+                  label={"Complaint"}
+                  placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                  value={this.state.complaints.map(x => x.name).join(", ")}
+                />
+              </TouchSpoof>
+            </View>
+            <View style={styles.inputWrapper}>
+              <ScrollView
+                horizontal={true}
+                showsHorizontalScrollIndicator={false}
+              >
                 <Input
                   editable={false}
-                  label={"When Incident Occurred"}
+                  label={"Address"}
                   placeholder={"Automatically will be extracted from photo"}
-                  value={timeofreportstr}
+                  value={this.addressString}
                 />
-              </View>
-              <View style={styles.inputWrapper}>
-                <LicenseView
-                  ref={r => (this._license = r)}
-                  onPlateSelected={plate => {
-                    const { candidate } = plate;
-                    if (
-                      candidate &&
-                      candidate.plate &&
-                      candidate.plate.length > 0
-                    ) {
-                      this.setState({ license: plate });
-                    } else {
-                      this.setState({ license: undefined });
-                    }
-                  }}
-                  license={this.state.license}
-                  alpr={this.state.alpr}
-                />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Input
-                  label={"Incident Description (optional)"}
-                  onChangeText={v => {
-                    this.setState({ description: v });
-                  }}
-                  multiline={true}
-                  numberOfLines={3}
-                  placeholder={"Add any additional details to provide to 311"}
-                  textAlignVertical={"top"}
-                  value={this.state.description}
-                />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Input
-                  label={"Notes (optional and private)"}
-                  onChangeText={v => this.setState({ notes: v })}
-                  multiline={true}
-                  numberOfLines={3}
-                  placeholder={
-                    "Notes that only you will see and will not be sent to 311"
-                  }
-                  textAlignVertical={"top"}
-                  value={this.state.notes}
-                />
-              </View>
-              <View style={{ height: 100 }} />
+              </ScrollView>
             </View>
-          </ScrollView>
+            <View style={styles.inputWrapper}>
+              <Input
+                editable={false}
+                label={"When Incident Occurred"}
+                placeholder={"Automatically will be extracted from photo"}
+                value={timeofreportstr}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <LicenseView
+                ref={r => (this._license = r)}
+                onPlateSelected={plate => {
+                  const { candidate } = plate;
+                  if (
+                    candidate &&
+                    candidate.plate &&
+                    candidate.plate.length > 0
+                  ) {
+                    this.setState({ license: plate });
+                  } else {
+                    this.setState({ license: undefined });
+                  }
+                }}
+                license={this.state.license}
+                alpr={this.state.alpr}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <Input
+                label={"Incident Description (optional)"}
+                onChangeText={v => {
+                  this.setState({ description: v });
+                }}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={"Add any additional details to provide to 311"}
+                textAlignVertical={"top"}
+                value={this.state.description}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <Input
+                label={"Notes (optional and private)"}
+                onChangeText={v => this.setState({ notes: v })}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={
+                  "Notes that only you will see and will not be sent to 311"
+                }
+                textAlignVertical={"top"}
+                value={this.state.notes}
+              />
+            </View>
+          </View>
+        </KeyboardAwareScrollView>
+        <View
+          style={{
+            width: "100%",
+            height: 4,
+            opacity: this.state.submitting ? 100 : 0,
+            backgroundColor: setColor(colors.orange)
+              .alpha(0.38)
+              .rgb()
+              .string()
+          }}
+        >
           <View
             style={{
-              width: "100%",
-              height: 4,
-              opacity: this.state.submitting ? 100 : 0,
-              backgroundColor: setColor(colors.orange)
-                .alpha(0.38)
-                .rgb()
-                .string()
+              width: `${this.state.percent ?? 0}%`,
+              height: "100%",
+              backgroundColor: colors.orange
             }}
-          >
-            <View
-              style={{
-                width: `${this.state.percent ?? 0}%`,
-                height: "100%",
-                backgroundColor: colors.orange
-              }}
-            />
-          </View>
-          <FloatingMainButton
-            isEnabled
-            isLoading={this.state.submitting}
-            onPress={() => this.submit()}
-            title={'SUBMIT'}
-            containerStyle={styles.submitButtonWrapper}
           />
         </View>
+        <FloatingMainButton
+          isEnabled
+          isLoading={this.state.submitting}
+          onPress={() => this.submit()}
+          title={"SUBMIT"}
+          containerStyle={styles.submitButtonWrapper}
+        />
         {this.imageModal}
         {this.complaintModal}
       </>
@@ -918,17 +826,13 @@ export default class Submission extends React.Component {
         );
         return;
       } else {
-        const {
-          DateTimeOriginal: timeofreport,
-        } = exif;
+        const { DateTimeOriginal: timeofreport } = exif;
         // Check time image was picked
         if (!timeofreport) {
           this.alrt('Missing Complaint', `Can't extract time.\nPlease, select proper photo.`);
           return;
         }
-        const {
-          lat, lng, altitude
-        } = getLocationDataFromExif(exif);
+        const { lat, lng, altitude } = getLocationDataFromExif(exif);
         // Check if location exists
         if (!lat || !lng) {
           this.alrt(
@@ -973,7 +877,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => { });
+            .catch(e => {});
         }
       }
 
@@ -1003,7 +907,6 @@ export default class Submission extends React.Component {
 
 const styles = StyleSheet.create({
   addPhoto: {
-    // height: 100
     height: 55
   },
   addPhotoContainer: {
@@ -1014,7 +917,7 @@ const styles = StyleSheet.create({
   },
   button: {
     width: "30%",
-    height: 60
+    height: SUBMIT_BUTTON_HEIGHT
   },
   container: {
     width: "100%",
@@ -1028,10 +931,19 @@ const styles = StyleSheet.create({
   },
   submitButtonWrapper: {
     paddingHorizontal: 10,
-    paddingVertical: 5
+    paddingVertical: SUBMIT_BUTTON_PADDING_VERTICAL
   },
   inputWrapper: {
     marginLeft: -8,
-    marginRight: -8,
+    marginRight: -8
   },
+  complaintModal: {
+    position: "absolute",
+    bottom: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    backgroundColor: "white"
+  }
 });
