@@ -275,8 +275,6 @@ export default class Submission extends React.Component {
   }
 
   get imageModal() {
-    console.log('getting')
-    console.log(String(this.state.imageModal))
     if (this.state.imageModal !== undefined) {
       return (
         <ImageViewer
