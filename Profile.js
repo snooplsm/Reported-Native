@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity, View,
 } from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Input, Icon } from "react-native-elements";
 import LogoTitle from "./LogoTitle";
 import { ErrorStyle, globalStyles } from "./Styles";
@@ -169,9 +168,9 @@ export default class Profile extends React.Component {
   render() {
     const { editable, user } = this.state;
     return (
-      <View style={styles.mainWrapper}>
+      <>
         {user &&
-          <KeyboardAwareScrollView style={globalStyles.mainContainer}>
+          <KeyboardAwareScrollView style={globalStyles.mainContainer} viewIsInsideTabBar>
             <Input
               label={"First Name"}
               ref={this.firstName}
@@ -234,7 +233,7 @@ export default class Profile extends React.Component {
             containerStyle={styles.saveButton}
           />
         }
-      </View>
+      </>
     );
   }
 }
