@@ -18,10 +18,12 @@ import { isSignedIn } from "./Auth";
 import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
 import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
-import { getLocationDataFromExif } from "./Utils/locations";
+import { getLocationDataFromExif } from "./utils/locations";
 import ComplaintView from "./ComplaintView";
-import { checkForNoNullValuesInArray } from "./Utils/others";
+import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import {SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL} from "./common/dimen";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -229,14 +231,14 @@ export default class Submission extends React.Component {
 
   closeModal = () => {
     this.setState({ imageModal: undefined });
-  }
+  };
 
-  removeImage = (index) => {
+  removeImage = index => {
     const { media } = this.state;
     let newImages = [...media];
     newImages.splice(index, 1);
     this.setState({ media: newImages, imageModal: undefined });
-  }
+  };
 
   get addressString() {
     try {
@@ -685,135 +687,135 @@ export default class Submission extends React.Component {
     const { media, timeofreportstr } = this.state;
     return (
       <>
-        <View style={globalStyles.flex1}>
-          <ScrollView style={globalStyles.mainContainer}>
-            <View style={styles.container}>
-              <View style={styles.inputWrapper}>
-                <Button
-                  type="outline"
-                  buttonStyle={styles.addPhoto}
-                  containerStyle={styles.addPhotoContainer}
-                  onPress={this._pickImage}
-                  title={this.addPhotoText}
-                />
-              </View>
-              <ImageCarousel
-                onItemPressed={({ item, index }) => {
-                  this.setState({ imageModal: index });
-                }}
-                entries={media}
+        <KeyboardAwareScrollView
+            style={globalStyles.mainContainer}
+            viewIsInsideTabBar
+            extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
+          <View style={styles.container}>
+            <View style={styles.inputWrapper}>
+              <Button
+                type="outline"
+                buttonStyle={styles.addPhoto}
+                containerStyle={styles.addPhotoContainer}
+                onPress={this._pickImage}
+                title={this.addPhotoText}
               />
-              <View style={styles.inputWrapper}>
-                <TouchSpoof
-                  onPress={() => this.setState({ showComplaintModal: true })}
-                >
-                  <Input
-                    ref={r => (this._complaint = r)}
-                    caretHidden={true}
-                    autoFocus={false}
-                    onFocus={x => this.setState({ showComplaintModal: true })}
-                    label={"Complaint"}
-                    placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-                    value={this.state.complaints.map(x => x.name).join(", ")}
-                  />
-                </TouchSpoof>
-              </View>
-              <View style={styles.inputWrapper}>
-                <ScrollView
-                  horizontal={true}
-                  showsHorizontalScrollIndicator={false}
-                >
-                  <Input
-                    editable={false}
-                    label={"Address"}
-                    placeholder={"Automatically will be extracted from photo"}
-                    value={this.addressString}
-                  />
-                </ScrollView>
-              </View>
-              <View style={styles.inputWrapper}>
+            </View>
+            <ImageCarousel
+              onItemPressed={({ item, index }) => {
+                this.setState({ imageModal: index });
+              }}
+              entries={media}
+            />
+            <View style={styles.inputWrapper}>
+              <TouchSpoof
+                onPress={() => this.setState({ showComplaintModal: true })}
+              >
+                <Input
+                  ref={r => (this._complaint = r)}
+                  caretHidden={true}
+                  autoFocus={false}
+                  onFocus={x => this.setState({ showComplaintModal: true })}
+                  label={"Complaint"}
+                  placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                  value={this.state.complaints.map(x => x.name).join(", ")}
+                />
+              </TouchSpoof>
+            </View>
+            <View style={styles.inputWrapper}>
+              <ScrollView
+                horizontal={true}
+                showsHorizontalScrollIndicator={false}
+              >
                 <Input
                   editable={false}
-                  label={"When Incident Occurred"}
+                  label={"Address"}
                   placeholder={"Automatically will be extracted from photo"}
-                  value={timeofreportstr}
+                  value={this.addressString}
                 />
-              </View>
-              <View style={styles.inputWrapper}>
-                <LicenseView
-                  ref={r => (this._license = r)}
-                  onPlateSelected={plate => {
-                    const { candidate } = plate;
-                    if (
-                      candidate &&
-                      candidate.plate &&
-                      candidate.plate.length > 0
-                    ) {
-                      this.setState({ license: plate });
-                    } else {
-                      this.setState({ license: undefined });
-                    }
-                  }}
-                  license={this.state.license}
-                  alpr={this.state.alpr}
-                />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Input
-                  label={"Incident Description (optional)"}
-                  onChangeText={v => {
-                    this.setState({ description: v });
-                  }}
-                  multiline={true}
-                  numberOfLines={3}
-                  placeholder={"Add any additional details to provide to 311"}
-                  textAlignVertical={"top"}
-                  value={this.state.description}
-                />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Input
-                  label={"Notes (optional and private)"}
-                  onChangeText={v => this.setState({ notes: v })}
-                  multiline={true}
-                  numberOfLines={3}
-                  placeholder={
-                    "Notes that only you will see and will not be sent to 311"
-                  }
-                  textAlignVertical={"top"}
-                  value={this.state.notes}
-                />
-              </View>
-              <View style={{ height: 100 }} />
+              </ScrollView>
             </View>
-          </ScrollView>
+            <View style={styles.inputWrapper}>
+              <Input
+                editable={false}
+                label={"When Incident Occurred"}
+                placeholder={"Automatically will be extracted from photo"}
+                value={timeofreportstr}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <LicenseView
+                ref={r => (this._license = r)}
+                onPlateSelected={plate => {
+                  const { candidate } = plate;
+                  if (
+                    candidate &&
+                    candidate.plate &&
+                    candidate.plate.length > 0
+                  ) {
+                    this.setState({ license: plate });
+                  } else {
+                    this.setState({ license: undefined });
+                  }
+                }}
+                license={this.state.license}
+                alpr={this.state.alpr}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <Input
+                label={"Incident Description (optional)"}
+                onChangeText={v => {
+                  this.setState({ description: v });
+                }}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={"Add any additional details to provide to 311"}
+                textAlignVertical={"top"}
+                value={this.state.description}
+              />
+            </View>
+            <View style={styles.inputWrapper}>
+              <Input
+                label={"Notes (optional and private)"}
+                onChangeText={v => this.setState({ notes: v })}
+                multiline={true}
+                numberOfLines={3}
+                placeholder={
+                  "Notes that only you will see and will not be sent to 311"
+                }
+                textAlignVertical={"top"}
+                value={this.state.notes}
+              />
+            </View>
+          </View>
+        </KeyboardAwareScrollView>
+        <View
+          style={{
+            width: "100%",
+            height: 4,
+            opacity: this.state.submitting ? 100 : 0,
+            backgroundColor: setColor(colors.orange)
+              .alpha(0.38)
+              .rgb()
+              .string()
+          }}
+        >
           <View
             style={{
-              width: "100%",
-              height: 4,
-              opacity: this.state.submitting ? 100 : 0,
-              backgroundColor: setColor(colors.orange)
-                .alpha(0.38)
-                .rgb()
-                .string()
+              width: `${this.state.percent ?? 0}%`,
+              height: "100%",
+              backgroundColor: colors.orange
             }}
-          >
-            <View
-              style={{
-                width: `${this.state.percent ?? 0}%`,
-                height: "100%",
-                backgroundColor: colors.orange
-              }}
-            />
-          </View>
-          <FloatingMainButton
-            isEnabled
-            isLoading={this.state.submitting}
-            onPress={() => this.submit()}
-            title={"SUBMIT"}
-            containerStyle={styles.submitButtonWrapper}
           />
         </View>
+        <FloatingMainButton
+          isEnabled
+          isLoading={this.state.submitting}
+          onPress={() => this.submit()}
+          title={"SUBMIT"}
+          containerStyle={styles.submitButtonWrapper}
+        />
         {this.imageModal}
         {this.complaintModal}
       </>
@@ -821,7 +823,7 @@ export default class Submission extends React.Component {
   }
 
   _pickImage = async () => {
-    const { location, license } = this.state;
+    const { license } = this.state;
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
@@ -922,7 +924,7 @@ const styles = StyleSheet.create({
   },
   button: {
     width: "30%",
-    height: 60
+    height: SUBMIT_BUTTON_HEIGHT
   },
   container: {
     width: "100%",
@@ -936,7 +938,7 @@ const styles = StyleSheet.create({
   },
   submitButtonWrapper: {
     paddingHorizontal: 10,
-    paddingVertical: 5
+    paddingVertical: SUBMIT_BUTTON_PADDING_VERTICAL
   },
   inputWrapper: {
     marginLeft: -8,
