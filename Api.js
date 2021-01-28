@@ -290,14 +290,6 @@ const urlToBlob = url =>
     xhr.send();
   });
 
-export const finds = (address, key) => {
-  const res = address
-    .filter(x => x.types.includes(key))
-    .map(x => x.short_name)
-    .shift()
-  return res
-};
-
 export const geocode = address => {
   if (!address) {
     return Promise.reject(`illegal address ${address}`);
