@@ -5,7 +5,6 @@ import {
   Keyboard,
   View,
   StyleSheet,
-  Platform
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
@@ -35,13 +34,13 @@ import {
   api,
   uploadFile,
   reverseGeocode,
-  pushTokenNeedsRegisteringAsync,
-  registerForPushNotificationsAsync
 } from "./Api";
-import { getLocationDataFromExif } from './Utils/locations'
+import {
+  getLocationDataFromExif,
+  checkAdressNotBelongsToNY,
+} from './Utils/locations'
 import ComplaintView from "./ComplaintView";
 import { checkForNoNullValuesInArray } from "./Utils/others";
-import * as Sentry from 'sentry-expo';
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -532,7 +531,6 @@ export default class Submission extends React.Component {
 
   submit() {
     const { location, complaints, timeofreport } = this.state;
-    Sentry.Native.captureException(new Error('not an error, sentry test'))
     if (complaints.length < 1) {
       this.alrt(
         "Missing Complaint",
@@ -540,18 +538,6 @@ export default class Submission extends React.Component {
       );
       return;
     }
-    if (!location) {
-      this.alrt(
-        `Can't extract location data from photo. Please, select proper photo.`
-      );
-      return;
-    }
-
-    if (!timeofreport) {
-      this.alrt('Missing Complaint', `Can't extract time. Please, select proper photo.`);
-      return;
-    }
-
     const okPlate = this.validatePlate(this.submit);
     if (okPlate === false) {
       this.alrt("Invalid License Plate", `${okPlate}`);
@@ -562,21 +548,6 @@ export default class Submission extends React.Component {
     }
     const place = location.place;
     const address = place.address_components;
-    const administrative_area_level_1 = finds(address, "administrative_area_level_1");
-    if (!administrative_area_level_1 || administrative_area_level_1.toUpperCase() !== 'NY') {
-      this.alrt(
-        'Error geo coordinates',
-        'The location is outside of NYC. Reported only works in NYC.'
-      );
-      return;
-    }
-    if (!timeofreport) {
-      this.alrt(
-        "Incident Time Missing",
-        "Time you observed infraction is missing."
-      );
-      return;
-    }
     const plateNeedsUploading = okPlate && this.state.license.plate.image;
     const plateUploaded =
       !plateNeedsUploading ||
@@ -596,7 +567,6 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          Sentry.Native.captureException(new Error(e))
           this.alrt("Error uploading image", "Image upload failed.");
         });
       return;
@@ -622,7 +592,6 @@ export default class Submission extends React.Component {
           this.submit();
         })
         .catch(e => {
-          Sentry.Native.captureException(new Error(e))
           this.alrt("Error uploading media", JSON.stringify(e));
         });
       return;
@@ -909,14 +878,27 @@ export default class Submission extends React.Component {
     );
   }
 
+  getLocationData = async (image) => {
+    return await reverseGeocode(image.location)
+      .then(places => {
+        const place = places.results[0];
+        if (!checkAdressNotBelongsToNY(place)) {
+          return Promise.resolve(place);
+        } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
+      })
+      .catch(e => {
+        this.alrt('Error geo coordinates', e.message);
+      });
+  }
+
   _pickImage = async () => {
-    const { location, license } = this.state;
+    const { license } = this.state;
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const imageLaunch = ImagePicker.launchImageLibraryAsync({
       exif: true,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
-    const success = result => {
+    const success = async result => {
       if (result.cancelled) {
         return;
       }
@@ -928,16 +910,33 @@ export default class Submission extends React.Component {
         duration: duration,
         type: type
       };
-
-      if (exif) {
+      // Check if exif exists
+      if (!exif) {
+        this.alrt(
+          'Missing Complaint',
+          `Can't extract exif data from photo.\nPlease, select proper photo.`
+        );
+        return;
+      } else {
         const {
           DateTimeOriginal: timeofreport,
         } = exif;
-
+        // Check time image was picked
+        if (!timeofreport) {
+          this.alrt('Missing Complaint', `Can't extract time.\nPlease, select proper photo.`);
+          return;
+        }
         const {
           lat, lng, altitude
-        } = getLocationDataFromExif(exif)
-
+        } = getLocationDataFromExif(exif);
+        // Check if location exists
+        if (!lat || !lng) {
+          this.alrt(
+            'Missing Complaint',
+            'This photo does not contain location data.\nPlease select a photo that has valid location data'
+          );
+          return;
+        }
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
@@ -947,12 +946,11 @@ export default class Submission extends React.Component {
           altitude: altitude,
           location: { lat, lng }
         });
-        reverseGeocode(image.location)
-          .then(places => {
-            const place = places.results[0];
-            this.setState({ location: { place } });
-          })
-          .catch(e => { });
+        const place = await this.getLocationData(image);
+        if (!place) return;
+        this.setState({
+          location: { place },
+        });
         if (!license) {
           let resize = null;
           if (width > height) {
