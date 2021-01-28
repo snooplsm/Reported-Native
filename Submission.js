@@ -791,7 +791,7 @@ export default class Submission extends React.Component {
       .then(places => {
         const place = places.results[0];
         if (!checkAddressNotBelongsToNY(place)) {
-          return Promise.resolve(place);
+          return place;
         } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
       })
       .catch(e => {
