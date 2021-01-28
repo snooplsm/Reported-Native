@@ -17,13 +17,13 @@ import { colors, globalStyles } from "./Styles";
 import { isSignedIn } from "./Auth";
 import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
-import { alpr, finds, api, uploadFile, reverseGeocode } from "./Api";
-import { getLocationDataFromExif } from "./utils/locations";
+import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 import ComplaintView from "./ComplaintView";
+import { getLocationDataFromExif, checkAddressNotBelongsToNY, findInLocation } from "./utils/locations";
 import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
-import {SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL} from "./common/dimen";
+import { SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL } from "./common/dimen";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -141,7 +141,7 @@ export default class Submission extends React.Component {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
-        onPress: () => {}
+        onPress: () => { }
       },
       {
         text: "OK",
@@ -252,8 +252,8 @@ export default class Submission extends React.Component {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
-            result.thirtyDays
-          )} report within a thirty day timespan.`
+          result.thirtyDays
+        )} report within a thirty day timespan.`
         : `This is your ${ordinal(result.allTime)} report submitted.`;
     let msg = `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg);
@@ -405,7 +405,7 @@ export default class Submission extends React.Component {
   }
 
   progressListener(progress) {
-    const promise = new Promise(function(resolve) {
+    const promise = new Promise(function (resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
@@ -439,21 +439,6 @@ export default class Submission extends React.Component {
       );
       return;
     }
-    if (!location) {
-      this.alrt(
-        `Can't extract location data from photo. Please, select proper photo.`
-      );
-      return;
-    }
-
-    if (!timeofreport) {
-      this.alrt(
-        "Missing Complaint",
-        `Can't extract time. Please, select proper photo.`
-      );
-      return;
-    }
-
     const okPlate = this.validatePlate(this.submit);
     if (okPlate === false) {
       this.alrt("Invalid License Plate", `${okPlate}`);
@@ -464,27 +449,6 @@ export default class Submission extends React.Component {
     }
     const place = location.place;
     const address = place.address_components;
-    const administrative_area_level_1 = finds(
-      address,
-      "administrative_area_level_1"
-    );
-    if (
-      !administrative_area_level_1 ||
-      administrative_area_level_1.toUpperCase() !== "NY"
-    ) {
-      this.alrt(
-        "Error geo coordinates",
-        "The location is outside of NYC. Reported only works in NYC."
-      );
-      return;
-    }
-    if (!timeofreport) {
-      this.alrt(
-        "Incident Time Missing",
-        "Time you observed infraction is missing."
-      );
-      return;
-    }
     const plateNeedsUploading = okPlate && this.state.license.plate.image;
     const plateUploaded =
       !plateNeedsUploading ||
@@ -555,14 +519,14 @@ export default class Submission extends React.Component {
     }
 
     const geo = place.geometry.location;
-    const building = finds(address, "street_number");
-    const street = finds(address, "route");
-    const sublocality = finds(address, "sublocality");
-    const premise = finds(address, "premise");
-    const city = finds(address, "locality");
-    const county = finds(address, "administrative_area_level_2");
-    const state = finds(address, "administrative_area_level_1");
-    const zip = finds(address, "postal_code");
+    const building = findInLocation(address, "street_number");
+    const street = findInLocation(address, "route");
+    const sublocality = findInLocation(address, "sublocality");
+    const premise = findInLocation(address, "premise");
+    const city = findInLocation(address, "locality");
+    const county = findInLocation(address, "administrative_area_level_2");
+    const state = findInLocation(address, "administrative_area_level_1");
+    const zip = findInLocation(address, "postal_code");
     const formatted_address = place.formatted_address;
     const areAddressFieldsNonNull = checkForNoNullValuesInArray([
       building,
@@ -688,9 +652,9 @@ export default class Submission extends React.Component {
     return (
       <>
         <KeyboardAwareScrollView
-            style={globalStyles.mainContainer}
-            viewIsInsideTabBar
-            extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
+          style={globalStyles.mainContainer}
+          viewIsInsideTabBar
+          extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
           <View style={styles.container}>
             <View style={styles.inputWrapper}>
               <Button
@@ -822,6 +786,19 @@ export default class Submission extends React.Component {
     );
   }
 
+  getLocationData = async (image) => {
+    return await reverseGeocode(image.location)
+      .then(places => {
+        const place = places.results[0];
+        if (!checkAddressNotBelongsToNY(place)) {
+          return place;
+        } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
+      })
+      .catch(e => {
+        this.alrt('Error geo coordinates', e.message);
+      });
+  }
+
   _pickImage = async () => {
     const { license } = this.state;
     const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
@@ -829,7 +806,7 @@ export default class Submission extends React.Component {
       exif: true,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
-    const success = result => {
+    const success = async result => {
       if (result.cancelled) {
         return;
       }
@@ -841,12 +818,29 @@ export default class Submission extends React.Component {
         duration: duration,
         type: type
       };
-
-      if (exif) {
+      // Check if exif exists
+      if (!exif) {
+        this.alrt(
+          'Missing exif data',
+          `Can't extract exif data from photo.\nPlease, select proper photo.`
+        );
+        return;
+      } else {
         const { DateTimeOriginal: timeofreport } = exif;
-
+        // Check time image was picked
+        if (!timeofreport) {
+          this.alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
+          return;
+        }
         const { lat, lng, altitude } = getLocationDataFromExif(exif);
-
+        // Check if location exists
+        if (!lat || !lng) {
+          this.alrt(
+            'Missing photo location',
+            'This photo does not contain location data.\nPlease select a photo that has valid location data'
+          );
+          return;
+        }
         const timeof =
           timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
@@ -856,12 +850,11 @@ export default class Submission extends React.Component {
           altitude: altitude,
           location: { lat, lng }
         });
-        reverseGeocode(image.location)
-          .then(places => {
-            const place = places.results[0];
-            this.setState({ location: { place } });
-          })
-          .catch(e => {});
+        const place = await this.getLocationData(image);
+        if (!place) return;
+        this.setState({
+          location: { place },
+        });
         if (!license) {
           let resize = null;
           if (width > height) {
@@ -884,7 +877,7 @@ export default class Submission extends React.Component {
                 alpr: data
               });
             })
-            .catch(e => {});
+            .catch(e => { });
         }
       }
 
