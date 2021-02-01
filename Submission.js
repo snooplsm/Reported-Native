@@ -627,26 +627,6 @@ export default class Submission extends React.Component {
     }
   }
 
-  get percentageOpacity() {
-    let percent = 0.3;
-    if (this.validatePlate() === true) {
-      percent += 0.2;
-    }
-    if (this.state.complaints.length === 1) {
-      percent += 0.1;
-    }
-    if (this.state.location) {
-      percent += 0.1;
-    }
-    if (this.state.media.length > 0) {
-      percent += 0.1;
-    }
-    if (this.state.timeofreport) {
-      percent += 0.2;
-    }
-    return Math.min(1, percent);
-  }
-
   render() {
     const { media, timeofreportstr } = this.state;
     return (

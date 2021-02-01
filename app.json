@@ -8,7 +8,7 @@
       "android",
       "web"
     ],
-    "version": "3.0.7",
+    "version": "3.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "splash": {
@@ -17,8 +17,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "nyc.reported.app2",
-      "buildNumber": "35",
+      "bundleIdentifier": "com.reported.reported",
+      "buildNumber": "39",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true,
       "infoPlist": {
