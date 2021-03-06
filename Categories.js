@@ -86,13 +86,5 @@ export const categories = [
     updatedAt: "2018-04-14T18:49:13.209Z",
     type: "complaint",
     typeofuser: "cyclist, walker, pedestrian, passenger"
-  },
-  {
-    id: "GQpWT1DGqz",
-    name: "53' Truck / Oversized Vehicle",
-    createdAt: "2018-04-14T18:49:04.972Z",
-    updatedAt: "2018-04-14T18:49:13.209Z",
-    type: "Complaint",
-    typeofuser: "cyclist, walker, pedestrian, passenger"
   }
 ].sort((a, b) => a.name > b.name);
