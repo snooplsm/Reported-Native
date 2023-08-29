@@ -100,14 +100,17 @@ export default class Login extends React.Component {
         if (x.response) {
           if (x.response.status == 401) {
             message = "Credentials not found";
+          } else if (x.response.status >= 500 && x.response.status < 600) {
+            message = "Server error";
           } else {
-            message = x.response.data.message;
+            message = x.response.data.message || "No response from server";
           }
         } else if (x.request) {
           message = "Server was unresponsive";
         } else {
           message = "Unknown error";
         }
+        console.log('error', message, x.response);
         this.setState({ loading: false, error: message });
       });
   }
@@ -165,7 +168,7 @@ export default class Login extends React.Component {
           </View>
           <Button
             loading={loading}
-            backgroundColor={'white' }
+            backgroundColor={'white'}
             onPress={() => this.onForgotPassword()}
             buttonStyle={{
               ...ButtonStyle.outline,
