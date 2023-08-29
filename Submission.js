@@ -1,5 +1,6 @@
 import React from "react";
-import { AsyncStorage, Alert, Keyboard, View, StyleSheet } from "react-native";
+import { Alert, Keyboard, View, StyleSheet } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Permissions from "expo-permissions";
 import * as Constants from "expo-constants";

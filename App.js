@@ -1,9 +1,10 @@
 import React from "react";
 
 import { Linking } from "react-native";
-import { Notifications } from "expo";
+import * as Notifications from 'expo-notifications';
 import { AppContainer } from "./Navigation";
-import {SafeAreaProvider} from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default class App extends React.Component {
   constructor(props) {
@@ -11,7 +12,7 @@ export default class App extends React.Component {
   }
 
   componentDidMount() {
-    this._notificationSubscription = Notifications.addListener(
+    this._notificationSubscription = Notifications.addNotificationReceivedListener(
       this._handleNotification
     );
   }
@@ -28,9 +29,11 @@ export default class App extends React.Component {
 
   render() {
     return (
-        <SafeAreaProvider>
+      <SafeAreaProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
           <AppContainer />
-        </SafeAreaProvider>
+        </GestureHandlerRootView>
+      </SafeAreaProvider>
     )
   }
 }
