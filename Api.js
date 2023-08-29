@@ -4,7 +4,7 @@ import { isSignedIn } from "./Auth";
 import S3 from "aws-sdk/clients/s3";
 import { Credentials } from "aws-sdk";
 
-import { AsyncStorage } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_KEY } from "./Auth";
 import moment from "moment";
 import { Platform } from "react-native";

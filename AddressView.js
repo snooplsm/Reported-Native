@@ -1,7 +1,6 @@
 import React from "react";
 import Autocomplete from "react-native-autocomplete-input";
 import {
-  AsyncStorage,
   Image,
   StyleSheet,
   TouchableOpacity,
@@ -13,6 +12,7 @@ import {
   FlatList,
   Platform
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MapView, { Marker, Polygon } from "react-native-maps";
 import { Button, Icon, Input, Overlay } from "react-native-elements";
 import { AutoStyle } from "./Styles";
