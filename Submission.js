@@ -2,7 +2,6 @@ import React from "react";
 import { Alert, Keyboard, View, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import * as Permissions from "expo-permissions";
 import * as Constants from "expo-constants";
 import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -767,13 +766,17 @@ export default class Submission extends React.Component {
     );
   }
 
-  getLocationData = async (image) => {
-    return await reverseGeocode(image.location)
+  getLocationData = async (imageLocation) => {
+    return await reverseGeocode(imageLocation)
       .then(places => {
-        const place = places.results[0];
-        if (!checkAddressNotBelongsToNY(place)) {
-          return place;
-        } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
+        if (!places || !places.results || !places.results[0]) {
+          this.alrt('Error getting coordinates');
+        } else {
+          const place = places.results[0];
+          if (!checkAddressNotBelongsToNY(place)) {
+            return place;
+          } else throw new Error('The location is outside of NYC. Reported only works in NYC.');
+        }
       })
       .catch(e => {
         this.alrt('Error geo coordinates', e.message);
@@ -782,99 +785,112 @@ export default class Submission extends React.Component {
 
   _pickImage = async () => {
     const { license } = this.state;
-    const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
-    const imageLaunch = ImagePicker.launchImageLibraryAsync({
+    // const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    console.log('perm', permission);
+    const result = await ImagePicker.launchImageLibraryAsync({
       exif: true,
       mediaTypes: ImagePicker.MediaTypeOptions.Images
     });
-    const success = async result => {
-      if (result.cancelled) {
+
+    console.log('image', result);
+    if (result.canceled) {
+      return;
+    }
+
+    const { assets } = result;
+    if (!assets || !assets[0]) {
+      return;
+    }
+
+    const imageInfo = assets[0];
+    const exif = assets[0].exif;
+
+    const image = {
+      url: imageInfo.uri,
+      width: imageInfo.width,
+      height: imageInfo.height,
+      duration: imageInfo.duration,
+      type: imageInfo.type,
+    };
+    // Check if exif exists
+    if (!exif) {
+      this.alrt(
+        'Missing exif data',
+        `Can't extract exif data from photo.\nPlease, select proper photo.`
+      );
+      return;
+    } else {
+      const { DateTimeOriginal: timeofreport } = exif;
+      // Check time image was picked
+      if (!timeofreport) {
+        this.alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
         return;
       }
-      const { width, height, uri, type, duration, exif } = result;
-      const image = {
-        url: uri,
-        width: width,
-        height: height,
-        duration: duration,
-        type: type
-      };
-      // Check if exif exists
-      if (!exif) {
+      const { lat, lng, altitude } = getLocationDataFromExif(exif);
+      console.log('coord', lat, lng, altitude);
+      // Check if location exists
+      if (!lat || !lng) {
         this.alrt(
-          'Missing exif data',
-          `Can't extract exif data from photo.\nPlease, select proper photo.`
+          'Missing photo location',
+          'This photo does not contain location data.\nPlease select a photo that has valid location data'
         );
         return;
-      } else {
-        const { DateTimeOriginal: timeofreport } = exif;
-        // Check time image was picked
-        if (!timeofreport) {
-          this.alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
-          return;
-        }
-        const { lat, lng, altitude } = getLocationDataFromExif(exif);
-        // Check if location exists
-        if (!lat || !lng) {
-          this.alrt(
-            'Missing photo location',
-            'This photo does not contain location data.\nPlease select a photo that has valid location data'
-          );
-          return;
-        }
-        const timeof =
-          timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
-
-        Object.assign(image, {
-          timeofreport: timeof,
-          takenAt: timeof,
-          altitude: altitude,
-          location: { lat, lng }
-        });
-        const place = await this.getLocationData(image);
-        if (!place) return;
-        this.setState({
-          location: { place },
-        });
-        if (!license) {
-          let resize = null;
-          if (width > height) {
-            resize = { width: Math.min(1200, parseInt(width)) };
-          } else {
-            resize = { height: Math.min(1200, parseInt(height)) };
-          }
-          const data = {
-            original: image
-          };
-          ImageManipulator.manipulateAsync(image.url, [{ resize }])
-            .then(r => {
-              data.resized = r;
-              return alpr.recognize(r);
-            })
-            .then(result => {
-              data.alprResult = result;
-              data.images = [data.resized];
-              this.setState({
-                alpr: data
-              });
-            })
-            .catch(e => { });
-        }
       }
+      const timeof =
+        timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
-      const { timeofreport } = image;
-
-      if (timeofreport) {
-        var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
-        this.setState({
-          timeofreport: datetime,
-          timeofreportstr: this.timeofreport(datetime)
-        });
+      Object.assign(image, {
+        timeofreport: timeof,
+        takenAt: timeof,
+        altitude: altitude,
+        location: { lat, lng }
+      });
+      const place = await this.getLocationData({ lat, lng });
+      if (!place) return;
+      this.setState({
+        location: { place },
+      });
+      if (!license) {
+        let resize = null;
+        if (image.width > image.height) {
+          resize = { width: Math.min(1200, parseInt(image.width)) };
+        } else {
+          resize = { height: Math.min(1200, parseInt(image.height)) };
+        }
+        const data = {
+          original: image
+        };
+        ImageManipulator.manipulateAsync(image.url, [{ resize }])
+          .then(r => {
+            data.resized = r;
+            return alpr.recognize(r);
+          })
+          .then(result => {
+            data.alprResult = result;
+            data.images = [data.resized];
+            this.setState({
+              alpr: data
+            });
+          })
+          .catch(e => { });
       }
+    }
 
-      const media = [...this.state.media, image];
-      this.setState({ media: media });
-    };
+    const { timeofreport } = image;
+
+    if (timeofreport) {
+      var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
+      this.setState({
+        timeofreport: datetime,
+        timeofreportstr: this.timeofreport(datetime)
+      });
+    }
+
+    const media = [...this.state.media, image];
+    this.setState({ media: media });
+
+    /*
     if (permission.status !== "granted") {
       const newPermission = await Permissions.askAsync(Permissions.CAMERA_ROLL);
       if (newPermission.status === "granted") {
@@ -883,6 +899,7 @@ export default class Submission extends React.Component {
     } else {
       imageLaunch.then(success);
     }
+    */
   };
 }
 
