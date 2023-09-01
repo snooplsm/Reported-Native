@@ -119,6 +119,7 @@ export default class Submissions extends React.Component {
     api
       .reports(this.state.filter)
       .then(res => {
+        console.log('report res', res);
         this.setState({ refreshing: false, error: undefined });
         const addressMap = res.data.addresses.reduce((map, x) => {
           map[x.id] = x;

@@ -262,7 +262,7 @@ export default class ReportView extends React.Component {
             alignItems: "flex-end"
           }}
         >
-          {report.points && (
+          {!!report.points ? (
             <Tooltip
               popover={
                 <Text style={{ color: "white", fontWeight: "bold" }}>
@@ -288,8 +288,8 @@ export default class ReportView extends React.Component {
                 }}
               />
             </Tooltip>
-          )}
-          {report.fine && (
+          ) : null}
+          {!!report.fine ? (
             <Tooltip
               popover={
                 <Text style={{ color: "white", fontWeight: "bold" }}>
@@ -314,7 +314,7 @@ export default class ReportView extends React.Component {
                 }}
               />
             </Tooltip>
-          )}
+          ) : null}
           {report.media.find(x => x.type && x.type.indexOf("GUILTY") != -1) && (
             <Avatar
               rounded
