@@ -24,7 +24,6 @@
     "expo-image-manipulator": "~11.3.0",
     "expo-image-picker": "~14.3.2",
     "expo-notifications": "~0.20.1",
-    "expo-permissions": "~14.2.1",
     "expo-splash-screen": "~0.20.5",
     "expo-status-bar": "~1.6.0",
     "geolib": "^3.0.4",
