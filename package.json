@@ -14,6 +14,10 @@
     "@react-native-async-storage/async-storage": "1.18.2",
     "@react-native-community/datetimepicker": "7.2.0",
     "@react-native-community/netinfo": "9.3.10",
+    "@react-native-masked-view/masked-view": "^0.2.9",
+    "@react-navigation/bottom-tabs": "^6.5.8",
+    "@react-navigation/native": "^6.1.7",
+    "@react-navigation/stack": "^6.3.17",
     "aws-sdk": "^2.829.0",
     "axios": "^0.21.1",
     "deep-diff": "^1.0.2",
@@ -58,9 +62,6 @@
     "react-native-swipeout": "^2.3.6",
     "react-native-vector-icons": "^10.0.0",
     "react-native-web": "~0.19.6",
-    "react-navigation": "^4.0.6",
-    "react-navigation-stack": "^1.8.1",
-    "react-navigation-tabs": "^2.5.5",
     "sharp": "^0.32.5"
   },
   "devDependencies": {
