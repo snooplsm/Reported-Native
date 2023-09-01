@@ -10,12 +10,12 @@ import moment from "moment";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { Notifications } from "expo";
-import * as Permissions from "expo-permissions";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-  dev: "https://reported-stats.herokuapp.com/prod/",
+  // dev: "https://reported-stats.herokuapp.com/prod/",
+  dev: "https://reported.webabot.com/api/1/",
   staging: "https://reported-stats.herokuapp.com/staging/",
   prod: "https://reported-stats.herokuapp.com/prod/"
 };
