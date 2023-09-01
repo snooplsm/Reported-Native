@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Keyboard, View, StyleSheet } from "react-native";
+import { Alert, Keyboard, View, StyleSheet, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Constants from "expo-constants";
@@ -11,7 +11,6 @@ import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import moment from "moment";
-import { ScrollView } from "react-navigation";
 import ordinal from "ordinal";
 import { colors, globalStyles } from "./Styles";
 import { isSignedIn } from "./Auth";

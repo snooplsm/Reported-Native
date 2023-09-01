@@ -10,19 +10,66 @@ import Profile from "./Profile";
 import { colors } from "./Styles";
 import { Icon } from "react-native-elements";
 import React from "react";
-import { createAppContainer, createSwitchNavigator } from "react-navigation";
+// import { createAppContainer, createSwitchNavigator } from "react-navigation";
 
-import { createStackNavigator } from "react-navigation-stack";
-import { createBottomTabNavigator } from "react-navigation-tabs";
-import {Platform} from "react-native";
+import { createStackNavigator } from "@react-navigation/stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Platform } from "react-native";
+import { NavigationContainer } from "@react-navigation/native";
 
 const defaultNavigationOptions = {
-    headerStyle: {
-        elevation: 0,
-        shadowOpacity: 0
-    }
+  headerStyle: {
+    elevation: 0,
+    shadowOpacity: 0
+  }
 };
 
+const UserHomeStackNavigator = createStackNavigator();
+const UserHomeStack = () => {
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
+
+  return (
+    <UserHomeStackNavigator.Navigator screenOptions={opts}>
+      <UserHomeStackNavigator.Screen name="Submission" component={Submission} />
+    </UserHomeStackNavigator.Navigator>
+  )
+}
+
+const SubmissionsStackNavigator = createStackNavigator();
+const SubmissionsStack = () => {
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
+
+  return (
+    <SubmissionsStackNavigator.Navigator screenOptions={opts}>
+      <SubmissionsStackNavigator.Screen name="Submissions" component={Submissions} />
+    </SubmissionsStackNavigator.Navigator>
+  )
+}
+
+const ProfileStackNavigator = createStackNavigator();
+const ProfileStack = () => {
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
+
+  return (
+    <ProfileStackNavigator.Navigator screenOptions={opts}>
+      <ProfileStackNavigator.Screen name="Profile" component={Profile} />
+    </ProfileStackNavigator.Navigator>
+  )
+}
+
+/*
 const UserHomeStack = createStackNavigator(
   {
     Submission: {
@@ -69,8 +116,60 @@ const ProfileStack = createStackNavigator(
     defaultNavigationOptions
   }
 );
+*/
 
-const SignedInNavigator = createBottomTabNavigator(
+const SignedInTabsNavigator = createBottomTabNavigator();
+const SignedIn = () => {
+  const opts = {
+    headerShown: false,
+  }
+
+  const userHomeOpts = {
+    tabBarLabel: 'Report',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="library-add"
+        type="material"
+        size={30}
+        color={color}
+      />
+    ),
+  }
+
+  const submissionsOpts = {
+    tabBarLabel: 'My Reports',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="list"
+        type="material"
+        size={30}
+        color={color}
+      />
+    ),
+  }
+
+  const profileOpts = {
+    tabBarLabel: 'Profile',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="face"
+        type="material"
+        size={30}
+        color={color}
+      />
+    ),
+  }
+
+  return (
+    <SignedInTabsNavigator.Navigator screenOptions={opts}>
+      <SignedInTabsNavigator.Screen name="Home" component={UserHomeStack} options={userHomeOpts} />
+      <SignedInTabsNavigator.Screen name="Submissions" component={SubmissionsStack} options={submissionsOpts} />
+      <SignedInTabsNavigator.Screen name="Profile" component={ProfileStack} options={profileOpts} />
+    </SignedInTabsNavigator.Navigator>
+  )
+}
+
+/*
   {
     Home: {
       screen: UserHomeStack,
@@ -122,11 +221,36 @@ const SignedInNavigator = createBottomTabNavigator(
     }
   }
 );
+*/
 
+/*
 export const AppNavigator = createSwitchNavigator({
   AuthLoading: AuthLoadingScreen,
   Auth: SignedOutNavigator,
-  Home: SignedInNavigator
+  Home: SignedIn
 });
+*/
 
-export const AppContainer = createAppContainer(AppNavigator);
+const AppStackNavigator = createStackNavigator();
+
+const AppNavigator = () => {
+  const opts = {
+    headerShown: false,
+  };
+
+  return (
+    <AppStackNavigator.Navigator screenOptions={opts}>
+      <AppStackNavigator.Screen name="SignedIn" component={SignedIn} />
+    </AppStackNavigator.Navigator >
+  )
+}
+
+// export const AppContainer = createAppContainer(AppNavigator);
+
+export const AppContainer = () => {
+  return (
+    <NavigationContainer>
+      <AppNavigator />
+    </NavigationContainer>
+  )
+}
