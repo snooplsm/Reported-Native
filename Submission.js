@@ -83,6 +83,8 @@ export default class Submission extends React.Component {
   constructor(props) {
     super(props);
     this.state = this.initialState;
+
+    this.submit = this.submit.bind(this);
   }
 
   componentDidMount() {
@@ -574,6 +576,7 @@ export default class Submission extends React.Component {
         });
       })
       .catch(e => {
+        console.log('report err', e.response && e.response.data);
         const response = e.response;
         const code = response && response.code;
         if (code) {
@@ -595,10 +598,12 @@ export default class Submission extends React.Component {
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
+        /*
         Alert.alert(
           JSON.stringify(Object.assign({}, e).response.status),
           Object.assign({}, e).response.data
         );
+        */
         console.warn(Object.assign({}, e));
       });
   }
