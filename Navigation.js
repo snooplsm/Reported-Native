@@ -154,7 +154,7 @@ const SignedIn = () => {
       <Icon
         name="face"
         type="material"
-        size={30}
+        size={size}
         color={color}
       />
     ),
