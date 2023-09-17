@@ -19,7 +19,7 @@
     "@react-navigation/native": "^6.1.7",
     "@react-navigation/stack": "^6.3.17",
     "aws-sdk": "^2.829.0",
-    "axios": "^0.21.1",
+    "axios": "^1.5.0",
     "deep-diff": "^1.0.2",
     "expo": "^49.0.0",
     "expo-av": "~13.4.1",
