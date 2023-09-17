@@ -18,55 +18,55 @@ import { Platform } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 
 const defaultNavigationOptions = {
-    headerStyle: {
-        elevation: 0,
-        shadowOpacity: 0
-    }
+  headerStyle: {
+    elevation: 0,
+    shadowOpacity: 0
+  }
 };
 
 const UserHomeStackNavigator = createStackNavigator();
 const UserHomeStack = () => {
-    const opts = {
-        headerShown: true,
-        title: () => { return (<></>) },
-        headerStyle: { height: 43 },
-    }
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
 
-    return (
-        <UserHomeStackNavigator.Navigator screenOptions={opts}>
-            <UserHomeStackNavigator.Screen name="Submission" component={Submission} />
-        </UserHomeStackNavigator.Navigator>
-    )
+  return (
+    <UserHomeStackNavigator.Navigator screenOptions={opts}>
+      <UserHomeStackNavigator.Screen name="Submission" component={Submission} />
+    </UserHomeStackNavigator.Navigator>
+  )
 }
 
 const SubmissionsStackNavigator = createStackNavigator();
 const SubmissionsStack = () => {
-    const opts = {
-        headerShown: true,
-        title: () => { return (<></>) },
-        headerStyle: { height: 43 },
-    }
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
 
-    return (
-        <SubmissionsStackNavigator.Navigator screenOptions={opts}>
-            <SubmissionsStackNavigator.Screen name="Submissions" component={Submissions} />
-        </SubmissionsStackNavigator.Navigator>
-    )
+  return (
+    <SubmissionsStackNavigator.Navigator screenOptions={opts}>
+      <SubmissionsStackNavigator.Screen name="Submissions" component={Submissions} />
+    </SubmissionsStackNavigator.Navigator>
+  )
 }
 
 const ProfileStackNavigator = createStackNavigator();
 const ProfileStack = () => {
-    const opts = {
-        headerShown: true,
-        title: () => { return (<></>) },
-        headerStyle: { height: 43 },
-    }
+  const opts = {
+    headerShown: true,
+    title: () => { return (<></>) },
+    headerStyle: { height: 43 },
+  }
 
-    return (
-        <ProfileStackNavigator.Navigator screenOptions={opts}>
-            <ProfileStackNavigator.Screen name="Profile" component={Profile} />
-        </ProfileStackNavigator.Navigator>
-    )
+  return (
+    <ProfileStackNavigator.Navigator screenOptions={opts}>
+      <ProfileStackNavigator.Screen name="Profile" component={Profile} />
+    </ProfileStackNavigator.Navigator>
+  )
 }
 
 /*
@@ -120,68 +120,68 @@ const ProfileStack = createStackNavigator(
 
 const SignedInTabsNavigator = createBottomTabNavigator();
 const SignedIn = () => {
-    const opts = {
-        headerShown: false,
-    }
+  const opts = {
+    headerShown: false,
+  }
 
-    const userHomeOpts = {
-        tabBarLabel: 'Report',
-        tabBarIcon: ({ color, size }) => (
-            <Icon
-                name="library-add"
-                type="material"
-                size={30}
-                color={color}
-            />
-        ),
-    }
+  const userHomeOpts = {
+    tabBarLabel: 'Report',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="library-add"
+        type="material"
+        size={30}
+        color={color}
+      />
+    ),
+  }
 
-    const submissionsOpts = {
-        tabBarLabel: 'My Reports',
-        tabBarIcon: ({ color, size }) => (
-            <Icon
-                name="list"
-                type="material"
-                size={30}
-                color={color}
-            />
-        ),
-    }
+  const submissionsOpts = {
+    tabBarLabel: 'My Reports',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="list"
+        type="material"
+        size={30}
+        color={color}
+      />
+    ),
+  }
 
-    const profileOpts = {
-        tabBarLabel: 'Profile',
-        tabBarIcon: ({ color, size }) => (
-            <Icon
-                name="face"
-                type="material"
-                size={size}
-                color={color}
-            />
-        ),
-    }
+  const profileOpts = {
+    tabBarLabel: 'Profile',
+    tabBarIcon: ({ color, size }) => (
+      <Icon
+        name="face"
+        type="material"
+        size={size}
+        color={color}
+      />
+    ),
+  }
 
-    return (
-        <SignedInTabsNavigator.Navigator screenOptions={opts}>
-            <SignedInTabsNavigator.Screen name="HomeStack" component={UserHomeStack} options={userHomeOpts} />
-            <SignedInTabsNavigator.Screen name="SubmissionsStack" component={SubmissionsStack} options={submissionsOpts} />
-            <SignedInTabsNavigator.Screen name="ProfileStack" component={ProfileStack} options={profileOpts} />
-        </SignedInTabsNavigator.Navigator>
-    )
+  return (
+    <SignedInTabsNavigator.Navigator screenOptions={opts}>
+      <SignedInTabsNavigator.Screen name="HomeStack" component={UserHomeStack} options={userHomeOpts} />
+      <SignedInTabsNavigator.Screen name="SubmissionsStack" component={SubmissionsStack} options={submissionsOpts} />
+      <SignedInTabsNavigator.Screen name="ProfileStack" component={ProfileStack} options={profileOpts} />
+    </SignedInTabsNavigator.Navigator>
+  )
 }
 
 const SignedOutNavigator = createStackNavigator();
 const SignedOut = () => {
-    const opts = {
-        headerShown: false,
-    }
+  const opts = {
+    headerShown: false,
+  }
 
-    return (
-        <SignedOutNavigator.Navigator screenOptions={opts}>
-            <SignedOutNavigator.Screen name="Splash" component={Splash} />
-            <SignedOutNavigator.Screen name="Login" component={Login} />
-            <SignedOutNavigator.Screen name="Register" component={Register} />
-        </SignedOutNavigator.Navigator>
-    )
+  return (
+    <SignedOutNavigator.Navigator screenOptions={opts}>
+      <SignedOutNavigator.Screen name="Splash" component={Splash} />
+      <SignedOutNavigator.Screen name="Login" component={Login} />
+      <SignedOutNavigator.Screen name="Register" component={Register} />
+    </SignedOutNavigator.Navigator>
+  )
 }
 
 /*
@@ -249,24 +249,24 @@ export const AppNavigator = createSwitchNavigator({
 const AppStackNavigator = createStackNavigator();
 
 const AppNavigator = () => {
-    const opts = {
-        headerShown: false,
-    };
+  const opts = {
+    headerShown: false,
+  };
 
-    return (
-        <AppStackNavigator.Navigator screenOptions={opts}>
-            <AppStackNavigator.Screen name="SignedIn" component={SignedIn} />
-            <AppStackNavigator.Screen name="SignedOut" component={SignedOut} />
-        </AppStackNavigator.Navigator>
-    )
+  return (
+    <AppStackNavigator.Navigator screenOptions={opts}>
+      <AppStackNavigator.Screen name="SignedIn" component={SignedIn} />
+      <AppStackNavigator.Screen name="SignedOut" component={SignedOut} />
+    </AppStackNavigator.Navigator>
+  )
 }
 
 // export const AppContainer = createAppContainer(AppNavigator);
 
 export const AppContainer = () => {
-    return (
-        <NavigationContainer>
-            <AppNavigator />
-        </NavigationContainer>
-    )
+  return (
+    <NavigationContainer>
+      <AppNavigator />
+    </NavigationContainer>
+  )
 }

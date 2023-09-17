@@ -45,7 +45,7 @@ export default class Profile extends React.Component {
     logoutPressed = () => {
         signOut().then(() => {
             // this.props.navigation.navigate("Login");
-            this.props.navigation.dispatch(StackActions.replace('SignedIn', { key: 'Login' }));
+            this.props.navigation.dispatch(StackActions.replace('SignedOut', { key: 'Login' }));
         });
     };
 
