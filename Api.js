@@ -14,8 +14,8 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
 
 const apiUrl = {
-    // dev: "https://reported-stats.herokuapp.com/prod/",
-    dev: "https://reported.webabot.com/api/1/",
+    dev: "https://reported-stats.herokuapp.com/prod/",
+    // dev: "https://reported.webabot.com/api/1/",
     staging: "https://reported-stats.herokuapp.com/staging/",
     prod: "https://reported-stats.herokuapp.com/prod/"
 };
@@ -68,25 +68,20 @@ const openAx = axios.create({
 });
 
 ax.interceptors.request.use(
-    config => {
-        return new Promise((resolve, eject) => {
-            isSignedIn()
-                .then(user => {
-                    const buildNumber =
-                        Platform.OS === "android"
-                            ? Constants.platform.android.versionCode
-                            : Constants.manifest.ios.buildNumber;
+    async config => {
+        const user = await isSignedIn();
+        const buildNumber =
+            Platform.OS === "android"
+                ? Constants.platform.android.versionCode
+                : Constants.manifest?.ios.buildNumber;
 
-                    if (user) {
-                        config.headers.common["X-User-Id"] = user.id;
-                        config.headers.common["X-Session-Token"] = user.sessionToken;
-                        config.headers.common["X-Operating-System"] = Platform.OS;
-                        config.headers.common["X-Build-Number"] = buildNumber ?? "-999";
-                    }
-                    resolve(config);
-                })
-                .catch(err => resolve(config));
-        });
+        if (user) {
+            config.headers["X-User-Id"] = user.id;
+            config.headers["X-Session-Token"] = 'r:6750a9535fc7adad0b49f2914c9f83a6'; // user.sessionToken;
+            config.headers["X-Operating-System"] = Platform.OS;
+            config.headers["X-Build-Number"] = buildNumber ?? "-999";
+        }
+        return config;
     },
     function (error) {
         // Do something with request error
