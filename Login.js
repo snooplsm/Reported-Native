@@ -39,6 +39,8 @@ export default class Login extends React.Component {
             password: "",
             loading: false
         };
+
+        console.log('login created');
     }
 
     onEmailChange(email) {
@@ -83,16 +85,16 @@ export default class Login extends React.Component {
         if (this.state.loading) {
             return;
         }
-        const {
-            navigation: { navigate }
-        } = this.props;
         this.setState({ loading: true, error: null });
         const { email, password } = this.state;
         api
             .login(email, password)
             .then(res => {
                 this.setState({ loading: false });
-                navigate("Submission");
+                // navigate("Submission");
+                // navigation.dispatch(StackActions.replace('SignedIn', { key: 'Submission' }));
+                this.props.navigation.popToTop();
+                this.props.navigation.replace('SignedIn');
             })
             .catch(x => {
                 this.setState({ loading: false });
@@ -110,7 +112,7 @@ export default class Login extends React.Component {
                 } else {
                     message = "Unknown error";
                 }
-                console.log('error', message, x.response);
+                console.log('login error', message, x.response);
                 this.setState({ loading: false, error: message });
             });
     }
