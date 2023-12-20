@@ -46,6 +46,11 @@
     },
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3249b7b4-8843-4ce9-b47d-1e0365673198"
+      }
+    }
   }
 }
