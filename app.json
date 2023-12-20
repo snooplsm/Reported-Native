@@ -26,7 +26,7 @@
       }
     },
     "android": {
-      "package": "cab.reported.nyc",
+      "package": "com.reported1.android",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android/ic_launcher_foreground.png",
         "backgroundColor": "#ffffff"
