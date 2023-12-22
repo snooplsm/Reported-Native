@@ -1,3 +1,5 @@
+import AuthProvider, { useAuth } from './AuthProvider';
+import Loading from './Loading';
 import Splash from "./Splash";
 import Login from "./Login";
 import Register from "./Register";
@@ -249,14 +251,23 @@ export const AppNavigator = createSwitchNavigator({
 const AppStackNavigator = createStackNavigator();
 
 const AppNavigator = () => {
+  const auth = useAuth();
+  // console.log('auth', auth);
+
   const opts = {
     headerShown: false,
   };
 
   return (
     <AppStackNavigator.Navigator screenOptions={opts}>
-      <AppStackNavigator.Screen name="SignedIn" component={SignedIn} />
-      <AppStackNavigator.Screen name="SignedOut" component={SignedOut} />
+      {auth.loading ?
+        <AppStackNavigator.Screen name="Loading" component={Loading} />
+        :
+        auth.authorized ?
+          <AppStackNavigator.Screen name="SignedIn" component={SignedIn} />
+          :
+          <AppStackNavigator.Screen name="SignedOut" component={SignedOut} />
+      }
     </AppStackNavigator.Navigator>
   )
 }
@@ -265,8 +276,10 @@ const AppNavigator = () => {
 
 export const AppContainer = () => {
   return (
-    <NavigationContainer>
-      <AppNavigator />
-    </NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
+        <AppNavigator />
+      </NavigationContainer>
+    </AuthProvider>
   )
 }
