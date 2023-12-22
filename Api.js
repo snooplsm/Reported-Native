@@ -77,7 +77,7 @@ ax.interceptors.request.use(
 
         if (user) {
             config.headers["X-User-Id"] = user.id;
-            config.headers["X-Session-Token"] = 'r:6750a9535fc7adad0b49f2914c9f83a6'; // user.sessionToken;
+            config.headers["X-Session-Token"] = user.sessionToken;
             config.headers["X-Operating-System"] = Platform.OS;
             config.headers["X-Build-Number"] = buildNumber ?? "-999";
         }

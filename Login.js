@@ -13,13 +13,26 @@ import {
     globalStyles,
 } from "./Styles";
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+
 import LogoTitle from "./LogoTitle";
 import { Badge, Button, Input, Icon } from "react-native-elements";
 import { api } from "./Api";
 import FloatingMainButton from "./FloatingMainButton";
+import { signIn } from "./Auth";
+import { useAuth } from "./AuthProvider";
 
-export default class Login extends React.Component {
-    static navigationOptions = {
+export default function Login() {
+    const [error, setError] = React.useState(undefined);
+    const [emailError, setEmailError] = React.useState(undefined);
+    const [email, setEmail] = React.useState('');
+    const [password, setPassword] = React.useState('');
+    const [loading, setLoading] = React.useState(false);
+
+    const navigation = useNavigation();
+    const auth = useAuth();
+
+    const navigationOptions = {
         headerTitle: <LogoTitle title="LOGIN" />,
         headerRight: (
             <Icon
@@ -30,6 +43,7 @@ export default class Login extends React.Component {
         )
     };
 
+    /*
     constructor(props) {
         super(props);
         this.email = React.createRef();
@@ -42,26 +56,24 @@ export default class Login extends React.Component {
 
         console.log('login created');
     }
+    */
 
-    onEmailChange(email) {
-        const state = Object.assign({}, this.state);
-        state.email = email;
-        this.setState(state);
+    const onEmailChange = (email) => {
+        setEmail(email);
     }
 
-    onEmailBlur() {
-        let emailError = null;
-        if (this.state.email.length != 0 && !this.validateEmail(this.state.email)) {
-            emailError = "Invalid Email";
+    const onEmailBlur = () => {
+        let myEmailError = null;
+        if (email.length != 0 && !validateEmail(email)) {
+            myEmailError = "Invalid Email";
         } else {
-            emailError = null;
+            myEmailError = null;
         }
-        this.setState({ emailError });
+        setEmailError(myEmailError);
     }
 
-    onForgotPassword() {
-        const { email } = this.state;
-        if (!this.validateEmail(email)) {
+    const onForgotPassword = () => {
+        if (!validateEmail(email)) {
             let message = "";
             if (email == "") {
                 message = "Type in your email address to change the password.";
@@ -81,23 +93,29 @@ export default class Login extends React.Component {
         }
     }
 
-    submitLogin() {
-        if (this.state.loading) {
+    const submitLogin = () => {
+        if (loading) {
             return;
         }
-        this.setState({ loading: true, error: null });
-        const { email, password } = this.state;
+        setLoading(true);
+        setError(null);
         api
             .login(email, password)
             .then(res => {
-                this.setState({ loading: false });
+                console.log('login', res.data);
+                setLoading(false);
                 // navigate("Submission");
                 // navigation.dispatch(StackActions.replace('SignedIn', { key: 'Submission' }));
-                this.props.navigation.popToTop();
-                this.props.navigation.replace('SignedIn');
+                auth.login(res.data)
+                    .then(() => {
+                        console.log('logged in');
+                        // navigation.popToTop();
+                        // navigation.replace('SignedIn');
+                    })
+                    .catch();
             })
             .catch(x => {
-                this.setState({ loading: false });
+                setLoading(false);
                 let message = "";
                 if (x.response) {
                     if (x.response.status == 401) {
@@ -113,86 +131,86 @@ export default class Login extends React.Component {
                     message = "Unknown error";
                 }
                 console.log('login error', message, x.response);
-                this.setState({ loading: false, error: message });
+                setError(message);
+                setLoading(false);
             });
     }
 
-    isSubmitEnabled() {
+    const isSubmitEnabled = () => {
         return (
-            this.validateEmail(this.state.email) && this.state.password.length > 2
+            validateEmail(email) && password.length > 2
         );
     }
 
-    validateEmail(email) {
+    const validateEmail = (myEmail) => {
         const re = /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-        return re.test(email);
+        return re.test(myEmail);
     }
 
-    render() {
-        const { error, loading } = this.state
+    React.useState(() => {
+        auth.logout();
+    }, [])
 
-        return (
-            <SafeAreaView style={globalStyles.flex1}>
-                <ScrollView style={globalStyles.mainContainer}>
-                    <View
-                        style={{
-                            opacity: error ? 100 : 0,
-                            justifyContent: "center",
-                            alignItems: "center",
-                            flexDirection: "row"
-                        }}
-                    >
-                        <Badge status="error" />
-                        <Text> {error ?? "TAKE UP SPACE"}</Text>
-                    </View>
-                    <View style={styles.inputWrapper}>
-                        <Input
-                            label={"Email"}
-                            autoCapitalize={"none"}
-                            autoFocus={true}
-                            keyboardType="email-address"
-                            ref={this.email}
-                            containerStyle={styles.email}
-                            errorStyle={ErrorStyle.style}
-                            errorMessage={this.state.emailError}
-                            onChangeText={email => this.onEmailChange(email)}
-                            onBlur={() => this.onEmailBlur()}
-                        />
-                    </View>
-                    <View style={styles.inputWrapper}>
-                        <Input
-                            label="Password"
-                            secureTextEntry={true}
-                            containerStyle={{ ...styles.field, ...styles.inputFix }}
-                            errorStyle={ErrorStyle.style}
-                            onChangeText={password => this.setState({ password })}
-                        />
-                    </View>
-                    <Button
-                        loading={loading}
-                        backgroundColor={'white'}
-                        onPress={() => this.onForgotPassword()}
-                        buttonStyle={{
-                            ...ButtonStyle.outline,
-                            height: 60,
-                        }}
-                        containerStyle={{
-                            ...styles.field,
-                        }}
-                        titleStyle={ButtonStyle.orangeText}
-                        title="Forgot Password?"
+    return (
+        <SafeAreaView style={globalStyles.flex1}>
+            <ScrollView style={globalStyles.mainContainer}>
+                <View
+                    style={{
+                        opacity: error ? 100 : 0,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        flexDirection: "row"
+                    }}
+                >
+                    <Badge status="error" />
+                    <Text> {error ?? "TAKE UP SPACE"}</Text>
+                </View>
+                <View style={styles.inputWrapper}>
+                    <Input
+                        label={"Email"}
+                        autoCapitalize={"none"}
+                        autoFocus={true}
+                        keyboardType="email-address"
+                        containerStyle={styles.email}
+                        errorStyle={ErrorStyle.style}
+                        errorMessage={emailError}
+                        onChangeText={email => onEmailChange(email)}
+                        onBlur={() => onEmailBlur()}
                     />
-                </ScrollView>
-                <FloatingMainButton
-                    isEnabled={this.isSubmitEnabled()}
-                    isLoading={loading}
-                    onPress={() => this.submitLogin()}
-                    title={'Login'}
-                    containerStyle={styles.loginButtonWrapper}
+                </View>
+                <View style={styles.inputWrapper}>
+                    <Input
+                        label="Password"
+                        secureTextEntry={true}
+                        containerStyle={{ ...styles.field, ...styles.inputFix }}
+                        errorStyle={ErrorStyle.style}
+                        onChangeText={password => setPassword(password)}
+                    />
+                </View>
+                <Button
+                    loading={loading}
+                    backgroundColor={'white'}
+                    onPress={() => onForgotPassword()}
+                    buttonStyle={{
+                        ...ButtonStyle.outline,
+                        height: 60,
+                    }}
+                    containerStyle={{
+                        ...styles.field,
+                    }}
+                    titleStyle={ButtonStyle.orangeText}
+                    title="Forgot Password?"
                 />
-            </SafeAreaView>
-        );
-    }
+            </ScrollView>
+            <FloatingMainButton
+                isEnabled={isSubmitEnabled()}
+                isLoading={loading}
+                onPress={() => submitLogin()}
+                title={'Login'}
+                containerStyle={styles.loginButtonWrapper}
+            />
+        </SafeAreaView>
+    );
 }
 
 const styles = StyleSheet.create({
