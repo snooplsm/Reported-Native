@@ -38,7 +38,7 @@ export default class ReportView extends React.Component {
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
       return report.media.map((image, index) => {
-        const thumb = !!image.thumbnails.length && image.thumbnails.reduce(reduce512);
+        const thumb = !!image.thumbnails && !!image.thumbnails.length && image.thumbnails.reduce(reduce512);
         if (!thumb) {
           return <></>;
         }
