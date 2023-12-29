@@ -887,7 +887,7 @@ export default function Submission() {
         />
       </View>
       <FloatingMainButton
-        isEnabled
+        isEnabled={!!stateMedia && !!stateMedia.length}
         isLoading={stateSubmitting}
         onPress={() => doSubmit()}
         title={"SUBMIT"}
