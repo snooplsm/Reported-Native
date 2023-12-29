@@ -1,5 +1,6 @@
 import React from "react";
 import { Alert, Keyboard, View, StyleSheet, ScrollView } from "react-native";
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Constants from "expo-constants";
@@ -23,12 +24,13 @@ import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL } from "./common/dimen";
+import { useAuth } from "./AuthProvider";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
 
-export default class Submission extends React.Component {
-  static navigationOptions = ({ navigation }) => {
+export default function Submission() {
+  const navigationOptions = ({ navigation }) => {
     return {
       headerTitle: <LogoTitle />,
       headerLeft: () => {
@@ -60,85 +62,89 @@ export default class Submission extends React.Component {
     };
   };
 
-  get initialState() {
-    return {
-      media: [],
-      resizedImages: [],
-      datePickerVisible: undefined,
-      timeofreport: undefined,
-      timeofreportstr: undefined,
-      complaints: [],
-      imageModal: undefined,
-      uploadedMedia: {},
-      submitting: false,
-      description: "",
-      notes: "",
-      license: undefined,
-      alpr: undefined,
-      location: undefined,
-      keyboard: undefined
-    };
-  }
+  const [stateMedia, setMedia] = React.useState([]);
+  const [stateResizedImages, setResizedImages] = React.useState([]);
+  const [stateDatePickerVisible, setDatePickerVisible] = React.useState(undefined);
+  const [stateTimeofreport, setTimeofreport] = React.useState(undefined);
+  const [stateTimeofreportstr, setTimeofreportstr] = React.useState(undefined);
+  const [stateComplaints, setComplaints] = React.useState([]);
+  const [stateImageModal, setImageModal] = React.useState(undefined);
+  const [stateUploadedMedia, setUploadedMedia] = React.useState({});
+  const [stateSubmitting, setSubmitting] = React.useState(false);
+  const [stateDescription, setDescription] = React.useState('');
+  const [stateNotes, setNotes] = React.useState('');
+  const [stateLicense, setLicense] = React.useState(undefined);
+  const [stateAlpr, setAlpr] = React.useState(undefined);
+  const [stateLocation, setLocation] = React.useState(undefined);
+  const [stateKeyboard, setKeyboard] = React.useState(undefined);
+  const [stateShowAddressModal, setShowAddressModal] = React.useState(false);
+  const [stateShowComplaintModal, setShowComplaintModal] = React.useState(false);
+  const [statePercent, setPercent] = React.useState(0);
 
-  constructor(props) {
-    super(props);
-    this.state = this.initialState;
+  const _complaint = React.useRef();
+  const _license = React.useRef();
 
-    this.submit = this.submit.bind(this);
-  }
+  const navigation = useNavigation();
+  const auth = useAuth();
 
-  componentDidMount() {
-    this.backHandler = BackHandler.addEventListener(
+  const draftKey = `report.draft.${Constants.nativeAppVersion}`;
+
+  React.useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
       "hardwareBackPress",
-      this.onBackPressed
+      onBackPressed
     );
-    this.props.navigation.setParams({
-      onBackPressed: this.onBackPressed,
+    navigation.setParams({
+      onBackPressed: onBackPressed,
       canGoBack: false,
-      onClearPressed: this.onClearPressed
+      onClearPressed: onClearPressed
     });
-    this.loadOffline();
-    this.keyboardDidShowListener = Keyboard.addListener(
+    loadOffline();
+    const keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
-      this._keyboardDidShow.bind(this)
+      _keyboardDidShow
     );
-    this.keyboardDidHideListener = Keyboard.addListener(
+    const keyboardDidHideListener = Keyboard.addListener(
       "keyboardDidHide",
-      this._keyboardDidHide.bind(this)
+      _keyboardDidHide
     );
-    isSignedIn().then(user => {
-      if (!user || !user.phone) {
-        return;
-      }
-      const phoneMatches = user.phone.match(
-        /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
-      );
-      if (!phoneMatches) {
-        Alert.alert(
-          "Invalid Phone Number",
-          `We have detected that you have an invalid phone number of ${user.phone}.`,
-          [
-            {
-              text: "Fix",
-              onPress: () => {
-                this.props.navigation.navigate("Profile");
-              }
+
+    const user = auth.userObj;
+    const phoneMatches = user.phone.match(
+      /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
+    );
+    if (!phoneMatches) {
+      Alert.alert(
+        "Invalid Phone Number",
+        `We have detected that you have an invalid phone number of ${user.phone}.`,
+        [
+          {
+            text: "Fix",
+            onPress: () => {
+              navigation.navigate("Profile");
             }
-          ]
-        );
-      }
-    });
+          }
+        ]
+      );
+    }
+
+    () => {
+      backHandler.remove();
+      // clearInterval(timeofreportinterval);
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    }
+  }, []);
+
+  const _keyboardDidShow = () => {
+    setKeyboard(true);
   }
 
-  _keyboardDidShow() {
-    this.setState({ keyboard: true });
+  const _keyboardDidHide = () => {
+    setKeyboard(undefined);
   }
 
-  _keyboardDidHide() {
-    this.setState({ keyboard: undefined });
-  }
-
-  onClearPressed = () => {
+  const onClearPressed = () => {
     Alert.alert("Discard Report?", "Discard report and start a new one?", [
       {
         text: "Cancel",
@@ -147,36 +153,33 @@ export default class Submission extends React.Component {
       {
         text: "OK",
         onPress: () => {
-          this.clear();
+          clear();
         }
       }
     ]);
   };
 
-  onBackPressed = () => {
-    if (!this.state) {
-      return false;
-    }
-    if (this.state.imageModal !== undefined) {
-      this.setState({ imageModal: undefined });
+  const onBackPressed = () => {
+    if (stateImageModal !== undefined) {
+      setImageModal(undefined);
       return true;
     }
-    if (this.state.datePickerVisible) {
-      this.setState({ datePickerVisible: undefined });
+    if (stateDatePickerVisible) {
+      setDatePickerVisible(undefined);
       return true;
     }
-    if (this.state.showAddressModal) {
-      this.setState({ showAddressModal: undefined });
+    if (stateShowAddressModal) {
+      setShowAddressModal(undefined);
       return true;
     }
-    if (this.state.showComplaintModal) {
-      this.setState({ showComplaintModal: undefined });
+    if (stateShowComplaintModal) {
+      setShowComplaintModal(undefined);
       return true;
     }
     return false;
   };
 
-  get modalsShowing() {
+  const modalsShowing = () => {
     const state = this.state;
     return (
       state.imageModal !== undefined ||
@@ -186,34 +189,34 @@ export default class Submission extends React.Component {
     );
   }
 
-  get draftKey() {
-    return `report.draft.${Constants.nativeAppVersion}`;
-  }
-
-  saveOffline = async () => {
+  const saveOffline = async () => {
+    const myState = {};
     try {
-      await AsyncStorage.setItem(this.draftKey, JSON.stringify(this.state));
+      await AsyncStorage.setItem(draftKey, JSON.stringify(myState));
     } catch (error) {
-      // console.log("async error", error);
+      console.log("async error", error);
     }
   };
 
-  loadOffline = async () => {
+  const loadOffline = () => {
     try {
-      const draft = await AsyncStorage.getItem(this.draftKey);
-      const data = draft && JSON.parse(draft);
-      if (data) {
-        data.submitting = false;
-        this.setState(data);
-      }
+      AsyncStorage.getItem(draftKey)
+        .then((draft) => {
+          const data = draft && JSON.parse(draft);
+          if (data) {
+            data.submitting = false;
+            this.setState(data);
+          }
+        })
     } catch (error) {
-      // console.log("erorr loading draft", error);
+      console.log("erorr loading draft", error);
     }
   };
 
-  setState(state, lambda) {
+  /*
+  const setState = (state, lambda) => {
     super.setState(state, () => {
-      if (this.modalsShowing) {
+      if (this.modalsShowing()) {
         this.props.navigation.setParams({ canGoBack: true });
       } else {
         this.props.navigation.setParams({ canGoBack: false });
@@ -229,27 +232,28 @@ export default class Submission extends React.Component {
       }
     });
   }
+  */
 
-  closeModal = () => {
-    this.setState({ imageModal: undefined });
+  const closeModal = () => {
+    setImageModal(undefined);
   };
 
-  removeImage = index => {
-    const { media } = this.state;
-    let newImages = [...media];
+  const removeImage = index => {
+    let newImages = [...stateMedia];
     newImages.splice(index, 1);
-    this.setState({ media: newImages, imageModal: undefined });
+    setMedia(newImages);
+    setImageModal(undefined);
   };
 
-  get addressString() {
+  const addressString = () => {
     try {
-      return this.state.location.place.formatted_address;
+      return stateLocation.place.formatted_address;
     } catch (e) {
       return null;
     }
   }
 
-  reportSubmitted = async result => {
+  constreportSubmitted = async result => {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
@@ -260,14 +264,15 @@ export default class Submission extends React.Component {
     Alert.alert("Report Submitted", msg);
   };
 
-  get complaintModal() {
-    if (this.state.showComplaintModal) {
+  const ComplaintModal = () => {
+    if (stateShowComplaintModal) {
       return (
         <View style={styles.complaintModal}>
           <ComplaintView
             onComplaintsChanged={c => {
-              this._complaint.blur();
-              this.setState({ showComplaintModal: false, complaints: c });
+              _complaint.current.blur();
+              setShowComplaintModal(false);
+              setComplaints(c);
             }}
           />
         </View>
@@ -277,13 +282,13 @@ export default class Submission extends React.Component {
     }
   }
 
-  get imageModal() {
-    if (this.state.imageModal !== undefined) {
+  const ImageModal = () => {
+    if (stateImageModal !== undefined) {
       return (
         <ImageViewer
-          imagesURLs={this.state.media}
-          onCloseModal={this.closeModal}
-          onRemoveImage={this.removeImage}
+          imagesURLs={stateMedia}
+          onCloseModal={closeModal}
+          onRemoveImage={removeImage}
         />
       );
     } else {
@@ -291,14 +296,7 @@ export default class Submission extends React.Component {
     }
   }
 
-  componentWillUnmount() {
-    this.backHandler.remove();
-    clearInterval(this.timeofreportinterval);
-    this.keyboardDidShowListener.remove();
-    this.keyboardDidHideListener.remove();
-  }
-
-  timeofreport(timeofreport) {
+  const getTimeofreport = (timeofreport) => {
     if (!timeofreport) {
       return undefined;
     }
@@ -309,16 +307,16 @@ export default class Submission extends React.Component {
     return "";
   }
 
-  validatePlate(from) {
+  const validatePlate = (from) => {
     const okPlate =
-      this.state.license &&
-      this.state.license.candidate &&
-      this.state.license.candidate.plate &&
-      this.state.license.candidate.plate.length > 1;
+      stateLicense &&
+      stateLicense.candidate &&
+      stateLicense.candidate.plate &&
+      stateLicense.candidate.plate.length > 1;
     if (!okPlate) {
       return false;
     }
-    const plate = this.state.license.candidate.plate.toUpperCase();
+    const plate = stateLicense.candidate.plate.toUpperCase();
 
     const regexes = [/^[TNWY]\d{6}$/g, /^[TNWY]\d{6}[^C]{*}/g, /^\d{6}[C]/g];
     if (
@@ -334,9 +332,9 @@ export default class Submission extends React.Component {
     if (
       from &&
       plate.match(USPS) &&
-      (this.state.license.candidate.state || "").length === 0
+      (stateLicense.candidate.state || "").length === 0
     ) {
-      const license = this.state.license;
+      const license = stateLicense;
       Alert.alert(
         "Is this a USPS vehicle?",
         "Does this vehicle belong to the US Postal Service?",
@@ -344,7 +342,7 @@ export default class Submission extends React.Component {
           {
             text: "YES",
             onPress: () => {
-              const license = this.state.license;
+              const license = stateLicense;
               license.candidate.state = "USPS";
               this.setState({ license }, () => {
                 from();
@@ -366,7 +364,7 @@ export default class Submission extends React.Component {
     if (
       from &&
       plate.match(NYPD) &&
-      (this.state.license.candidate.state || "").length === 0
+      (stateLicense.candidate.state || "").length === 0
     ) {
       Alert.alert(
         "Is this an NYPD vehicle?",
@@ -375,7 +373,7 @@ export default class Submission extends React.Component {
           {
             text: "YES",
             onPress: () => {
-              const license = this.state.license;
+              const license = stateLicense;
               license.candidate.state = "NYPD";
               this.setState({ license }, () => {
                 from();
@@ -385,7 +383,7 @@ export default class Submission extends React.Component {
           {
             text: "NO",
             onPress: () => {
-              const license = this.state.license;
+              const license = stateLicense;
               license.candidate.state = "UNKNOWN";
               this.setState({ license }, () => {
                 from();
@@ -400,24 +398,24 @@ export default class Submission extends React.Component {
     return plate.length > 1;
   }
 
-  alrt(title, message) {
-    this.setState({ submitting: false });
+  const alrt = (title, message) => {
+    setSubmitting(false);
     Alert.alert(title, message);
   }
 
-  progressListener(progress) {
+  const progressListener = (progress) => {
     const promise = new Promise(function (resolve) {
       const reducer = (sum, num) => {
         return sum + num.size;
       };
       const plate =
-        this.state.license &&
-        this.state.license.plate &&
-        this.state.license.plate.image;
+        stateLicense &&
+        stateLicense.plate &&
+        stateLicense.plate.image;
       const total =
-        this.state.media.reduce(reducer, 0) + ((plate && plate.size) || 0);
+        stateMedia.reduce(reducer, 0) + ((plate && plate.size) || 0);
       const loaded =
-        this.state.uploadedMedia.reduce(reducer, 0) + progress.loaded;
+        stateUploadedMedia.reduce(reducer, 0) + progress.loaded;
       resolve({ total, loaded });
     });
     promise
@@ -431,56 +429,55 @@ export default class Submission extends React.Component {
       });
   }
 
-  submit() {
-    const { location, complaints, timeofreport } = this.state;
-    if (complaints.length < 1) {
-      this.alrt(
+  const doSubmit = () => {
+    if (stateComplaints.length < 1) {
+      alrt(
         "Missing Complaint",
         "Select a complaint type: Blocked Bike Lane, Crosswalk, etc."
       );
       return;
     }
-    const okPlate = this.validatePlate(this.submit);
+    const okPlate = validatePlate(doSubmit);
     if (okPlate === false) {
-      this.alrt("Invalid License Plate", `${okPlate}`);
+      alrt("Invalid License Plate", `${okPlate}`);
       return;
     }
     if (okPlate === undefined) {
       return;
     }
-    const place = location.place;
+    const place = stateLocation.place;
     const address = place.address_components;
-    const plateNeedsUploading = okPlate && this.state.license.plate.image;
+    const plateNeedsUploading = okPlate && stateLicense.plate.image;
     const plateUploaded =
       !plateNeedsUploading ||
-      this.state.uploadedMedia[this.state.license.plate.image.url];
+      stateUploadedMedia[stateLicense.plate.image.url];
     if (!plateUploaded) {
-      this.setState({ submitting: true });
-      uploadFile(this.state.license.plate.image, {
+      setSubmitting(true);
+      uploadFile(stateLicense.plate.image, {
         listener: progress => {
-          this.progressListener(progress);
+          progressListener(progress);
         }
       })
         .then(uploaded => {
           uploaded.type = "S3_IMAGE_LICENSE";
-          const uploadedMedia = this.state.uploadedMedia;
-          uploadedMedia[this.state.license.plate.image.url] = uploaded;
-          this.setState({ uploadedMedia });
-          this.submit();
+          const uploadedMedia = stateUploadedMedia;
+          uploadedMedia[stateLicense.plate.image.url] = uploaded;
+          setUploadedMedia(uploadedMedia);
+          submit();
         })
         .catch(() => {
-          this.alrt("Error uploading image", "Image upload failed.");
+          alrt("Error uploading image", "Image upload failed.");
         });
       return;
     }
-    const needToUpload = this.state.media.filter(
-      x => !this.state.uploadedMedia[x.url]
+    const needToUpload = stateMedia.filter(
+      x => !stateUploadedMedia[x.url]
     );
     if (needToUpload.length > 0) {
       const file = needToUpload[0];
-      this.setState({ submitting: true });
+      setSubmitting(true);
       uploadFile(file, {
-        listener: this.progressListener
+        listener: progressListener
       })
         .then(uploaded => {
           if (file.type === "image") {
@@ -488,17 +485,17 @@ export default class Submission extends React.Component {
           } else {
             uploaded.type = "S3_VIDEO";
           }
-          const uploadedMedia = this.state.uploadedMedia;
+          const uploadedMedia = stateUploadedMedia;
           uploadedMedia[file.url || fille.uri] = uploaded;
-          this.setState({ uploadedMedia });
-          this.submit();
+          setUploadedMedia(uploadedMedia);
+          submit();
         })
         .catch(e => {
-          this.alrt("Error uploading media", JSON.stringify(e));
+          alrt("Error uploading media", JSON.stringify(e));
         });
       return;
     }
-    this.setState({ submitting: true });
+    setSubmitting(true);
 
     const license = Object.assign(
       {
@@ -509,14 +506,14 @@ export default class Submission extends React.Component {
           region: ""
         }
       },
-      this.state.license
+      stateLicense
     );
 
     if (
-      this.state.license &&
-      this.state.uploadedMedia[this.state.license.url]
+      stateLicense &&
+      stateUploadedMedia[stateLicense.url]
     ) {
-      license.media = this.state.uploadedMedia[this.state.license.plate.url];
+      license.media = stateUploadedMedia[stateLicense.plate.url];
     }
 
     const geo = place.geometry.location;
@@ -534,7 +531,7 @@ export default class Submission extends React.Component {
       street
     ]);
     if (!areAddressFieldsNonNull) {
-      this.alrt(
+      alrt(
         "Invalid location",
         "The location is not a valid street address."
       );
@@ -542,9 +539,9 @@ export default class Submission extends React.Component {
     }
     api
       .report({
-        description: this.state.description,
-        notes: this.state.notes,
-        complaintIds: complaints.map(x => x.id),
+        description: stateDescription,
+        notes: stateNotes,
+        complaintIds: stateComplaints.map(x => x.id),
         license: {
           plate: license.candidate.plate,
           state: license.plate.region
@@ -561,18 +558,18 @@ export default class Submission extends React.Component {
           sublocality,
           location: geo
         }),
-        timeofincident: timeofreport,
-        media: this.state.media
-          .map(x => this.state.uploadedMedia[x.url])
+        timeofincident: stateTimeofreport,
+        media: stateMedia
+          .map(x => stateUploadedMedia[x.url])
           .concat(
             [license]
               .filter(x => x && x.plate && x.plate.image)
-              .map(x => this.state.uploadedMedia[x.plate.image.url])
+              .map(x => stateUploadedMedia[x.plate.image.url])
           )
       })
       .then(x => {
-        this.clear(() => {
-          this.reportSubmitted(x.data);
+        clear(() => {
+          reportSubmitted(x.data);
         });
       })
       .catch(e => {
@@ -582,19 +579,19 @@ export default class Submission extends React.Component {
         if (code) {
           switch (code) {
             case 216:
-              this.alrt(
+              alrt(
                 "Duplicate Report",
                 "Appears this report has already been submitted."
               );
               break;
             default:
-              this.alrt(
+              alrt(
                 "Problem submitting report",
                 "An error occured while submitting your report.  Please try again."
               );
           }
         } else
-          this.alrt(
+          alrt(
             "Problem submitting report",
             "An error occured while submitting your report.  Please try again."
           );
@@ -608,173 +605,33 @@ export default class Submission extends React.Component {
       });
   }
 
-  get time() {
-    const { timeofreport } = this.state;
-    if (!timeofreport) {
+  const getTime = () => {
+    if (!stateTimeofreport) {
       return null;
     }
-    return moment(timeofreport).toDate();
+    return moment(stateTimeofreport).toDate();
   }
 
-  clear(lambda) {
-    this._license.clear();
+  const clear = (lambda) => {
+    _license.clear();
     this.setState(this.initialState, () => {
       lambda && lambda();
     });
   }
 
-  get addPhotoText() {
-    if (this.state.media && this.state.media.length > 0) {
+  const getAddPhotoText = () => {
+    if (stateMedia && stateMedia.length > 0) {
       return "Add Another Photo";
     } else {
       return "Add Photo";
     }
   }
 
-  render() {
-    const { media, timeofreportstr } = this.state;
-    return (
-      <>
-        <KeyboardAwareScrollView
-          style={globalStyles.mainContainer}
-          viewIsInsideTabBar
-          extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
-          <View style={styles.container}>
-            <View style={styles.inputWrapper}>
-              <Button
-                type="outline"
-                buttonStyle={styles.addPhoto}
-                containerStyle={styles.addPhotoContainer}
-                onPress={this._pickImage}
-                title={this.addPhotoText}
-              />
-            </View>
-            <ImageCarousel
-              onItemPressed={({ item, index }) => {
-                this.setState({ imageModal: index });
-              }}
-              entries={media}
-            />
-            <View style={styles.inputWrapper}>
-              <TouchSpoof
-                onPress={() => this.setState({ showComplaintModal: true })}
-              >
-                <Input
-                  ref={r => (this._complaint = r)}
-                  caretHidden={true}
-                  autoFocus={false}
-                  onFocus={x => this.setState({ showComplaintModal: true })}
-                  label={"Complaint"}
-                  placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
-                  value={this.state.complaints.map(x => x.name).join(", ")}
-                />
-              </TouchSpoof>
-            </View>
-            <View style={styles.inputWrapper}>
-              <ScrollView
-                horizontal={true}
-                showsHorizontalScrollIndicator={false}
-              >
-                <Input
-                  editable={false}
-                  label={"Address"}
-                  placeholder={"Automatically will be extracted from photo"}
-                  value={this.addressString}
-                />
-              </ScrollView>
-            </View>
-            <View style={styles.inputWrapper}>
-              <Input
-                editable={false}
-                label={"When Incident Occurred"}
-                placeholder={"Automatically will be extracted from photo"}
-                value={timeofreportstr}
-              />
-            </View>
-            <View style={styles.inputWrapper}>
-              <LicenseView
-                ref={r => (this._license = r)}
-                onPlateSelected={plate => {
-                  const { candidate } = plate;
-                  if (
-                    candidate &&
-                    candidate.plate &&
-                    candidate.plate.length > 0
-                  ) {
-                    this.setState({ license: plate });
-                  } else {
-                    this.setState({ license: undefined });
-                  }
-                }}
-                license={this.state.license}
-                alpr={this.state.alpr}
-              />
-            </View>
-            <View style={styles.inputWrapper}>
-              <Input
-                label={"Incident Description (optional)"}
-                onChangeText={v => {
-                  this.setState({ description: v });
-                }}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={"Add any additional details to provide to 311"}
-                textAlignVertical={"top"}
-                value={this.state.description}
-              />
-            </View>
-            <View style={styles.inputWrapper}>
-              <Input
-                label={"Notes (optional and private)"}
-                onChangeText={v => this.setState({ notes: v })}
-                multiline={true}
-                numberOfLines={3}
-                placeholder={
-                  "Notes that only you will see and will not be sent to 311"
-                }
-                textAlignVertical={"top"}
-                value={this.state.notes}
-              />
-            </View>
-          </View>
-        </KeyboardAwareScrollView>
-        <View
-          style={{
-            width: "100%",
-            height: 4,
-            opacity: this.state.submitting ? 100 : 0,
-            backgroundColor: setColor(colors.orange)
-              .alpha(0.38)
-              .rgb()
-              .string()
-          }}
-        >
-          <View
-            style={{
-              width: `${this.state.percent ?? 0}%`,
-              height: "100%",
-              backgroundColor: colors.orange
-            }}
-          />
-        </View>
-        <FloatingMainButton
-          isEnabled
-          isLoading={this.state.submitting}
-          onPress={() => this.submit()}
-          title={"SUBMIT"}
-          containerStyle={styles.submitButtonWrapper}
-        />
-        {this.imageModal}
-        {this.complaintModal}
-      </>
-    );
-  }
-
-  getLocationData = async (imageLocation) => {
+  const getLocationData = async (imageLocation) => {
     return await reverseGeocode(imageLocation)
       .then(places => {
         if (!places || !places.results || !places.results[0]) {
-          this.alrt('Error getting coordinates');
+          alrt('Error getting coordinates');
         } else {
           const place = places.results[0];
           if (!checkAddressNotBelongsToNY(place)) {
@@ -783,12 +640,11 @@ export default class Submission extends React.Component {
         }
       })
       .catch(e => {
-        this.alrt('Error geo coordinates', e.message);
+        alrt('Error geo coordinates', e.message);
       });
   }
 
-  _pickImage = async () => {
-    const { license } = this.state;
+  const _pickImage = async () => {
     // const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     console.log('perm', permission);
@@ -819,7 +675,7 @@ export default class Submission extends React.Component {
     };
     // Check if exif exists
     if (!exif) {
-      this.alrt(
+      alrt(
         'Missing exif data',
         `Can't extract exif data from photo.\nPlease, select proper photo.`
       );
@@ -828,14 +684,15 @@ export default class Submission extends React.Component {
       const { DateTimeOriginal: timeofreport } = exif;
       // Check time image was picked
       if (!timeofreport) {
-        this.alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
+        alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
         return;
       }
+      console.log('exif', exif);
       const { lat, lng, altitude } = getLocationDataFromExif(exif);
       console.log('coord', lat, lng, altitude);
       // Check if location exists
       if (!lat || !lng) {
-        this.alrt(
+        alrt(
           'Missing photo location',
           'This photo does not contain location data.\nPlease select a photo that has valid location data'
         );
@@ -850,12 +707,10 @@ export default class Submission extends React.Component {
         altitude: altitude,
         location: { lat, lng }
       });
-      const place = await this.getLocationData({ lat, lng });
+      const place = await getLocationData({ lat, lng });
       if (!place) return;
-      this.setState({
-        location: { place },
-      });
-      if (!license) {
+      setLocation(place);
+      if (!stateLicense) {
         let resize = null;
         if (image.width > image.height) {
           resize = { width: Math.min(1200, parseInt(image.width)) };
@@ -873,9 +728,7 @@ export default class Submission extends React.Component {
           .then(result => {
             data.alprResult = result;
             data.images = [data.resized];
-            this.setState({
-              alpr: data
-            });
+            setAlpr(data);
           })
           .catch(e => { });
       }
@@ -885,14 +738,11 @@ export default class Submission extends React.Component {
 
     if (timeofreport) {
       var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
-      this.setState({
-        timeofreport: datetime,
-        timeofreportstr: this.timeofreport(datetime)
-      });
+      setTimeofreport(datetime);
+      setTimeofreportstr(timeofreport(datetime));
     }
 
-    const media = [...this.state.media, image];
-    this.setState({ media: media });
+    setMedia([...stateMedia, image]);
 
     /*
     if (permission.status !== "granted") {
@@ -905,6 +755,149 @@ export default class Submission extends React.Component {
     }
     */
   };
+
+  return (
+    <>
+      <KeyboardAwareScrollView
+        style={globalStyles.mainContainer}
+        viewIsInsideTabBar
+        extraScrollHeight={SUBMIT_BUTTON_HEIGHT + SUBMIT_BUTTON_PADDING_VERTICAL * 2}>
+        <View style={styles.container}>
+          <View style={styles.inputWrapper}>
+            <Button
+              type="outline"
+              buttonStyle={styles.addPhoto}
+              containerStyle={styles.addPhotoContainer}
+              onPress={_pickImage}
+              title={getAddPhotoText()}
+            />
+          </View>
+          <ImageCarousel
+            onItemPressed={({ item, index }) => {
+              setImageModal(index);
+            }}
+            entries={stateMedia}
+          />
+          {!!stateMedia && !!stateMedia.length ?
+            <>
+              <View style={styles.inputWrapper}>
+                <TouchSpoof
+                  onPress={() => setShowComplaintModal(true)}
+                >
+                  <Input
+                    ref={_complaint}
+                    caretHidden={true}
+                    autoFocus={false}
+                    onFocus={x => setShowComplaintModal(true)}
+                    label={"Complaint"}
+                    placeholder={"Complaint Type, Blocked Bike lane, Crosswalk"}
+                    value={stateComplaints.map(x => x.name).join(", ")}
+                  />
+                </TouchSpoof>
+              </View>
+              <View style={styles.inputWrapper}>
+                <ScrollView
+                  horizontal={true}
+                  showsHorizontalScrollIndicator={false}
+                >
+                  <Input
+                    editable={false}
+                    label={"Address"}
+                    placeholder={"Automatically will be extracted from photo"}
+                    value={stateLocation?.place?.formatted_address}
+                  />
+                </ScrollView>
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  editable={false}
+                  label={"When Incident Occurred"}
+                  placeholder={"Automatically will be extracted from photo"}
+                  value={stateTimeofreportstr}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <LicenseView
+                  ref={_license}
+                  onPlateSelected={plate => {
+                    const { candidate } = plate;
+                    if (
+                      candidate &&
+                      candidate.plate &&
+                      candidate.plate.length > 0
+                    ) {
+                      setLicense(plate);
+                    } else {
+                      setLicense(undefined);
+                    }
+                  }}
+                  license={stateLicense}
+                  alpr={stateAlpr}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  label={"Incident Description (optional)"}
+                  onChangeText={v => {
+                    setDescription(v);
+                  }}
+                  multiline={true}
+                  numberOfLines={3}
+                  placeholder={"Add any additional details to provide to 311"}
+                  textAlignVertical={"top"}
+                  value={stateDescription}
+                />
+              </View>
+              <View style={styles.inputWrapper}>
+                <Input
+                  label={"Notes (optional and private)"}
+                  onChangeText={v => setNotes(v)}
+                  multiline={true}
+                  numberOfLines={3}
+                  placeholder={
+                    "Notes that only you will see and will not be sent to 311"
+                  }
+                  textAlignVertical={"top"}
+                  value={stateNotes}
+                />
+              </View>
+            </>
+            :
+            <></>
+          }
+        </View>
+      </KeyboardAwareScrollView>
+      <View
+        style={{
+          width: "100%",
+          height: 4,
+          opacity: stateSubmitting ? 100 : 0,
+          backgroundColor: setColor(colors.orange)
+            .alpha(0.38)
+            .rgb()
+            .string()
+        }}
+      >
+        <View
+          style={{
+            width: `${statePercent ?? 0}%`,
+            height: "100%",
+            backgroundColor: colors.orange
+          }}
+        />
+      </View>
+      <FloatingMainButton
+        isEnabled
+        isLoading={stateSubmitting}
+        onPress={() => doSubmit()}
+        title={"SUBMIT"}
+        containerStyle={styles.submitButtonWrapper}
+      />
+      <ImageModal />
+      <ComplaintModal />
+    </>
+  );
+
 }
 
 const styles = StyleSheet.create({
