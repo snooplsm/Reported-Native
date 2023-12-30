@@ -601,7 +601,7 @@ export default function Submission() {
           Object.assign({}, e).response.data
         );
         */
-        console.warn(Object.assign({}, e));
+        console.warn('err submitting report', Object.assign({}, e));
       });
   }
 
@@ -650,10 +650,10 @@ export default function Submission() {
     console.log('perm', permission);
     const result = await ImagePicker.launchImageLibraryAsync({
       exif: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
     });
 
-    console.log('image', result);
+    console.log('image', JSON.stringify(result, null, ' '));
     if (result.canceled) {
       return;
     }
@@ -708,8 +708,9 @@ export default function Submission() {
         location: { lat, lng }
       });
       const place = await getLocationData({ lat, lng });
+      console.log('place', place);
       if (!place) return;
-      setLocation(place);
+      setLocation({ place });
       if (!stateLicense) {
         let resize = null;
         if (image.width > image.height) {
@@ -739,7 +740,7 @@ export default function Submission() {
     if (timeofreport) {
       var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
       setTimeofreport(datetime);
-      setTimeofreportstr(timeofreport(datetime));
+      setTimeofreportstr(getTimeofreport(datetime));
     }
 
     setMedia([...stateMedia, image]);
