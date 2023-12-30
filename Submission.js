@@ -708,7 +708,6 @@ export default function Submission() {
         location: { lat, lng }
       });
       const place = await getLocationData({ lat, lng });
-      console.log('place', place);
       if (!place) return;
       setLocation({ place });
       if (!stateLicense) {
