@@ -67,6 +67,7 @@ export default function Submission() {
   const [stateDatePickerVisible, setDatePickerVisible] = React.useState(undefined);
   const [stateTimeofreport, setTimeofreport] = React.useState(undefined);
   const [stateTimeofreportstr, setTimeofreportstr] = React.useState(undefined);
+  const [stateTimeofreportExif, setTimeofreportExif] = React.useState(undefined);
   const [stateComplaints, setComplaints] = React.useState([]);
   const [stateImageModal, setImageModal] = React.useState(undefined);
   const [stateUploadedMedia, setUploadedMedia] = React.useState({});
@@ -80,6 +81,7 @@ export default function Submission() {
   const [stateShowAddressModal, setShowAddressModal] = React.useState(false);
   const [stateShowComplaintModal, setShowComplaintModal] = React.useState(false);
   const [statePercent, setPercent] = React.useState(0);
+  const [stateData, setStateData] = React.useState({});
 
   const _complaint = React.useRef();
   const _license = React.useRef();
@@ -189,8 +191,21 @@ export default function Submission() {
     );
   }
 
-  const saveOffline = async () => {
-    const myState = {};
+  const saveOffline = async (data) => {
+    let myState = data === null ? {} : {
+      media: stateMedia,
+      timeofreportExif: stateTimeofreportExif,
+      complaints: stateComplaints,
+      description: stateDescription,
+      notes: stateNotes,
+      license: stateLicense,
+      location: stateLocation,
+    };
+    if (!!data) {
+      myState = { ...myState, ...data };
+    }
+
+    console.log('save offline', myState)
     try {
       await AsyncStorage.setItem(draftKey, JSON.stringify(myState));
     } catch (error) {
@@ -203,9 +218,16 @@ export default function Submission() {
       AsyncStorage.getItem(draftKey)
         .then((draft) => {
           const data = draft && JSON.parse(draft);
+          console.log('load offline', data);
           if (data) {
             data.submitting = false;
-            this.setState(data);
+            setMedia(data.media);
+            setTimeOfReportField(data.timeofreportExif);
+            setComplaints(data.complaints);
+            setDescription(data.description);
+            setNotes(data.notes);
+            setLicense(data.license);
+            setLocation(data.location);
           }
         })
     } catch (error) {
@@ -213,26 +235,24 @@ export default function Submission() {
     }
   };
 
-  /*
-  const setState = (state, lambda) => {
-    super.setState(state, () => {
-      if (this.modalsShowing()) {
-        this.props.navigation.setParams({ canGoBack: true });
-      } else {
-        this.props.navigation.setParams({ canGoBack: false });
-      }
-      const diffy = diff(this.state, this.initialState);
-      const okEqual = isEqual(this.state, this.initialState);
-      this.props.navigation.setParams({
-        isInitialState: this.modalsShowing || okEqual
-      });
-      this.saveOffline();
-      if (lambda) {
-        lambda();
-      }
+  const setState = async (state, lambda) => {
+    if (modalsShowing()) {
+      navigation.setParams({ canGoBack: true });
+    } else {
+      navigation.setParams({ canGoBack: false });
+    }
+    // const diffy = diff(this.state, this.initialState);
+    /*
+    const okEqual = isEqual(this.state, this.initialState);
+    this.props.navigation.setParams({
+      isInitialState: this.modalsShowing || okEqual
     });
+    */
+    await saveOffline();
+    if (lambda) {
+      lambda();
+    }
   }
-  */
 
   const closeModal = () => {
     setImageModal(undefined);
@@ -273,6 +293,7 @@ export default function Submission() {
               _complaint.current.blur();
               setShowComplaintModal(false);
               setComplaints(c);
+              saveOffline({ complaints: c });
             }}
           />
         </View>
@@ -344,17 +365,18 @@ export default function Submission() {
             onPress: () => {
               const license = stateLicense;
               license.candidate.state = "USPS";
-              this.setState({ license }, () => {
-                from();
-              });
+              setLicense(license);
+              saveOffline({ license })
+                .then(() => from());
             }
           },
           {
             text: "NO",
             onPress: () => {
               license.candidate.state = "COMMERCIAL";
-              this.setState({ license });
-              from();
+              setLicense(license);
+              saveOffline({ license })
+                .then(() => from());
             }
           }
         ]
@@ -375,9 +397,9 @@ export default function Submission() {
             onPress: () => {
               const license = stateLicense;
               license.candidate.state = "NYPD";
-              this.setState({ license }, () => {
-                from();
-              });
+              setLicense(license);
+              saveOffline({ license })
+                .then(() => from());
             }
           },
           {
@@ -385,9 +407,9 @@ export default function Submission() {
             onPress: () => {
               const license = stateLicense;
               license.candidate.state = "UNKNOWN";
-              this.setState({ license }, () => {
-                from();
-              });
+              setLicense(license);
+              saveOffline({ license })
+                .then(() => from());
             }
           }
         ]
@@ -420,9 +442,7 @@ export default function Submission() {
     });
     promise
       .then(() => {
-        setState({
-          progress: loaded / total
-        });
+        setPercent(loaded / total);
       })
       .catch(e => {
         // console.log(e);
@@ -614,9 +634,21 @@ export default function Submission() {
 
   const clear = (lambda) => {
     _license.clear();
-    this.setState(this.initialState, () => {
-      lambda && lambda();
-    });
+    setMedia([]);
+    setTimeofreport(undefined);
+    setTimeofreportstr(undefined);
+    setTimeofreportExif(undefined);
+    setComplaints([]);
+    setDescription('');
+    setNotes('');
+    setLicense(undefined);
+    setAlpr(undefined);
+    setLocation(undefined);
+    setPercent(0);
+    saveOffline(null)
+      .then(() => {
+        lambda && lambda();
+      });
   }
 
   const getAddPhotoText = () => {
@@ -644,7 +676,16 @@ export default function Submission() {
       });
   }
 
+  const setTimeOfReportField = (timeofreport) => {
+    var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
+    console.log('set time', timeofreport, datetime);
+    setTimeofreportExif(timeofreport);
+    setTimeofreport(datetime);
+    setTimeofreportstr(getTimeofreport(datetime));
+  }
+
   const _pickImage = async () => {
+    const updateState = {};
     // const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     console.log('perm', permission);
@@ -701,6 +742,11 @@ export default function Submission() {
       const timeof =
         timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
+      if (timeofreport) {
+        setTimeOfReportField(timeofreport);
+        updateState.timeofreportExif = timeofreport;
+      }
+
       Object.assign(image, {
         timeofreport: timeof,
         takenAt: timeof,
@@ -710,6 +756,7 @@ export default function Submission() {
       const place = await getLocationData({ lat, lng });
       if (!place) return;
       setLocation({ place });
+      updateState.location = { place };
       if (!stateLicense) {
         let resize = null;
         if (image.width > image.height) {
@@ -729,20 +776,16 @@ export default function Submission() {
             data.alprResult = result;
             data.images = [data.resized];
             setAlpr(data);
+            updateState.alpr = data;
           })
           .catch(e => { });
       }
     }
 
-    const { timeofreport } = image;
+    updateState.media = [...stateMedia, image];
+    setMedia(updateState.media);
 
-    if (timeofreport) {
-      var datetime = moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
-      setTimeofreport(datetime);
-      setTimeofreportstr(getTimeofreport(datetime));
-    }
-
-    setMedia([...stateMedia, image]);
+    await saveOffline(updateState);
 
     /*
     if (permission.status !== "granted") {
@@ -827,8 +870,10 @@ export default function Submission() {
                       candidate.plate.length > 0
                     ) {
                       setLicense(plate);
+                      saveOffline({ plate });
                     } else {
                       setLicense(undefined);
+                      saveOffline({ plate: undefined });
                     }
                   }}
                   license={stateLicense}
@@ -840,6 +885,7 @@ export default function Submission() {
                   label={"Incident Description (optional)"}
                   onChangeText={v => {
                     setDescription(v);
+                    saveOffline({ description: v });
                   }}
                   multiline={true}
                   numberOfLines={3}
@@ -851,7 +897,10 @@ export default function Submission() {
               <View style={styles.inputWrapper}>
                 <Input
                   label={"Notes (optional and private)"}
-                  onChangeText={v => setNotes(v)}
+                  onChangeText={v => {
+                    setNotes(v);
+                    saveOffline({ notes: v });
+                  }}
                   multiline={true}
                   numberOfLines={3}
                   placeholder={
