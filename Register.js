@@ -118,6 +118,11 @@ export default function Register() {
         "Testify required",
         "You must be willing to testify by phone to use Reported."
       );
+    } else if (!statePassword) {
+      return Alert.alert(
+        'Password required',
+        'You must provide a password for your account'
+      );
     }
     setRegistering(true);
 
@@ -134,17 +139,23 @@ export default function Register() {
         password: statePassword,
       })
       .then(_success => {
-        console.log('register', _success);
+        // console.log('register', _success.data);
         setRegistering(false);
-        navigate('Home');
+        auth.login(_success.data);
       })
       .catch(e => {
         const { response: res } = e;
+        console.log('register err', res);
         setRegistering(false);
-        const errorMessage = {
-          401: "Credentials not found",
-          422: "Could not process information"
-        }[res.status] || "Unknown error";
+        let errorMessage = null;
+        if (!res) {
+          errorMessage = 'Response is empty';
+        } else {
+          errorMessage = {
+            401: "Credentials not found",
+            422: "Could not process information"
+          }[res.status] || "Unknown error";
+        }
         setError(errorMessage);
       });
   }
@@ -163,11 +174,11 @@ export default function Register() {
             opacity: !!stateError ? 100 : 0,
             justifyContent: "center",
             alignItems: "center",
-            flexDirection: "row"
+            flexDirection: "row",
           }}
         >
           <Badge status="error" />
-          <Text> {!!stateError ?? "TAKE UP SPACE"}</Text>
+          <Text style={{ fontSize: 22 }}> {stateError ?? "TAKE UP SPACE"}</Text>
         </View>
         <View style={{ marginTop: "10%" }} />
         <View style={styles.inputWrapper}>
@@ -222,7 +233,7 @@ export default function Register() {
         </View>
         <View style={styles.inputWrapper}>
           <Input
-            label="Password (optional)"
+            label="Password"
             secureTextEntry
             containerStyle={styles.field}
             onChangeText={v => setPassword(v)}
