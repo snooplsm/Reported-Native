@@ -347,30 +347,30 @@ export const reverseGeocode = location => {
 
 export const api = {
     register: body => {
-        return ax.post(`/register`, body).then(res => {
+        return ax.post('/register', body).then(res => {
             return new UserPromise(res);
         });
     },
 
     forgotPassword: forgot => {
-        return ax.post("/forgot_password", forgot);
+        return ax.post('/forgot_password', forgot);
     },
 
     changePassword: password => {
-        return ax.post(`/change_password`, {
+        return ax.post('/change_password', {
             password: password
         });
     },
 
     updateUser: user => {
-        return ax.put("/user/update", user).then(res => {
+        return ax.put('/user/update', user).then(res => {
             return new UserPromise(res);
         });
     },
 
     login: (username, password) => {
         return ax
-            .post("/login", {
+            .post('/login', {
                 username,
                 password
             })
