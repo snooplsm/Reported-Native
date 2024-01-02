@@ -6,7 +6,8 @@
     "ios": "expo run:ios",
     "eject": "expo eject",
     "reset-cache": "yarn start --reset-cache",
-    "android-apk": "cd android && ./gradlew assembleRelease"
+    "android-apk": "cd android && ./gradlew assembleRelease",
+    "android-local": "eas build --platform android --local"
   },
   "dependencies": {
     "@expo/webpack-config": "^19.0.0",
