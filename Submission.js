@@ -686,7 +686,6 @@ export default function Submission() {
 
   const _pickImage = async () => {
     const updateState = {};
-    // const permission = await Permissions.getAsync(Permissions.CAMERA_ROLL);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     console.log('perm', permission);
     const result = await ImagePicker.launchImageLibraryAsync({
