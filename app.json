@@ -9,7 +9,12 @@
       "web"
     ],
     "plugins": [
-      ["expo-image-picker", {"photosPermission": "The app accesses your media to create reports"}]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your media to create reports"
+        }
+      ]
     ],
     "version": "3.1.4",
     "orientation": "default",
@@ -42,7 +47,12 @@
       },
       "icon": "./assets/android/android_icon_round.png",
       "versionCode": 63,
-      "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc",
+      "permissions": [
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "updates": {
       "fallbackToCacheTimeout": 0
