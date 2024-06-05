@@ -6,7 +6,8 @@ import {
   StyleSheet,
   Linking,
   Text,
-  View
+  View,
+  Image
 } from "react-native";
 import { Button, Avatar } from "react-native-elements";
 import SplashMp4 from "./assets/splash.mp4";
@@ -28,14 +29,16 @@ export default class Splash extends React.Component {
 
     return (
       <KeyboardAvoidingView style={styles.container}>
-        <Video
-          source={SplashMp4}
-          shouldPlay={true}
-          isLooping={true}
-          resizeMode="cover"
-          isMuted={true}
-          style={styles.fullScreen}
-        />
+        {false &&
+          <Video
+            source={SplashMp4}
+            shouldPlay={true}
+            isLooping={true}
+            resizeMode="cover"
+            isMuted={true}
+            style={styles.fullScreen}
+          />
+        }
         <View style={[styles.fullScreen, styles.dimmer]} />
 
         <View style={ButtonContainerStyle.style}>
