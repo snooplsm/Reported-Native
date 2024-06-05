@@ -1,5 +1,5 @@
 import React from "react";
-import Autocomplete from "react-native-autocomplete-input";
+// import Autocomplete from "react-native-autocomplete-input";
 import {
   Image,
   StyleSheet,

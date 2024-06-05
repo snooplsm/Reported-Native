@@ -12,6 +12,7 @@ import Constants from "expo-constants";
 import { Notifications } from "expo";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
+import { v4 as uuidv4 } from 'uuid';
 
 const apiUrl = {
     dev: "https://reported-stats.herokuapp.com/prod/",
@@ -216,10 +217,10 @@ class UserPromise extends Promise {
     }
 }
 
-const CHAR_CODE = Constants.installationId.charCodeAt(0);
+// const CHAR_CODE = Constants.installationId.charCodeAt(0);
 
 function getKey() {
-    if (CHAR_CODE < 57) {
+    if (Math.random() < 0.5) {
         return "sk_63c7b9750e41acfadc721f90";
     }
     return "sk_9d99ad00460f1109de48c8ad";

@@ -1,0 +1,30 @@
+diff --git a/node_modules/react-native-autolink/src/index.js b/node_modules/react-native-autolink/src/index.js
+index 389086f..92f82f0 100644
+--- a/node_modules/react-native-autolink/src/index.js
++++ b/node_modules/react-native-autolink/src/index.js
+@@ -321,7 +321,11 @@ Autolink.propTypes = {
+     'twitter',
+   ]),
+   latlng: PropTypes.bool,
+-  linkStyle: Text.propTypes.style, // eslint-disable-line react/no-typos
++  linkStyle: PropTypes.oneOfType([
++    PropTypes.object,
++    PropTypes.array,
++    PropTypes.number
++  ]),
+   mention: PropTypes.oneOf([
+     false,
+     'instagram',
+@@ -338,7 +342,11 @@ Autolink.propTypes = {
+   showAlert: PropTypes.bool,
+   stripPrefix: PropTypes.bool,
+   stripTrailingSlash: PropTypes.bool,
+-  style: Text.propTypes.style, // eslint-disable-line react/no-typos
++  style: PropTypes.oneOfType([
++    PropTypes.object,
++    PropTypes.array,
++    PropTypes.number
++  ]),
+   text: PropTypes.string.isRequired,
+   truncate: PropTypes.number,
+   truncateChars: PropTypes.string,
