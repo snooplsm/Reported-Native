@@ -22,6 +22,8 @@ export default function App() {
     const notificationSubscription = Notifications.addNotificationReceivedListener(handleNotification);
   }, []);
 
+  console.log('app starting');
+
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
