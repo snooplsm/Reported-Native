@@ -17,7 +17,7 @@ import { ToastAndroid } from "react-native";
 import { Avatar, Card, Icon, Tooltip } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
-import ImageCarousel from "./ImageCarousel";
+// import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 import { statusesMap } from "./Statuses";
 

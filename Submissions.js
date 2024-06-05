@@ -19,7 +19,7 @@ import { api, uploadFile } from "./Api";
 import * as DocumentPicker from "expo-document-picker";
 import ReportView from "./ReportView";
 import moment from "moment";
-import Swipeout from "react-native-swipeout";
+// import Swipeout from "react-native-swipeout";
 import SubmissionFilter from "./SubmissionFilter";
 import { statuses } from "./Statuses.js";
 

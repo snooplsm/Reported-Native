@@ -1,5 +1,5 @@
 import React from "react";
-import Autocomplete from "react-native-autocomplete-input";
+// import Autocomplete from "react-native-autocomplete-input";
 import {
   StyleSheet,
   Text,
@@ -8,8 +8,8 @@ import {
   Keyboard,
   TouchableOpacity
 } from "react-native";
-import TouchSpoof from "./TouchSpoof";
-import { Button, Icon } from "react-native-elements";
+// import TouchSpoof from "./TouchSpoof";
+// import { Button, Icon } from "react-native-elements";
 import { categories } from "./Categories.js";
 
 export default class ComplaintView extends React.Component {
@@ -48,7 +48,7 @@ export default class ComplaintView extends React.Component {
         onPress={() => {
           const complaints = [...this.state.complaints, complaint];
           let onComplaintsChanged =
-            this.props.onComplaintsChanged ?? (() => {});
+            this.props.onComplaintsChanged ?? (() => { });
           onComplaintsChanged(complaints);
         }}
       >
