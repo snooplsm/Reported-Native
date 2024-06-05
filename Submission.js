@@ -112,7 +112,7 @@ export default function Submission() {
     );
 
     const user = auth.userObj;
-    const phoneMatches = user && user.phone.match(
+    const phoneMatches = !!user && user.phone.match(
       /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
     );
     if (!phoneMatches) {
