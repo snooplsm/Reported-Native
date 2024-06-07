@@ -8,6 +8,7 @@
       "android",
       "web"
     ],
+    "jsengine": "hermes",
     "plugins": [
       [
         "expo-image-picker",
@@ -51,11 +52,13 @@
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/3249b7b4-8843-4ce9-b47d-1e0365673198"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -64,6 +67,9 @@
       "eas": {
         "projectId": "3249b7b4-8843-4ce9-b47d-1e0365673198"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
