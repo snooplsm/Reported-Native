@@ -112,22 +112,25 @@ export default function Submission() {
     );
 
     const user = auth.userObj;
-    const phoneMatches = !!user && user.phone.match(
-      /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
-    );
-    if (!phoneMatches) {
-      Alert.alert(
-        "Invalid Phone Number",
-        `We have detected that you have an invalid phone number of ${user.phone}.`,
-        [
-          {
-            text: "Fix",
-            onPress: () => {
-              navigation.navigate("Profile");
-            }
-          }
-        ]
+    console.log('user loaded', user);
+    if (!!user) {
+      const phoneMatches = user.phone.match(
+        /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
       );
+      if (!phoneMatches) {
+        Alert.alert(
+          "Invalid Phone Number",
+          `We have detected that you have an invalid phone number of ${user.phone}.`,
+          [
+            {
+              text: "Fix",
+              onPress: () => {
+                navigation.navigate("Profile");
+              }
+            }
+          ]
+        );
+      }
     }
 
     () => {
@@ -136,7 +139,7 @@ export default function Submission() {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
     }
-  }, []);
+  }, [auth.userObj]);
 
   const _keyboardDidShow = () => {
     setKeyboard(true);
