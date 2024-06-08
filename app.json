@@ -47,7 +47,7 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 66,
+      "versionCode": 67,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc",
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
@@ -67,9 +67,6 @@
       "eas": {
         "projectId": "3249b7b4-8843-4ce9-b47d-1e0365673198"
       }
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
     }
   }
 }
