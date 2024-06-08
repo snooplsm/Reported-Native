@@ -8,7 +8,7 @@
     "eject": "expo eject",
     "reset-cache": "yarn start --reset-cache",
     "postinstall": "patch-package",
-    "prebuild": "prebuild",
+    "prebuild": "expo prebuild",
     "android-apk": "cd android && ./gradlew assembleRelease",
     "android-release": "eas build --platform android",
     "android-local": "eas build --platform android --local",
