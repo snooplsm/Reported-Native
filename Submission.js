@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Keyboard, View, StyleSheet, ScrollView } from "react-native";
+import { Alert, Keyboard, View, StyleSheet, ScrollView, Platform } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
@@ -693,6 +693,7 @@ export default function Submission() {
     console.log('perm', permission);
     const result = await ImagePicker.launchImageLibraryAsync({
       exif: true,
+      legacy: Platform.OS === 'android', // needed to get GPS coordinates
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
     });
 
