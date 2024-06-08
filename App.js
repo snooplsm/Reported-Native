@@ -6,6 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppContainer } from "./Navigation";
+console.log('');
 
 const handleNotification = (notification) => {
   // console.log(notification);
