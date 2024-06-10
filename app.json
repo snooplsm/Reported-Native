@@ -8,7 +8,7 @@
       "android",
       "web"
     ],
-    "jsengine": "hermes",
+    "jsEngine": "hermes",
     "plugins": [
       [
         "expo-image-picker",
@@ -22,7 +22,7 @@
 	}
       ]
     ],
-    "version": "3.1.7",
+    "version": "3.1.8",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "splash": {
@@ -52,7 +52,7 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 67,
+      "versionCode": 68,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc",
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
