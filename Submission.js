@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Keyboard, View, StyleSheet, ScrollView, Platform } from "react-native";
+import { Alert, Keyboard, View, StyleSheet, ScrollView, Platform, Pressable } from "react-native";
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
@@ -8,21 +8,22 @@ import TouchSpoof from "./TouchSpoof";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Button, Icon, Input } from "react-native-elements";
 import { BackHandler } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import moment from "moment";
+import ordinal from "ordinal";
+import setColor from "color";
+import * as Location from 'expo-location';
+
 import LicenseView from "./LicenseView";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
-import moment from "moment";
-import ordinal from "ordinal";
 import { colors, globalStyles } from "./Styles";
-import { isSignedIn } from "./Auth";
-import setColor from "color";
 import FloatingMainButton from "./FloatingMainButton";
 import { alpr, api, uploadFile, reverseGeocode } from "./Api";
 import ComplaintView from "./ComplaintView";
 import { getLocationDataFromExif, checkAddressNotBelongsToNY, findInLocation } from "./utils/locations";
 import { checkForNoNullValuesInArray } from "./utils/others";
 import ImageViewer from "./components/ImageViewer";
-import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL } from "./common/dimen";
 import { useAuth } from "./AuthProvider";
 
@@ -50,6 +51,7 @@ export default function Submission({ navigation }) {
   const [stateShowComplaintModal, setShowComplaintModal] = React.useState(false);
   const [statePercent, setPercent] = React.useState(0);
   const [stateData, setStateData] = React.useState({});
+  const [addressLabel, setAddressLabel] = React.useState('Address');
 
   const _complaint = React.useRef();
   const _license = React.useRef();
@@ -462,6 +464,16 @@ export default function Submission({ navigation }) {
       );
       return;
     }
+
+    const place = stateLocation?.place;
+    if (!place) {
+      alrt(
+        'Missing address',
+        'Select the address of the complaint',
+      );
+      return;
+    }
+
     const okPlate = validatePlate(doSubmit);
     if (okPlate === false) {
       alrt("Invalid License Plate", `${okPlate}`);
@@ -470,7 +482,7 @@ export default function Submission({ navigation }) {
     if (okPlate === undefined) {
       return;
     }
-    const place = stateLocation.place;
+
     const address = place.address_components;
     const plateNeedsUploading = okPlate && stateLicense.plate.image;
     const plateUploaded =
@@ -520,6 +532,7 @@ export default function Submission({ navigation }) {
         });
       return;
     }
+    return;
     setSubmitting(true);
 
     const license = Object.assign(
@@ -638,7 +651,9 @@ export default function Submission({ navigation }) {
   }
 
   const clear = (lambda) => {
-    _license.current.clear();
+    if (!!_license.current) {
+      _license.current.clear();
+    }
     setMedia([]);
     setTimeofreport(undefined);
     setTimeofreportstr(undefined);
@@ -654,6 +669,28 @@ export default function Submission({ navigation }) {
       .then(() => {
         lambda && lambda();
       });
+  }
+
+  const getCurrentAddress = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    console.log('loc status', status);
+    if (status !== 'granted') {
+      alrt('Access denied', 'Permission to access location was denied');
+      return;
+    }
+
+    console.log('loc started');
+    let location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Highest,
+      maximumAge: 10000,
+    });
+    console.log('loc', location.coords);
+
+    return {
+      lat: location.coords.latitude,
+      lng: location.coords.longitude,
+      altitude: location.coords.altitude,
+    }
   }
 
   const getAddPhotoText = () => {
@@ -734,16 +771,31 @@ export default function Submission({ navigation }) {
         return;
       }
       console.log('exif', exif);
-      const { lat, lng, altitude } = getLocationDataFromExif(exif);
+      let { lat, lng, altitude } = getLocationDataFromExif(exif);
       console.log('coord', lat, lng, altitude);
       // Check if location exists
       if (!lat || !lng) {
+        /*
         alrt(
           'Missing photo location',
-          'This photo does not contain location data.\nPlease select a photo that has valid location data'
+          'Please select a photo that has valid location data or select location manually'
         );
-        return;
+        */
+        // return;
+        setAddressLabel('Address (loading...)');
+        const currentLocation = await getCurrentAddress();
+        if (!!currentLocation) {
+          setAddressLabel('Address (current)');
+          lat = currentLocation.lat;
+          lng = currentLocation.lng;
+          altitude = currentLocation.altitude;
+        } else {
+          setAddressLabel('Address');
+        }
+      } else {
+        setAddressLabel('Address (from photo)');
       }
+
       const timeof =
         timeofreport && moment(timeofreport, "yyyy:MM:DD HH:mm:ss").toDate();
 
@@ -758,10 +810,13 @@ export default function Submission({ navigation }) {
         altitude: altitude,
         location: { lat, lng }
       });
-      const place = await getLocationData({ lat, lng });
-      if (!place) return;
-      setLocation({ place });
-      updateState.location = { place };
+      if (!!lat && !!lng) {
+        const place = await getLocationData({ lat, lng });
+        if (!!place) {
+          setLocation({ place });
+          updateState.location = { place };
+        }
+      }
       if (!stateLicense) {
         let resize = null;
         if (image.width > image.height) {
@@ -850,9 +905,10 @@ export default function Submission({ navigation }) {
                 >
                   <Input
                     editable={false}
-                    label={"Address"}
+                    label={addressLabel}
                     placeholder={"Automatically will be extracted from photo"}
                     value={stateLocation?.place?.formatted_address}
+                    onKeyPress={() => alrt('clicked', 'address')}
                   />
                 </ScrollView>
               </View>
@@ -920,7 +976,7 @@ export default function Submission({ navigation }) {
             <></>
           }
         </View>
-      </KeyboardAwareScrollView>
+      </KeyboardAwareScrollView >
       <View
         style={{
           width: "100%",

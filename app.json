@@ -15,6 +15,11 @@
         {
           "photosPermission": "The app accesses your media to create reports"
         }
+      ], [
+	"expo-location",
+	{
+	  "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+	}
       ]
     ],
     "version": "3.1.7",
