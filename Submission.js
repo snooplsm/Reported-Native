@@ -29,39 +29,7 @@ import { useAuth } from "./AuthProvider";
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
 
-export default function Submission() {
-  const navigationOptions = ({ navigation }) => {
-    return {
-      headerTitle: <LogoTitle />,
-      headerLeft: () => {
-        if (navigation.getParam("canGoBack")) {
-          return (
-            <Icon
-              onPress={navigation.getParam("onBackPressed")}
-              isVisible={navigation.getParam("canGoBack") === true}
-              containerStyle={{ padding: 10 }}
-              name="arrow-back"
-              color="#000"
-            />
-          );
-        } else {
-          return <></>;
-        }
-      },
-      headerRight: (
-        <Icon
-          onPress={navigation.getParam("onClearPressed")}
-          containerStyle={{
-            padding: 10,
-            opacity: navigation.getParam("isInitialState") === false ? 100 : 0
-          }}
-          name="cancel"
-          color="#000"
-        />
-      )
-    };
-  };
-
+export default function Submission({ navigation }) {
   const [stateMedia, setMedia] = React.useState([]);
   const [stateResizedImages, setResizedImages] = React.useState([]);
   const [stateDatePickerVisible, setDatePickerVisible] = React.useState(undefined);
@@ -86,7 +54,8 @@ export default function Submission() {
   const _complaint = React.useRef();
   const _license = React.useRef();
 
-  const navigation = useNavigation();
+  // const navigation = useNavigation();
+  console.log('subm navi', navigation);
   const auth = useAuth();
 
   const draftKey = `report.draft.${Constants.nativeAppVersion}`;
@@ -99,8 +68,41 @@ export default function Submission() {
     navigation.setParams({
       onBackPressed: onBackPressed,
       canGoBack: false,
-      onClearPressed: onClearPressed
+      onClearPressed: onClearPressed,
     });
+    // navigation.setOptions(navigationOptions(navigation));
+    navigation.setOptions({
+      headerTitle: <LogoTitle />,
+      headerLeft: () => {
+        // if (navigation.getParam("canGoBack")) {
+        if (false) {
+          return (
+            <Icon
+              onPress={navigation.getParam("onBackPressed")}
+              isVisible={navigation.getParam("canGoBack") === true}
+              containerStyle={{ padding: 10 }}
+              name="arrow-back"
+              color="#000"
+            />
+          );
+        } else {
+          return <></>;
+        }
+      },
+      headerRight: () => (
+        <Icon
+          // onPress={navigation.getParam("onClearPressed")}
+          onPress={() => onClearPressed()}
+          containerStyle={{
+            padding: 10,
+            // opacity: navigation.getParam("isInitialState") === false ? 100 : 0
+          }}
+          name="cancel"
+          color="#000"
+        />
+      ),
+    });
+
     loadOffline();
     const keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
@@ -636,7 +638,7 @@ export default function Submission() {
   }
 
   const clear = (lambda) => {
-    _license.clear();
+    _license.current.clear();
     setMedia([]);
     setTimeofreport(undefined);
     setTimeofreportstr(undefined);

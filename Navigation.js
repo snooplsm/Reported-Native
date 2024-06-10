@@ -30,8 +30,9 @@ const UserHomeStackNavigator = createStackNavigator();
 const UserHomeStack = () => {
   const opts = {
     headerShown: true,
-    title: () => { return (<></>) },
-    headerStyle: { height: 43 },
+    title: 'Submission',
+    // title: () => { return (<></>) },
+    // headerStyle: { height: 43 },
   }
 
   return (
@@ -45,8 +46,9 @@ const SubmissionsStackNavigator = createStackNavigator();
 const SubmissionsStack = () => {
   const opts = {
     headerShown: true,
-    title: () => { return (<></>) },
-    headerStyle: { height: 43 },
+    title: 'Reports',
+    // title: () => { return (<></>) },
+    // headerStyle: { height: 43 },
   }
 
   return (
@@ -60,8 +62,9 @@ const ProfileStackNavigator = createStackNavigator();
 const ProfileStack = () => {
   const opts = {
     headerShown: true,
-    title: () => { return (<></>) },
-    headerStyle: { height: 43 },
+    title: 'Profile',
+    // title: () => { return (<></>) },
+    // headerStyle: { height: 43 },
   }
 
   return (
