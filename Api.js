@@ -103,8 +103,10 @@ ax.interceptors.response.use(response => {
 const uploadImageOnS3 = (key, contentType, file) => {
     return new Promise((resolve, reject) => {
         const s3bucket = new S3({
-            accessKeyId: 'AKIAWXBK5VSMACYJ7YUY',
-            secretAccessKey: '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',
+            credentials: {
+                accessKeyId: 'AKIAWXBK5VSMACYJ7YUY',
+                secretAccessKey: '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',
+            },
             Bucket: BUCKET,
             signatureVersion: 'v4',
         });
@@ -116,7 +118,7 @@ const uploadImageOnS3 = (key, contentType, file) => {
             ContentType: contentType,
         };
         s3bucket.upload(params, (err, data) => {
-            if (err) {
+            if (!!err) {
                 reject('error in callback');
             }
             resolve(data.Location);
@@ -124,83 +126,65 @@ const uploadImageOnS3 = (key, contentType, file) => {
     });
 };
 
-export const uploadFile = (file, extra) => {
-    return new Promise((resolve, reject) => {
-        const data = {};
-        isSignedIn()
-            .then(user => {
-                data.user = user;
-                if (file.type === "image") {
-                    return ImageManipulator.manipulateAsync(file.url || file.uri, [], {
-                        compress: 1.0,
-                        format: ImageManipulator.SaveFormat.JPEG
-                    });
-                } else {
-                    return file;
-                }
-            })
-            .catch(e => {
-                throw e;
-            })
-            .then(fc => {
-                const tmp = Object.assign({}, fc)
-                data.fc = tmp;
-                return FileSystem.getInfoAsync(fc.uri || fc.url, {
-                    md5: true
-                });
-            })
-            .then(fc => {
-                data.fc.md5 = fc.md5;
-                return urlToBlob(data.fc.uri || data.fc.url);
-            })
-            .then(blob => {
-                const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
-                let ext = data.fc.uri || data.fc.url;
-                ext =
-                    ext.lastIndexOf(".") != -1 &&
-                    ext.lastIndexOf(".") != ext.length - 1 &&
-                    ext.substring(ext.lastIndexOf(".") + 1).toLowerCase();
-                const key = `${data.user.id}/${time}.${ext}`;
-                const metaData = Object.assign({
-                    "User-Id": data.user.id,
-                    "File-Name": data.fc.uri || data.fc.url,
-                    "Operating-System": Platform.OS,
-                    Device: Constants.deviceName,
-                    width: (data.fc.width ?? -1).toString(),
-                    height: (data.fc.height ?? -1).toString(),
-                    duration: (file.duration ?? -1).toString(),
-                    lat: (file.lat ?? 0.0).toString(),
-                    lng: (file.lng ?? 0.0).toString(),
-                    timeofimage: (file.takenAt && file.takenAt.toString()) ?? "-1"
-                });
-                data.size = blob.size;
-                data.meta = metaData;
-                let ContentType = null;
-                if (file.type === "image" || ext === "jpg") {
-                    ContentType = "image/jpeg";
-                } else if (file.type === "pdf" || ext === "pdf") {
-                    ContentType = "application/pdf";
-                } else {
-                    ContentType = "video/mp4";
-                }
-
-                return uploadImageOnS3(key, ContentType, blob);
-            })
-            .then(dataLocation => {
-                resolve({
-                    url: dataLocation,
-                    meta: data.meta,
-                    width: data.fc.width,
-                    height: data.fc.height,
-                    duration: file.duration,
-                    etag: data.fc.md5,
-                    size: data.size,
-                    takenAt: file.takenAt
-                })
-            }).catch(e => {
-                reject(e)
-            });
+export const uploadFile = async (user, file, extra) => {
+    const data = { user: user };
+    let fc = file;
+    if (file.type === "image") {
+        fc = await ImageManipulator.manipulateAsync(file.url || file.uri, [], {
+            compress: 1.0,
+            format: ImageManipulator.SaveFormat.JPEG
+        });
+    }
+    const tmp = Object.assign({}, fc)
+    data.fc = tmp;
+    fc = await FileSystem.getInfoAsync(fc.uri || fc.url, {
+        md5: true
     });
+
+    data.fc.md5 = fc.md5;
+    const blob = await urlToBlob(data.fc.uri || data.fc.url);
+
+    const time = moment().format("YYYY_MM_DD_HH_mm_ss_SSS");
+    let ext = data.fc.uri || data.fc.url;
+    ext =
+        ext.lastIndexOf(".") != -1 &&
+        ext.lastIndexOf(".") != ext.length - 1 &&
+        ext.substring(ext.lastIndexOf(".") + 1).toLowerCase();
+    const key = `${data.user.id}/${time}.${ext}`;
+    const metaData = Object.assign({
+        "User-Id": data.user.id,
+        "File-Name": data.fc.uri || data.fc.url,
+        "Operating-System": Platform.OS,
+        Device: Constants.deviceName,
+        width: (data.fc.width ?? -1).toString(),
+        height: (data.fc.height ?? -1).toString(),
+        duration: (file.duration ?? -1).toString(),
+        lat: (file.lat ?? 0.0).toString(),
+        lng: (file.lng ?? 0.0).toString(),
+        timeofimage: (file.takenAt && file.takenAt.toString()) ?? "-1"
+    });
+    data.size = blob.size;
+    data.meta = metaData;
+    let ContentType = null;
+    if (file.type === "image" || ext === "jpg") {
+        ContentType = "image/jpeg";
+    } else if (file.type === "pdf" || ext === "pdf") {
+        ContentType = "application/pdf";
+    } else {
+        ContentType = "video/mp4";
+    }
+
+    const s3location = await uploadImageOnS3(key, ContentType, blob);
+    return {
+        url: s3location,
+        meta: data.meta,
+        width: data.fc.width,
+        height: data.fc.height,
+        duration: file.duration,
+        etag: data.fc.md5,
+        size: data.size,
+        takenAt: file.takenAt
+    };
 };
 
 class UserPromise extends Promise {

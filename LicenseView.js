@@ -31,6 +31,17 @@ export default class LicenseView extends React.Component {
     return "";
   }
 
+  get licenseStateFromProps() {
+    if (this.state.licenseState !== "") {
+      return this.state.licenseState;
+    }
+    const { license } = this.props;
+    if (license && license.plate && license.plate.region) {
+      return license.plate.region;
+    }
+    return "";
+  }
+
   get initialState() {
     return {
       licenses: [],
@@ -47,7 +58,8 @@ export default class LicenseView extends React.Component {
     if (
       newz.length > old.length &&
       this.props.alpr &&
-      this.licenseFromProps === ""
+      this.licenseFromProps === "" &&
+      this.licenseStateFromProps === ""
     ) {
       this.processImage({
         image: newz[newz.length - 1],
@@ -138,6 +150,7 @@ export default class LicenseView extends React.Component {
     this.setState({
       selected: selected,
       licensePlate: selected.candidate.plate,
+      licenseState: selected.plate.region,
       showPlatePicker: false
     });
     if (this.props.onPlateSelected) {
@@ -187,22 +200,40 @@ export default class LicenseView extends React.Component {
               source={license.plate.image}
             />
           )}
-        <Input
-          placeholder="ie: T64353"
-          autoCapitalize="characters"
-          onChangeText={licensePlate => {
-            this.setState({ licensePlate: licensePlate.toUpperCase() });
-            this._onPlateSelected({
-              plate: { region: "" },
-              candidate: {
-                plate: licensePlate
-              },
-              media: undefined
-            });
-          }}
-          label={"License Plate"}
-          value={this.licenseFromProps}
-        />
+        <View>
+          <Input
+            placeholder="ie: T64353"
+            autoCapitalize="characters"
+            onChangeText={licensePlate => {
+              this.setState({ licensePlate: licensePlate.toUpperCase() });
+              this._onPlateSelected({
+                plate: { region: this.state.licenseState },
+                candidate: {
+                  plate: licensePlate,
+                },
+                media: undefined
+              });
+            }}
+            label={"License Plate"}
+            value={this.licenseFromProps}
+          />
+          <Input
+            placeholder="ie: NY"
+            autoCapitalize="characters"
+            onChangeText={licenseState => {
+              this.setState({ licenseState: licenseState.toUpperCase() });
+              this._onPlateSelected({
+                plate: { region: licenseState },
+                candidate: {
+                  plate: this.state.licensePlate,
+                },
+                media: undefined
+              });
+            }}
+            label={"State"}
+            value={this.licenseStateFromProps}
+          />
+        </View>
 
         <Modal
           visible={this.state.plates.length != 0 && this.state.showPlatePicker}
