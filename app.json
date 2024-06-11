@@ -22,7 +22,7 @@
 	}
       ]
     ],
-    "version": "3.1.8",
+    "version": "3.1.9",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "splash": {
@@ -52,7 +52,7 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 68,
+      "versionCode": 69,
       "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc",
       "permissions": [
         "android.permission.ACCESS_MEDIA_LOCATION",
