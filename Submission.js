@@ -228,9 +228,9 @@ export default function Submission({ navigation }) {
           console.log('load offline', data);
           if (data) {
             data.submitting = false;
-            setMedia(data.media);
+            setMedia(data.media || []);
             setTimeOfReportField(data.timeofreportExif);
-            setComplaints(data.complaints);
+            setComplaints(data.complaints || []);
             setDescription(data.description);
             setNotes(data.notes);
             setLicense(data.license);
@@ -280,7 +280,7 @@ export default function Submission({ navigation }) {
     }
   }
 
-  constreportSubmitted = async result => {
+  const reportSubmitted = async result => {
     const thirty =
       result.thirtyDays > 1
         ? `This is your ${ordinal(
@@ -456,7 +456,78 @@ export default function Submission({ navigation }) {
       });
   }
 
-  const doSubmit = () => {
+  const uploadAllMedia = async () => {
+    const uploadedMedia = { ...stateUploadedMedia };
+
+    //for (const media of stateMedia) {
+    //};
+    await Promise.all(stateMedia.map(async (media) => {
+      // console.warn("upload start", media);
+      const uploaded = await uploadFile(auth.userObj, media, { listener: progressListener });
+      if (media.type === "image") {
+        uploaded.type = "S3_IMAGE";
+      } else {
+        uploaded.type = "S3_VIDEO";
+      }
+      // console.warn("uploaded", uploaded);
+      uploadedMedia[media.url || media.uri] = uploaded;
+    }));
+
+    return uploadedMedia;
+  }
+
+  const uploadAllMediaOld = () => {
+    const uploadedMedia = { ...stateUploadedMedia };
+
+    while (true) {
+      const plateNeedsUploading = !!stateLicense.plate.image;
+      const plateUploaded =
+        !plateNeedsUploading ||
+        uploadedMedia[stateLicense.plate.image.url];
+      if (!plateUploaded) {
+        uploadFile(auth.userObj, stateLicense.plate.image, {
+          listener: progress => {
+            progressListener(progress);
+          }
+        })
+          .then(uploaded => {
+            uploaded.type = "S3_IMAGE_LICENSE";
+            uploadedMedia[stateLicense.plate.image.url] = uploaded;
+          })
+          .catch(() => {
+            alrt("Error uploading image", "Image upload failed.");
+          });
+        break;
+      }
+
+      const needToUpload = stateMedia.filter(
+        x => !uploadedMedia[x.url]
+      );
+      if (needToUpload.length > 0) {
+        const file = needToUpload[0];
+        uploadFile(auth.userObj, file, {
+          listener: progressListener
+        })
+          .then(uploaded => {
+            if (file.type === "image") {
+              uploaded.type = "S3_IMAGE";
+            } else {
+              uploaded.type = "S3_VIDEO";
+            }
+            // console.warn("uploaded", uploaded);
+            uploadedMedia[file.url || file.uri] = uploaded;
+          })
+          .catch(e => {
+            alrt("Error uploading media", JSON.stringify(e));
+          });
+        break;
+      }
+    }
+
+    return uploadedMedia;
+  }
+
+  const doSubmit = async () => {
     if (stateComplaints.length < 1) {
       alrt(
         "Missing Complaint",
@@ -476,7 +547,7 @@ export default function Submission({ navigation }) {
 
     const okPlate = validatePlate(doSubmit);
     if (okPlate === false) {
-      alrt("Invalid License Plate", `${okPlate}`);
+      alrt("Invalid License Plate", "");
       return;
     }
     if (okPlate === undefined) {
@@ -484,56 +555,9 @@ export default function Submission({ navigation }) {
     }
 
     const address = place.address_components;
-    const plateNeedsUploading = okPlate && stateLicense.plate.image;
-    const plateUploaded =
-      !plateNeedsUploading ||
-      stateUploadedMedia[stateLicense.plate.image.url];
-    if (!plateUploaded) {
-      setSubmitting(true);
-      uploadFile(stateLicense.plate.image, {
-        listener: progress => {
-          progressListener(progress);
-        }
-      })
-        .then(uploaded => {
-          uploaded.type = "S3_IMAGE_LICENSE";
-          const uploadedMedia = stateUploadedMedia;
-          uploadedMedia[stateLicense.plate.image.url] = uploaded;
-          setUploadedMedia(uploadedMedia);
-          submit();
-        })
-        .catch(() => {
-          alrt("Error uploading image", "Image upload failed.");
-        });
-      return;
-    }
-    const needToUpload = stateMedia.filter(
-      x => !stateUploadedMedia[x.url]
-    );
-    if (needToUpload.length > 0) {
-      const file = needToUpload[0];
-      setSubmitting(true);
-      uploadFile(file, {
-        listener: progressListener
-      })
-        .then(uploaded => {
-          if (file.type === "image") {
-            uploaded.type = "S3_IMAGE";
-          } else {
-            uploaded.type = "S3_VIDEO";
-          }
-          const uploadedMedia = stateUploadedMedia;
-          uploadedMedia[file.url || fille.uri] = uploaded;
-          setUploadedMedia(uploadedMedia);
-          submit();
-        })
-        .catch(e => {
-          alrt("Error uploading media", JSON.stringify(e));
-        });
-      return;
-    }
-    return;
     setSubmitting(true);
+    const uploadedMedia = await uploadAllMedia();
+    setUploadedMedia(uploadedMedia);
 
     const license = Object.assign(
       {
@@ -549,9 +573,9 @@ export default function Submission({ navigation }) {
 
     if (
       stateLicense &&
-      stateUploadedMedia[stateLicense.url]
+      uploadedMedia[stateLicense.url]
     ) {
-      license.media = stateUploadedMedia[stateLicense.plate.url];
+      license.media = uploadedMedia[stateLicense.plate.url];
     }
 
     const geo = place.geometry.location;
@@ -575,6 +599,7 @@ export default function Submission({ navigation }) {
       );
       return;
     }
+
     api
       .report({
         description: stateDescription,
@@ -598,11 +623,11 @@ export default function Submission({ navigation }) {
         }),
         timeofincident: stateTimeofreport,
         media: stateMedia
-          .map(x => stateUploadedMedia[x.url])
+          .map(x => uploadedMedia[x.url])
           .concat(
             [license]
               .filter(x => x && x.plate && x.plate.image)
-              .map(x => stateUploadedMedia[x.plate.image.url])
+              .map(x => uploadedMedia[x.plate.image.url])
           )
       })
       .then(x => {
@@ -640,6 +665,9 @@ export default function Submission({ navigation }) {
         );
         */
         console.warn('err submitting report', Object.assign({}, e));
+      })
+      .finally(() => {
+        setSubmitting(false);
       });
   }
 
@@ -757,6 +785,7 @@ export default function Submission({ navigation }) {
       type: imageInfo.type,
     };
     // Check if exif exists
+    console.log('exif', exif);
     if (!exif) {
       alrt(
         'Missing exif data',
@@ -770,9 +799,8 @@ export default function Submission({ navigation }) {
         alrt('Photo creation date is missing', `Can't extract time.\nPlease, select proper photo.`);
         return;
       }
-      console.log('exif', exif);
       let { lat, lng, altitude } = getLocationDataFromExif(exif);
-      console.log('coord', lat, lng, altitude);
+      // console.warn('coord', lat, lng, altitude);
       // Check if location exists
       if (!lat || !lng) {
         /*
@@ -784,6 +812,7 @@ export default function Submission({ navigation }) {
         // return;
         setAddressLabel('Address (loading...)');
         const currentLocation = await getCurrentAddress();
+        console.log('current loc', currentLocation);
         if (!!currentLocation) {
           setAddressLabel('Address (current)');
           lat = currentLocation.lat;
@@ -810,6 +839,7 @@ export default function Submission({ navigation }) {
         altitude: altitude,
         location: { lat, lng }
       });
+      // console.warn('image', image);
       if (!!lat && !!lng) {
         const place = await getLocationData({ lat, lng });
         if (!!place) {
@@ -817,6 +847,7 @@ export default function Submission({ navigation }) {
           updateState.location = { place };
         }
       }
+      console.log('location', updateState.location);
       if (!stateLicense) {
         let resize = null;
         if (image.width > image.height) {
@@ -827,7 +858,15 @@ export default function Submission({ navigation }) {
         const data = {
           original: image
         };
-        ImageManipulator.manipulateAsync(image.url, [{ resize }])
+        const imageResult = await ImageManipulator.manipulateAsync(image.url, [{ resize }]);
+        // console.warn('imageResult', imageResult);
+        data.resized = imageResult;
+        const imageAlrp = await alpr.recognize(imageResult);
+        // console.warn('alpr', imageAlrp);
+        data.images = [data.resized];
+        updateState.alpr = imageAlrp;
+        setAlpr(imageAlrp);
+        /*
           .then(r => {
             data.resized = r;
             return alpr.recognize(r);
@@ -839,6 +878,7 @@ export default function Submission({ navigation }) {
             updateState.alpr = data;
           })
           .catch(e => { });
+          */
       }
     }
 
