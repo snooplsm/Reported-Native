@@ -6,7 +6,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppContainer } from "./Navigation";
-console.log('');
 
 const handleNotification = (notification) => {
   // console.log(notification);
@@ -18,7 +17,7 @@ const handleNotification = (notification) => {
   }
 };
 
-export default function App() {
+export default function Index() {
   React.useEffect(() => {
     const notificationSubscription = Notifications.addNotificationReceivedListener(handleNotification);
   }, []);
