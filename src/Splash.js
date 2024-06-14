@@ -10,7 +10,7 @@ import {
   Image
 } from "react-native";
 import { Button, Avatar } from "react-native-elements";
-import SplashMp4 from "./assets/splash.mp4";
+import SplashMp4 from "../assets/splash.mp4";
 import { ButtonContainerStyle, ButtonStyle } from "./Styles";
 import { uploadFile } from "./Api";
 
