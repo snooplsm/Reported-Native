@@ -38,6 +38,7 @@
     "expo-notifications": "~0.28.9",
     "expo-splash-screen": "~0.27.5",
     "expo-status-bar": "~1.12.1",
+    "firebase": "^10.12.2",
     "geolib": "^3.0.4",
     "is-buffer": "^2.0.5",
     "lottie-ios": "^4.2.0",
