@@ -4,6 +4,10 @@ import { StyleSheet, Linking } from "react-native";
 import * as Notifications from 'expo-notifications';
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import 'expo-dev-client';
+
+// import analytics from './firebaseConfig';
+// import analytics from "@react-native-firebase/analytics";
 
 import { AppContainer } from "./Navigation";
 
@@ -18,11 +22,15 @@ const handleNotification = (notification) => {
 };
 
 export default function Index() {
+  // console.log('firebase app', firebase?._options?.appId);
+
   React.useEffect(() => {
     const notificationSubscription = Notifications.addNotificationReceivedListener(handleNotification);
   }, []);
 
   console.log('app starting');
+  // console.log('ana', analytics);
+  // analytics().logEvent('started', {});
 
   return (
     <SafeAreaProvider>
