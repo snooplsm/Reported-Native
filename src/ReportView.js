@@ -17,7 +17,7 @@ import { ToastAndroid } from "react-native";
 import { Avatar, Card, Icon, Tooltip } from "react-native-elements";
 import Autolink from "react-native-autolink";
 import { HorizontalStyle, ButtonStyle } from "./Styles";
-import ImageCarousel from "./ImageCarousel";
+// import ImageCarousel from "./ImageCarousel";
 import moment from "moment";
 import { statusesMap } from "./Statuses";
 
@@ -38,7 +38,7 @@ export default class ReportView extends React.Component {
     const { report, address } = rpt;
     if (report.media && report.media.length > 0) {
       return report.media.map((image, index) => {
-        const thumb = image.thumbnails && image.thumbnails.reduce(reduce512);
+        const thumb = !!image.thumbnails && !!image.thumbnails.length && image.thumbnails.reduce(reduce512);
         if (!thumb) {
           return <></>;
         }
@@ -262,7 +262,7 @@ export default class ReportView extends React.Component {
             alignItems: "flex-end"
           }}
         >
-          {report.points && (
+          {!!report.points ? (
             <Tooltip
               popover={
                 <Text style={{ color: "white", fontWeight: "bold" }}>
@@ -288,8 +288,8 @@ export default class ReportView extends React.Component {
                 }}
               />
             </Tooltip>
-          )}
-          {report.fine && (
+          ) : null}
+          {!!report.fine ? (
             <Tooltip
               popover={
                 <Text style={{ color: "white", fontWeight: "bold" }}>
@@ -314,7 +314,7 @@ export default class ReportView extends React.Component {
                 }}
               />
             </Tooltip>
-          )}
+          ) : null}
           {report.media.find(x => x.type && x.type.indexOf("GUILTY") != -1) && (
             <Avatar
               rounded

@@ -1,7 +1,6 @@
 import React from "react";
-import Autocomplete from "react-native-autocomplete-input";
+// import Autocomplete from "react-native-autocomplete-input";
 import {
-  AsyncStorage,
   Image,
   StyleSheet,
   TouchableOpacity,
@@ -13,13 +12,14 @@ import {
   FlatList,
   Platform
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MapView, { Marker, Polygon } from "react-native-maps";
 import { Button, Icon, Input, Overlay } from "react-native-elements";
 import { AutoStyle } from "./Styles";
 import Autolink from "react-native-autolink";
 import { addresses } from "./Addresses.js";
 import { findInLocation } from "./utils/locations";
-import marker from "./assets/car-marker.png";
+import marker from "../assets/car-marker.png";
 import { geocode, reverseGeocode, precincts } from "./Api";
 const polylineUtil = require("@mapbox/polyline");
 import { isPointInPolygon } from "geolib";
