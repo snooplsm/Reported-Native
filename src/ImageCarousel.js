@@ -58,6 +58,10 @@ export default class ImageCarousel extends React.Component {
   }
 
   render() {
+    if (!this.props.entries) {
+      return <></>;
+    }
+
     return (
       <View>
         <Carousel

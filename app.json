@@ -8,7 +8,25 @@
       "android",
       "web"
     ],
-    "version": "3.0.0",
+    "jsEngine": "hermes",
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your media to create reports"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      "expo-build-properties"
+    ],
+    "version": "3.1.10",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "splash": {
@@ -21,12 +39,13 @@
       "buildNumber": "39",
       "appStoreUrl": "https://itunes.apple.com/us/app/reported/id916072964?ls=1",
       "supportsTablet": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the devices photos and videos to submit 311 reports with supporting evidence."
       }
     },
     "android": {
-      "package": "cab.reported.nyc",
+      "package": "com.reported1.android",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android/ic_launcher_foreground.png",
         "backgroundColor": "#ffffff"
@@ -38,14 +57,26 @@
         }
       },
       "icon": "./assets/android/android_icon_round.png",
-      "versionCode": 58,
-      "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc"
+      "versionCode": 70,
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=cab.reported.nyc",
+      "permissions": [
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/3249b7b4-8843-4ce9-b47d-1e0365673198"
     },
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3249b7b4-8843-4ce9-b47d-1e0365673198"
+      }
+    }
   }
 }
