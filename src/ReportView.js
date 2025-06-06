@@ -141,7 +141,7 @@ export default class ReportView extends React.Component {
     const time = moment(report.timeofincident);
     // console.log(report.fine, report.points);
     return (
-      <View>
+      <View key={report.id}>
         <Card title={report.complaint}>
           <View
             style={[
