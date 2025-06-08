@@ -118,7 +118,7 @@ export default class ReportView extends React.Component {
     if (report.status <= 0) {
       return "PENDING";
     } else {
-      return statusesMap[report.status].text;
+      return !!statusesMap[report.status] && statusesMap[report.status].text;
     }
   }
 
@@ -141,8 +141,8 @@ export default class ReportView extends React.Component {
     const time = moment(report.timeofincident);
     // console.log(report.fine, report.points);
     return (
-      <View key={report.id}>
-        <Card title={report.complaint}>
+      <View>
+        <Card title={report.complaint} key={rpt.id}>
           <View
             style={[
               HorizontalStyle.style,

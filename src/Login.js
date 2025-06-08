@@ -118,7 +118,7 @@ export default function Login() {
                 setLoading(false);
                 let message = "";
                 if (x.response) {
-                    if (x.response.status == 401) {
+                    if (x.response.status === 401) {
                         message = "Credentials not found";
                     } else if (x.response.status >= 500 && x.response.status < 600) {
                         message = "Server error";
