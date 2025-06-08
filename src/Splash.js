@@ -1,5 +1,5 @@
 import React from "react";
-import { Video } from "expo-av";
+import { Video } from "expo-video";
 import {
   Alert,
   KeyboardAvoidingView,
