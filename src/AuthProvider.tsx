@@ -51,8 +51,10 @@ export default function AuthProvider({ children }: AuthProviderProps) {
                 try {
                     myUserObj = JSON.parse(res);
                 } catch { }
-                setUserObj(myUserObj);
-                setAuthorized(!!myUserObj && !!myUserObj.sessionToken);
+                if (!!myUserObj && !!myUserObj.user) {
+                    setUserObj(myUserObj.user);
+                    setAuthorized(!!myUserObj && !!myUserObj.sessionToken);
+                }
                 setLoading(false);
             })
     }
