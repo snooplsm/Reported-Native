@@ -115,7 +115,7 @@ export default function Submission({ navigation }) {
       _keyboardDidHide
     );
 
-    const user = auth.userObj;
+    const user = auth.getUserObj();
     console.log('user loaded', user);
     if (!!user && !!user.phone) {
       const phoneMatches = user.phone.match(

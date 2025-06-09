@@ -142,7 +142,7 @@ export default function Profile() {
     }
 
     React.useEffect(() => {
-        const user = auth.userObj;
+        const user = auth.getUserObj();
         if (!!user) {
             setUserData(user);
         } else {
