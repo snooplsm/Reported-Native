@@ -2,7 +2,6 @@
   "expo": {
     "name": "Reported",
     "slug": "reported",
-    "privacy": "unlisted",
     "platforms": [
       "ios",
       "android",

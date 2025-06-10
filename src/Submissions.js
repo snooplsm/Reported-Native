@@ -157,7 +157,7 @@ export default class Submissions extends React.Component {
                 });
             })
             .catch(err => {
-                // console.log(err);
+                console.log(err);
                 let message = "";
                 if (err.response) {
                     if (err.response.status == 401) {
