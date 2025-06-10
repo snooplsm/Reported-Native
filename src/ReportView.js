@@ -43,7 +43,7 @@ export default class ReportView extends React.Component {
           return null;
         }
         return (
-          <>
+          <View key={index}>
             <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
               <ImageBackground
                 source={{ uri: thumb.url }}
@@ -85,7 +85,7 @@ export default class ReportView extends React.Component {
             {index !== report.media.length - 1 && (
               <View style={{ height: 10, paddingTop: 10 }}></View>
             )}
-          </>
+          </View>
         );
       });
     } else {
