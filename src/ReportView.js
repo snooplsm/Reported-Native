@@ -40,7 +40,7 @@ export default class ReportView extends React.Component {
       return report.media.map((image, index) => {
         const thumb = !!image.thumbnails && !!image.thumbnails.length && image.thumbnails.reduce(reduce512);
         if (!thumb) {
-          return <></>;
+          return null;
         }
         return (
           <>
@@ -89,7 +89,7 @@ export default class ReportView extends React.Component {
         );
       });
     } else {
-      return <></>;
+      return null;
     }
   }
 
@@ -141,8 +141,8 @@ export default class ReportView extends React.Component {
     const time = moment(report.timeofincident);
     // console.log(report.fine, report.points);
     return (
-      <View>
-        <Card title={report.complaint} key={rpt.id}>
+      <View key={rpt.id}>
+        <Card title={report.complaint}>
           <View
             style={[
               HorizontalStyle.style,
