@@ -57,7 +57,7 @@ export default function Submission({ navigation }) {
   const _license = React.useRef();
 
   // const navigation = useNavigation();
-  console.log('subm navi', navigation);
+  // console.log('subm navi', navigation);
   const auth = useAuth();
 
   const draftKey = `report.draft.${Constants.nativeAppVersion}`;
@@ -115,9 +115,9 @@ export default function Submission({ navigation }) {
       _keyboardDidHide
     );
 
-    const user = auth.userObj;
+    const user = auth.getUserObj();
     console.log('user loaded', user);
-    if (!!user) {
+    if (!!user && !!user.phone) {
       const phoneMatches = user.phone.match(
         /^(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/
       );

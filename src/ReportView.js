@@ -40,10 +40,10 @@ export default class ReportView extends React.Component {
       return report.media.map((image, index) => {
         const thumb = !!image.thumbnails && !!image.thumbnails.length && image.thumbnails.reduce(reduce512);
         if (!thumb) {
-          return <></>;
+          return null;
         }
         return (
-          <>
+          <View key={index}>
             <TouchableOpacity onPress={() => Linking.openURL(image.url)}>
               <ImageBackground
                 source={{ uri: thumb.url }}
@@ -85,11 +85,11 @@ export default class ReportView extends React.Component {
             {index !== report.media.length - 1 && (
               <View style={{ height: 10, paddingTop: 10 }}></View>
             )}
-          </>
+          </View>
         );
       });
     } else {
-      return <></>;
+      return null;
     }
   }
 
@@ -118,7 +118,7 @@ export default class ReportView extends React.Component {
     if (report.status <= 0) {
       return "PENDING";
     } else {
-      return statusesMap[report.status].text;
+      return !!statusesMap[report.status] && statusesMap[report.status].text;
     }
   }
 
@@ -141,7 +141,7 @@ export default class ReportView extends React.Component {
     const time = moment(report.timeofincident);
     // console.log(report.fine, report.points);
     return (
-      <View>
+      <View key={rpt.id}>
         <Card title={report.complaint}>
           <View
             style={[

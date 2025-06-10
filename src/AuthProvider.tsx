@@ -5,7 +5,7 @@ import { USER_KEY } from './Auth';
 interface IAuthContext {
     loading: boolean,
     authorized: boolean,
-    userObj: any,
+    getUserObj: () => object,
     login: (userObj: object) => Promise<boolean>,
     logout: () => void,
 }
@@ -13,7 +13,7 @@ interface IAuthContext {
 const AuthContextDefaults = {
     loading: true,
     authorized: false,
-    userObj: null,
+    getUserObj: () => null,
     login: () => null,
     logout: () => null,
 }
@@ -29,11 +29,12 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const [loading, setLoading] = React.useState<boolean>(true);
     const [userObj, setUserObj] = React.useState(null);
 
-    const login = (userObj: any): Promise<boolean> => {
+    const login = (user: any): Promise<boolean> => {
         return new Promise((resolve, reject) => {
-            AsyncStorage.setItem(USER_KEY, JSON.stringify(userObj))
+            AsyncStorage.setItem(USER_KEY, JSON.stringify(user))
                 .then(() => {
-                    setAuthorized(!!userObj && !!userObj.sessionToken);
+                    setUserObj(user);
+                    setAuthorized(!!user && !!user.sessionToken);
                     resolve(true);
                 })
                 .catch((err) => reject(err));
@@ -51,10 +52,17 @@ export default function AuthProvider({ children }: AuthProviderProps) {
                 try {
                     myUserObj = JSON.parse(res);
                 } catch { }
-                setUserObj(myUserObj);
-                setAuthorized(!!myUserObj && !!myUserObj.sessionToken);
+                const authGood = !!myUserObj && !!myUserObj.sessionToken;
+                if (authGood) {
+                    setUserObj(myUserObj);
+                }
+                setAuthorized(authGood);
                 setLoading(false);
             })
+    }
+
+    const getUserObj = () => {
+        return userObj;
     }
 
     React.useEffect(() => {
@@ -62,7 +70,6 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     }, []);
 
     const values = {
-        userObj,
         loading,
         authorized,
     }
@@ -70,6 +77,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const funcs = {
         login,
         logout,
+        getUserObj,
     }
 
     return (
