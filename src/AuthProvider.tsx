@@ -31,7 +31,6 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     const login = (user: any): Promise<boolean> => {
         return new Promise((resolve, reject) => {
-            console.log('save user', user);
             AsyncStorage.setItem(USER_KEY, JSON.stringify(user))
                 .then(() => {
                     setUserObj(user);
@@ -49,21 +48,20 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const loadAuthorization = () => {
         AsyncStorage.getItem(USER_KEY)
             .then((res) => {
-                console.log('loading auth', res);
                 let myUserObj = null;
                 try {
                     myUserObj = JSON.parse(res);
                 } catch { }
-                if (!!myUserObj && !!myUserObj.sessionToken) {
-                    setUserObj(myUserObj.user);
-                    setAuthorized(!!myUserObj && !!myUserObj.sessionToken);
+                const authGood = !!myUserObj && !!myUserObj.sessionToken;
+                if (authGood) {
+                    setUserObj(myUserObj);
                 }
+                setAuthorized(authGood);
                 setLoading(false);
             })
     }
 
     const getUserObj = () => {
-        console.log('auth get user', userObj);
         return userObj;
     }
 
