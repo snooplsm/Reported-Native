@@ -116,7 +116,7 @@ export default function Submission({ navigation }) {
       _keyboardDidHide
     );
 
-    const user = auth.getUserObj();
+    const user = auth.userObj;
     console.log('user loaded', user);
     if (!!user && !!user.phone) {
       const phoneMatches = user.phone.match(
@@ -338,14 +338,14 @@ export default function Submission({ navigation }) {
 
   const validatePlate = (from) => {
     const okPlate =
-      stateLicense &&
-      stateLicense.candidate &&
-      stateLicense.candidate.plate &&
-      stateLicense.candidate.plate.length > 1;
+      !!stateLicense &&
+      !!stateLicense.plate &&
+      !!stateLicense.region
     if (!okPlate) {
       return false;
     }
-    const plate = stateLicense.candidate.plate.toUpperCase();
+    const plate = stateLicense.plate;
+    const licState = stateLicense.region;
 
     const regexes = [/^[TNWY]\d{6}$/g, /^[TNWY]\d{6}[^C]{*}/g, /^\d{6}[C]/g];
     if (
@@ -358,12 +358,12 @@ export default function Submission({ navigation }) {
     }
     const NYPD = /^[\d]{4}$/g;
     const USPS = /^[\d]{7}$/g;
+    const license = stateLicense;
     if (
       from &&
       plate.match(USPS) &&
-      (stateLicense.candidate.state || "").length === 0
+      (licState || "").length === 0
     ) {
-      const license = stateLicense;
       Alert.alert(
         "Is this a USPS vehicle?",
         "Does this vehicle belong to the US Postal Service?",
@@ -371,19 +371,18 @@ export default function Submission({ navigation }) {
           {
             text: "YES",
             onPress: () => {
-              const license = stateLicense;
-              license.candidate.state = "USPS";
+              license.region = "USPS";
               setLicense(license);
-              saveOffline({ license })
+              saveOffline({ plate: plate, region: license.region })
                 .then(() => from());
             }
           },
           {
             text: "NO",
             onPress: () => {
-              license.candidate.state = "COMMERCIAL";
+              license.region = "COMMERCIAL";
               setLicense(license);
-              saveOffline({ license })
+              saveOffline({ plate: plate, region: license.region })
                 .then(() => from());
             }
           }
@@ -394,7 +393,7 @@ export default function Submission({ navigation }) {
     if (
       from &&
       plate.match(NYPD) &&
-      (stateLicense.candidate.state || "").length === 0
+      (licState || "").length === 0
     ) {
       Alert.alert(
         "Is this an NYPD vehicle?",
@@ -403,20 +402,18 @@ export default function Submission({ navigation }) {
           {
             text: "YES",
             onPress: () => {
-              const license = stateLicense;
-              license.candidate.state = "NYPD";
+              license.region = "NYPD";
               setLicense(license);
-              saveOffline({ license })
+              saveOffline({ plate: plate, region: license.region })
                 .then(() => from());
             }
           },
           {
             text: "NO",
             onPress: () => {
-              const license = stateLicense;
-              license.candidate.state = "UNKNOWN";
+              license.region = "UNKNOWN";
               setLicense(license);
-              saveOffline({ license })
+              saveOffline({ plate: plate, region: license.region })
                 .then(() => from());
             }
           }
@@ -425,7 +422,7 @@ export default function Submission({ navigation }) {
       return undefined;
     }
 
-    return plate.length > 1;
+    return true;
   }
 
   const alrt = (title, message) => {
@@ -560,17 +557,14 @@ export default function Submission({ navigation }) {
     const uploadedMedia = await uploadAllMedia();
     setUploadedMedia(uploadedMedia);
 
-    const license = Object.assign(
-      {
-        candidate: {
-          plate: "TEST"
-        },
-        plate: {
-          region: ""
-        }
+    const license = {
+      candidate: {
+        plate: stateLicense.plate,
       },
-      stateLicense
-    );
+      plate: {
+        region: stateLicense.region,
+      }
+    };
 
     if (
       stateLicense &&

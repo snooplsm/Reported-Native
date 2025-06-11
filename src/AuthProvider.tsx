@@ -5,7 +5,7 @@ import { USER_KEY } from './Auth';
 interface IAuthContext {
     loading: boolean,
     authorized: boolean,
-    getUserObj: () => object,
+    userObj: any,
     login: (userObj: object) => Promise<boolean>,
     logout: () => void,
 }
@@ -13,7 +13,7 @@ interface IAuthContext {
 const AuthContextDefaults = {
     loading: true,
     authorized: false,
-    getUserObj: () => null,
+    userObj: null,
     login: () => null,
     logout: () => null,
 }
@@ -61,10 +61,6 @@ export default function AuthProvider({ children }: AuthProviderProps) {
             })
     }
 
-    const getUserObj = () => {
-        return userObj;
-    }
-
     React.useEffect(() => {
         loadAuthorization();
     }, []);
@@ -72,12 +68,12 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const values = {
         loading,
         authorized,
+        userObj,
     }
 
     const funcs = {
         login,
         logout,
-        getUserObj,
     }
 
     return (
