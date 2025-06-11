@@ -23,7 +23,8 @@
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
         }
       ],
-      "expo-build-properties"
+      "expo-build-properties",
+      "expo-video"
     ],
     "version": "3.1.10",
     "orientation": "default",
