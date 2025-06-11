@@ -14,7 +14,8 @@ import ordinal from "ordinal";
 import setColor from "color";
 import * as Location from 'expo-location';
 
-import LicenseView from "./LicenseView";
+// import LicenseView from "./LicenseView";
+import { LicenseView } from "./LicenseView2";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
 import { colors, globalStyles } from "./Styles";
@@ -45,6 +46,7 @@ export default function Submission({ navigation }) {
   const [stateNotes, setNotes] = React.useState('');
   const [stateLicense, setLicense] = React.useState(undefined);
   const [stateAlpr, setAlpr] = React.useState(undefined);
+  const [stateAlprImage, setAlprImage] = React.useState(undefined);
   const [stateLocation, setLocation] = React.useState(undefined);
   const [stateKeyboard, setKeyboard] = React.useState(undefined);
   const [stateShowAddressModal, setShowAddressModal] = React.useState(false);
@@ -54,7 +56,6 @@ export default function Submission({ navigation }) {
   const [addressLabel, setAddressLabel] = React.useState('Address');
 
   const _complaint = React.useRef();
-  const _license = React.useRef();
 
   // const navigation = useNavigation();
   // console.log('subm navi', navigation);
@@ -205,7 +206,7 @@ export default function Submission({ navigation }) {
       complaints: stateComplaints,
       description: stateDescription,
       notes: stateNotes,
-      license: stateLicense,
+      plate: stateLicense,
       location: stateLocation,
     };
     if (!!data) {
@@ -233,7 +234,7 @@ export default function Submission({ navigation }) {
             setComplaints(data.complaints || []);
             setDescription(data.description);
             setNotes(data.notes);
-            setLicense(data.license);
+            setLicense(data.plate);
             setLocation(data.location);
           }
         })
@@ -679,9 +680,6 @@ export default function Submission({ navigation }) {
   }
 
   const clear = (lambda) => {
-    if (!!_license.current) {
-      _license.current.clear();
-    }
     setMedia([]);
     setTimeofreport(undefined);
     setTimeofreportstr(undefined);
@@ -862,10 +860,11 @@ export default function Submission({ navigation }) {
         // console.warn('imageResult', imageResult);
         data.resized = imageResult;
         const imageAlrp = await alpr.recognize(imageResult);
-        // console.warn('alpr', imageAlrp);
+        console.warn('alpr', imageAlrp);
         data.images = [data.resized];
         updateState.alpr = imageAlrp;
         setAlpr(imageAlrp);
+        setAlprImage(imageResult);
         /*
           .then(r => {
             data.resized = r;
@@ -962,13 +961,10 @@ export default function Submission({ navigation }) {
               </View>
               <View style={styles.inputWrapper}>
                 <LicenseView
-                  ref={_license}
                   onPlateSelected={plate => {
-                    const { candidate } = plate;
                     if (
-                      candidate &&
-                      candidate.plate &&
-                      candidate.plate.length > 0
+                      plate.plate &&
+                      plate.region
                     ) {
                       setLicense(plate);
                       saveOffline({ plate });
@@ -977,8 +973,9 @@ export default function Submission({ navigation }) {
                       saveOffline({ plate: undefined });
                     }
                   }}
-                  license={stateLicense}
                   alpr={stateAlpr}
+                  alprImage={stateAlprImage}
+                  licensePlate={stateLicense}
                 />
               </View>
               <View style={styles.inputWrapper}>
