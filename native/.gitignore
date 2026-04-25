@@ -1,0 +1,9 @@
+.gradle/
+build/
+**/build/
+.idea/
+local.properties
+DerivedData/
+iosApp/ReportediOS.xcodeproj/
+iosApp/ReportediOS.xcworkspace/
+
