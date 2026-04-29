@@ -35,9 +35,11 @@ class AuthRepository(
         idToken: String,
         email: String,
         firstName: String,
-        lastName: String
+        lastName: String,
+        phone: String = "",
+        testify: Boolean = false
     ): UserSession {
-        val session = api.socialLogin(provider, providerUserId, idToken, email, firstName, lastName)
+        val session = api.socialLogin(provider, providerUserId, idToken, email, firstName, lastName, phone, testify)
         sessionStore.write(session)
         return session
     }
@@ -50,9 +52,10 @@ class AuthRepository(
         email: String,
         phone: String,
         firstName: String,
-        lastName: String
+        lastName: String,
+        testify: Boolean
     ): UserSession {
-        val session = api.updateProfile(email, phone, firstName, lastName)
+        val session = api.updateProfile(email, phone, firstName, lastName, testify)
         sessionStore.write(session)
         return session
     }

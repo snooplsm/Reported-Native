@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -29,6 +30,11 @@ fun readConfigValue(name: String, defaultValue: String = ""): String =
         ?: readLocalProperty(name)
         ?: defaultValue
 
+fun readOptionalConfigValue(name: String): String? =
+    providers.environmentVariable(name).orNull
+        ?: providers.gradleProperty(name).orNull
+        ?: readLocalProperty(name)
+
 val googleMapsApiKey = readConfigValue("REPORTED_ANDROID_GOOGLE_MAPS_API_KEY")
 val googleServerClientId = readConfigValue("REPORTED_GOOGLE_SERVER_CLIENT_ID", "728528457365-gvkq2phpioo23umg6q0ivtp1aeagdt09.apps.googleusercontent.com")
 val appleClientId = readConfigValue("REPORTED_APPLE_CLIENT_ID")
@@ -36,6 +42,16 @@ val appleRedirectUri = readConfigValue("REPORTED_APPLE_REDIRECT_URI", "reported:
 val parseServerUrl = readConfigValue("REPORTED_PARSE_SERVER_URL", "https://parseapi.back4app.com")
 val parseApplicationId = readConfigValue("REPORTED_PARSE_APPLICATION_ID", "jkAZF8ojV4vOGnhSBjdwiMWBKpWML5tM4SWGKgOV")
 val parseJavascriptKey = readConfigValue("REPORTED_PARSE_JAVASCRIPT_KEY", "LeBKOerWTXGBGRLE0yvg2bXa5RRv4e8PuC6INEFA")
+val releaseKeystorePath = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_PATH")
+val releaseKeystoreAlias = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_ALIAS")
+val releaseKeystorePassword = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyPassword = readOptionalConfigValue("REPORTED_ANDROID_KEY_PASSWORD") ?: releaseKeystorePassword
+val hasReleaseSigningConfig = listOf(
+    releaseKeystorePath,
+    releaseKeystoreAlias,
+    releaseKeystorePassword,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.reported.nativeandroid"
@@ -45,8 +61,8 @@ android {
         applicationId = "cab.reported.nyc"
         minSdk = 25
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 92
+        versionName = "3.0.9"
         buildConfigField("String", "API_BASE_URL", quotedEnv("REPORTED_API_BASE_URL", "https://reported-stats.herokuapp.com/prod/"))
         buildConfigField("String", "PARSE_SERVER_URL", "\"$parseServerUrl\"")
         buildConfigField("String", "PARSE_APPLICATION_ID", "\"$parseApplicationId\"")
@@ -56,16 +72,40 @@ android {
         buildConfigField("String", "APPLE_CLIENT_ID", "\"$appleClientId\"")
         buildConfigField("String", "APPLE_REDIRECT_URI", "\"$appleRedirectUri\"")
         buildConfigField("Boolean", "SHOW_COMPLAINT_IMAGES", readConfigValue("REPORTED_SHOW_COMPLAINT_IMAGES", "true"))
+        buildConfigField("Boolean", "ENABLE_LIVE", readConfigValue("REPORTED_ENABLE_LIVE", "false"))
         manifestPlaceholders["googleMapsApiKey"] = googleMapsApiKey
+    }
+
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeystoreAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -93,6 +133,21 @@ android {
 
 }
 
+gradle.taskGraph.whenReady {
+    val requestedSignedRelease = allTasks.any { task ->
+        task.path == ":androidApp:bundleRelease" ||
+            task.path == ":androidApp:assembleRelease" ||
+            task.path == ":androidApp:signReleaseBundle"
+    }
+    if (requestedSignedRelease && !hasReleaseSigningConfig) {
+        throw GradleException(
+            "Release signing is not configured. Export REPORTED_ANDROID_KEYSTORE_PATH, " +
+                "REPORTED_ANDROID_KEYSTORE_ALIAS, REPORTED_ANDROID_KEYSTORE_PASSWORD, and optionally " +
+                "REPORTED_ANDROID_KEY_PASSWORD before building a release."
+        )
+    }
+}
+
 dependencies {
     implementation(project(":shared"))
 
@@ -103,6 +158,11 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-core:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-video:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.credentials:credentials:1.5.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
@@ -120,6 +180,7 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:4.4.1")
     implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-config")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("com.airbnb.android:lottie-compose:6.6.1")

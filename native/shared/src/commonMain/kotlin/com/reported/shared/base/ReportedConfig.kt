@@ -9,7 +9,8 @@ data class ParseConfig(
 data class ReportedConfig(
     val environment: AppEnvironment = AppEnvironment.Production,
     val apiBaseUrl: String = environment.baseUrl,
-    val parse: ParseConfig = defaultParseConfig()
+    val parse: ParseConfig = defaultParseConfig(),
+    val operatingSystem: String = "native-kmp"
 )
 
 private fun defaultParseConfig(): ParseConfig = ParseConfig(

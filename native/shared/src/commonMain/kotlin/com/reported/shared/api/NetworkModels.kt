@@ -190,19 +190,26 @@ internal data class ParseReportsResponseDto(
 )
 
 @Serializable
+internal data class ParseCreateResponseDto(
+    val objectId: String = "",
+    val createdAt: String? = null
+)
+
+@Serializable
 internal data class ForgotPasswordRequestDto(val email: String)
 
 @Serializable
 internal data class LoginRequestDto(val username: String, val password: String)
 
 @Serializable
-internal data class RegisterRequestDto(
-    val firstName: String,
-    val lastName: String,
-    val phone: String,
-    val testify: Boolean,
+internal data class ParseRegisterRequestDto(
+    val username: String,
     val email: String,
-    val password: String
+    val password: String,
+    @SerialName("Phone") val phone: String,
+    @SerialName("FirstName") val firstName: String,
+    @SerialName("LastName") val lastName: String,
+    val testify: Boolean
 )
 
 @Serializable
@@ -210,7 +217,18 @@ internal data class UpdateProfileRequestDto(
     val email: String,
     val phone: String,
     val firstName: String,
-    val lastName: String
+    val lastName: String,
+    val testify: Boolean
+)
+
+@Serializable
+internal data class ParseUpdateProfileRequestDto(
+    val email: String,
+    val username: String,
+    @SerialName("Phone") val phone: String,
+    @SerialName("FirstName") val firstName: String,
+    @SerialName("LastName") val lastName: String,
+    val testify: Boolean
 )
 
 @Serializable
@@ -219,7 +237,9 @@ internal data class ParseSocialLoginRequestDto(
     val email: String,
     val authData: Map<String, ParseSocialAuthDataDto>,
     @SerialName("FirstName") val firstName: String? = null,
-    @SerialName("LastName") val lastName: String? = null
+    @SerialName("LastName") val lastName: String? = null,
+    @SerialName("Phone") val phone: String? = null,
+    val testify: Boolean? = null
 )
 
 @Serializable

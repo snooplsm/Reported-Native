@@ -2,17 +2,25 @@ package com.reported.nativeandroid.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.reported.nativeandroid.di.AppGraph
+import com.reported.nativeandroid.media.LocalSubmissionMediaCleaner
+import com.reported.nativeandroid.media.ParseMediaUploader
+import com.reported.nativeandroid.remoteconfig.ReportedRemoteConfig
 import com.reported.shared.model.AppThemeMode
 import com.reported.shared.model.Catalogs
 import com.reported.shared.model.DraftMedia
 import com.reported.shared.model.DraftPlateCandidate
+import com.reported.shared.model.PlatePatternClassifier
 import com.reported.shared.model.ReportDraft
 import com.reported.shared.model.ReportFilter
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.SubmitReportCommand
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -64,7 +72,9 @@ class SessionViewModel : ViewModel() {
                     idToken = profile.idToken,
                     email = profile.email,
                     firstName = profile.firstName,
-                    lastName = profile.lastName
+                    lastName = profile.lastName,
+                    phone = "",
+                    testify = false
                 )
             }.onSuccess {
                 AppGraph.shared.saveGuestModeUseCase.execute(false)
@@ -127,6 +137,10 @@ class LoginViewModel : ViewModel() {
         }
     }
 
+    fun onSocialSignInCancelled() {
+        _state.update { it.copy(loading = false, error = null) }
+    }
+
     fun completeSocialSignIn(profile: SocialAuthProfile, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
@@ -137,7 +151,9 @@ class LoginViewModel : ViewModel() {
                     idToken = profile.idToken,
                     email = profile.email,
                     firstName = profile.firstName,
-                    lastName = profile.lastName
+                    lastName = profile.lastName,
+                    phone = "",
+                    testify = false
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, error = null) }
@@ -210,6 +226,10 @@ class RegisterViewModel : ViewModel() {
         }
     }
 
+    fun onSocialSignInCancelled() {
+        _state.update { it.copy(loading = false, error = null) }
+    }
+
     fun completeSocialSignIn(profile: SocialAuthProfile, onSuccess: () -> Unit) {
         val fallbackFirstName = _state.value.firstName
         val fallbackLastName = _state.value.lastName
@@ -222,7 +242,9 @@ class RegisterViewModel : ViewModel() {
                     idToken = profile.idToken,
                     email = profile.email,
                     firstName = profile.firstName.ifBlank { fallbackFirstName },
-                    lastName = profile.lastName.ifBlank { fallbackLastName }
+                    lastName = profile.lastName.ifBlank { fallbackLastName },
+                    phone = _state.value.phone,
+                    testify = _state.value.testify
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, error = null) }
@@ -362,6 +384,44 @@ class ReportsViewModel : ViewModel() {
         }
     }
 
+    fun openReport(reportObjectId: String) {
+        if (reportObjectId.isBlank()) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    mode = ReportsMode.LIST,
+                    loading = true,
+                    loadingMore = false,
+                    error = null,
+                    detailLoadingIds = it.detailLoadingIds + reportObjectId
+                )
+            }
+            runCatching {
+                AppGraph.shared.fetchReportDetailUseCase.execute(reportObjectId)
+            }.onSuccess { detail ->
+                _state.update { current ->
+                    val mergedReports = (listOf(detail) + current.reports)
+                        .distinctBy { report -> report.reportKey() }
+                    current.copy(
+                        loading = false,
+                        reports = mergedReports,
+                        reportDetails = current.reportDetails + (reportObjectId to detail),
+                        detailLoadingIds = current.detailLoadingIds - reportObjectId,
+                        nextSkip = mergedReports.size
+                    )
+                }
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        detailLoadingIds = it.detailLoadingIds - reportObjectId,
+                        error = error.message ?: "Unable to load report"
+                    )
+                }
+            }
+        }
+    }
+
     fun deleteReport(report: ReportSummary) {
         val reportKey = report.reportKey()
         if (!report.canDelete || reportKey in _state.value.deletingReportKeys) return
@@ -409,6 +469,7 @@ class ProfileViewModel : ViewModel() {
                     lastName = session.lastName,
                     phone = session.phone,
                     email = session.email,
+                    testify = session.testify,
                     themeMode = themeMode
                 )
             } else {
@@ -421,14 +482,16 @@ class ProfileViewModel : ViewModel() {
         firstName: String = _state.value.firstName,
         lastName: String = _state.value.lastName,
         phone: String = _state.value.phone,
-        email: String = _state.value.email
+        email: String = _state.value.email,
+        testify: Boolean = _state.value.testify
     ) {
         _state.update {
             it.copy(
                 firstName = firstName,
                 lastName = lastName,
                 phone = phone,
-                email = email
+                email = email,
+                testify = testify
             )
         }
     }
@@ -450,7 +513,8 @@ class ProfileViewModel : ViewModel() {
                     email = _state.value.email,
                     phone = _state.value.phone,
                     firstName = _state.value.firstName,
-                    lastName = _state.value.lastName
+                    lastName = _state.value.lastName,
+                    testify = _state.value.testify
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, editing = false) }
@@ -485,10 +549,26 @@ class ThemeViewModel : ViewModel() {
 class ComposerViewModel : ViewModel() {
     private val _state = MutableStateFlow(
         ComposerUiState(
-            complaintCategories = Catalogs.complaintCategories
+            complaintCategories = Catalogs.complaintCategories,
+            showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages
         )
     )
     val state: StateFlow<ComposerUiState> = _state.asStateFlow()
+    private val _events = MutableSharedFlow<ComposerEvent>(extraBufferCapacity = 1)
+    val events: SharedFlow<ComposerEvent> = _events.asSharedFlow()
+
+    init {
+        viewModelScope.launch {
+            ReportedRemoteConfig.snapshot.collect { snapshot ->
+                _state.update {
+                    it.copy(
+                        complaintCategories = snapshot.complaintCategories,
+                        showComplaintImages = snapshot.showComplaintImages
+                    )
+                }
+            }
+        }
+    }
 
     fun onAction(action: ComposerAction) {
         when (action) {
@@ -496,6 +576,9 @@ class ComposerViewModel : ViewModel() {
             ComposerAction.SubmitPressed -> submit()
             ComposerAction.DiscardDraftConfirmed -> discardDraft()
             ComposerAction.ClearComposerError -> clearComposerError()
+            ComposerAction.PlateCorrectionAccepted -> acceptPlateCorrection()
+            ComposerAction.PlateCorrectionDismissed -> dismissPlateCorrection()
+            ComposerAction.PlateCorrectionKept -> keepPlateCorrection()
             is ComposerAction.ComplaintTileChosen -> onComplaintTileChosen(action.complaintId)
             is ComposerAction.SelectedComplaintChanged -> updateSelectedComplaint(action.complaintId)
             is ComposerAction.UploadMediaChosen -> onUploadMediaChosen(action.media)
@@ -505,6 +588,8 @@ class ComposerViewModel : ViewModel() {
             is ComposerAction.ExtraMediaAdded -> addExtraMedia(action.media)
             is ComposerAction.MediaRemoved -> removeMedia(action.media)
             is ComposerAction.VideoProcessingDecision -> onVideoProcessingDecision(action.process)
+            ComposerAction.VideoProcessingCancelled -> cancelVideoProcessing()
+            ComposerAction.DetectionResultDismissed -> _state.update { it.copy(detectionResultMessage = null) }
             is ComposerAction.DetectionProgressChanged -> setDetectionProgress(
                 action.message,
                 action.progress,
@@ -526,6 +611,7 @@ class ComposerViewModel : ViewModel() {
             is ComposerAction.AddressChosen -> chooseAddress(action.suggestion)
             is ComposerAction.MetadataApplied -> applyDetectedMetadata(
                 occurredAtIso = action.occurredAtIso,
+                photoOccurredAtIso = action.photoOccurredAtIso,
                 latitude = action.latitude,
                 longitude = action.longitude,
                 inferredState = action.inferredState,
@@ -605,7 +691,10 @@ class ComposerViewModel : ViewModel() {
 
     fun onUploadMediaChosen(media: SubmissionMedia) {
         _state.update {
-            if (it.hasMedia(media)) return@update it
+            val mediaError = it.mediaLimitErrorFor(media, replacingPrimary = true)
+            if (mediaError != null) {
+                return@update it.copy(validationErrors = it.validationErrors.copy(media = mediaError))
+            }
             it.copy(
                 pendingMediaSelection = media,
                 complaintSheetOpen = true,
@@ -618,6 +707,14 @@ class ComposerViewModel : ViewModel() {
     fun confirmPendingComplaint(complaintId: String) {
         val pending = _state.value.pendingMediaSelection ?: return
         _state.update {
+            val mediaError = it.mediaLimitErrorFor(pending, replacingPrimary = true)
+            if (mediaError != null) {
+                return@update it.copy(
+                    pendingMediaSelection = null,
+                    complaintSheetOpen = false,
+                    validationErrors = it.validationErrors.copy(media = mediaError)
+                )
+            }
             it.copy(
                 selectedComplaintId = complaintId,
                 selectedComplaintIds = listOf(complaintId),
@@ -634,13 +731,17 @@ class ComposerViewModel : ViewModel() {
 
     fun onPrimaryMediaChosen(media: SubmissionMedia, complaintId: String) {
         _state.update {
-            if (it.hasMedia(media)) {
-                return@update it.copy(
-                    selectedComplaintId = complaintId,
-                    selectedComplaintIds = listOf(complaintId),
-                    stage = SubmissionStage.VERIFY,
-                    validationErrors = it.validationErrors.copy(complaint = null)
-                )
+            val mediaError = it.mediaLimitErrorFor(media, replacingPrimary = true)
+            if (mediaError != null) {
+                if (it.primaryMedia?.uri == media.uri) {
+                    return@update it.copy(
+                        selectedComplaintId = complaintId,
+                        selectedComplaintIds = listOf(complaintId),
+                        stage = SubmissionStage.VERIFY,
+                        validationErrors = it.validationErrors.copy(complaint = null)
+                    )
+                }
+                return@update it.copy(validationErrors = it.validationErrors.copy(media = mediaError))
             }
             it.copy(
                 selectedComplaintId = complaintId,
@@ -652,6 +753,7 @@ class ComposerViewModel : ViewModel() {
                 pendingVideoProcessingMedia = if (media.isVideo) media else null,
                 stage = SubmissionStage.VERIFY,
                 error = null,
+                photoOccurredAtIso = null,
                 validationErrors = it.validationErrors.copy(media = null, complaint = null)
             )
         }
@@ -660,11 +762,15 @@ class ComposerViewModel : ViewModel() {
 
     private fun onPrimaryMediaChosenForCurrentReport(media: SubmissionMedia) {
         _state.update {
-            if (it.hasMedia(media)) {
-                return@update it.copy(
-                    stage = SubmissionStage.VERIFY,
-                    validationErrors = it.validationErrors.copy(media = null)
-                )
+            val mediaError = it.mediaLimitErrorFor(media, replacingPrimary = true)
+            if (mediaError != null) {
+                if (it.primaryMedia?.uri == media.uri) {
+                    return@update it.copy(
+                        stage = SubmissionStage.VERIFY,
+                        validationErrors = it.validationErrors.copy(media = null)
+                    )
+                }
+                return@update it.copy(validationErrors = it.validationErrors.copy(media = mediaError))
             }
             it.copy(
                 primaryMedia = media,
@@ -674,6 +780,7 @@ class ComposerViewModel : ViewModel() {
                 pendingVideoProcessingMedia = if (media.isVideo) media else null,
                 stage = SubmissionStage.VERIFY,
                 error = null,
+                photoOccurredAtIso = null,
                 validationErrors = it.validationErrors.copy(media = null)
             )
         }
@@ -682,7 +789,10 @@ class ComposerViewModel : ViewModel() {
 
     fun addExtraMedia(media: SubmissionMedia) {
         _state.update {
-            if (it.hasMedia(media)) return@update it
+            val mediaError = it.mediaLimitErrorFor(media, replacingPrimary = false)
+            if (mediaError != null) {
+                return@update it.copy(validationErrors = it.validationErrors.copy(media = mediaError))
+            }
             it.copy(
                 extraMedia = it.extraMedia + media,
                 validationErrors = it.validationErrors.copy(media = null)
@@ -726,6 +836,7 @@ class ComposerViewModel : ViewModel() {
                         address = if (nextPrimary != null) current.address else "",
                         addressQuery = if (nextPrimary != null) current.addressQuery else "",
                         occurredAtIso = if (nextPrimary != null) current.occurredAtIso else "",
+                        photoOccurredAtIso = if (nextPrimary != null) current.photoOccurredAtIso else null,
                         latitude = if (nextPrimary != null) current.latitude else null,
                         longitude = if (nextPrimary != null) current.longitude else null,
                         validationErrors = current.validationErrors.copy(media = mediaError)
@@ -751,6 +862,23 @@ class ComposerViewModel : ViewModel() {
                 detectionVideoDurationMs = 0L,
                 detectionFrameCandidates = emptyList(),
                 plateCandidates = if (process) it.plateCandidates else it.plateCandidates
+            )
+        }
+    }
+
+    fun cancelVideoProcessing() {
+        _state.update {
+            it.copy(
+                awaitingVideoProcessingDecision = false,
+                pendingVideoProcessingMedia = null,
+                detectingPlates = false,
+                detectionMessage = null,
+                detectionResultMessage = null,
+                detectionProgress = 0f,
+                detectionFramePreviewUri = null,
+                detectionFrameTimeMs = 0L,
+                detectionVideoDurationMs = 0L,
+                detectionFrameCandidates = emptyList()
             )
         }
     }
@@ -793,7 +921,7 @@ class ComposerViewModel : ViewModel() {
             it.copy(
                 detectingPlates = false,
                 detectionMessage = null,
-                detectionResultMessage = if (candidates.isEmpty()) "Scan complete. No license plates were detected." else null,
+                detectionResultMessage = null,
                 detectionProgress = 0f,
                 detectionFramePreviewUri = null,
                 detectionFrameTimeMs = 0L,
@@ -831,9 +959,11 @@ class ComposerViewModel : ViewModel() {
         _state.update {
             it.copy(
                 addressQuery = value,
+                address = value,
                 validationErrors = it.validationErrors.copy(address = null)
             )
         }
+        persistDraft()
     }
 
     fun setAddressSuggestions(suggestions: List<AddressSuggestion>, loading: Boolean = false) {
@@ -856,9 +986,13 @@ class ComposerViewModel : ViewModel() {
                 addressQuery = suggestion.label,
                 latitude = suggestion.latitude,
                 longitude = suggestion.longitude,
+                plateRegion = suggestion.region ?: it.plateRegion,
                 addressSuggestions = emptyList(),
                 lookupInFlight = false,
-                validationErrors = it.validationErrors.copy(address = null)
+                validationErrors = it.validationErrors.copy(
+                    address = null,
+                    plateRegion = if (suggestion.region != null) null else it.validationErrors.plateRegion
+                )
             )
         }
         persistDraft()
@@ -866,6 +1000,7 @@ class ComposerViewModel : ViewModel() {
 
     fun applyDetectedMetadata(
         occurredAtIso: String? = null,
+        photoOccurredAtIso: String? = null,
         latitude: Double? = null,
         longitude: Double? = null,
         inferredState: String? = null,
@@ -874,6 +1009,7 @@ class ComposerViewModel : ViewModel() {
         _state.update {
             it.copy(
                 occurredAtIso = occurredAtIso ?: it.occurredAtIso,
+                photoOccurredAtIso = photoOccurredAtIso ?: it.photoOccurredAtIso,
                 latitude = latitude ?: it.latitude,
                 longitude = longitude ?: it.longitude,
                 plateRegion = inferredState ?: it.plateRegion,
@@ -901,17 +1037,21 @@ class ComposerViewModel : ViewModel() {
         notes: String = _state.value.notes,
         occurredAtIso: String = _state.value.occurredAtIso
     ) {
+        val normalizedPlate = PlatePatternClassifier.normalizePlateInput(plate)
+            .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
         _state.update {
             it.copy(
-                plate = plate,
+                plate = normalizedPlate,
                 plateRegion = plateRegion.uppercase(),
                 address = address,
                 addressQuery = address,
                 description = description,
                 notes = notes,
                 occurredAtIso = occurredAtIso,
+                plateCorrectionPrompt = null,
+                keptPlateCorrectionRaw = if (normalizedPlate == it.plate) it.keptPlateCorrectionRaw else null,
                 validationErrors = it.validationErrors.copy(
-                    plate = if (plate.isNotBlank()) null else it.validationErrors.plate,
+                    plate = if (normalizedPlate.isNotBlank()) null else it.validationErrors.plate,
                     plateRegion = if (plateRegion.isNotBlank()) null else it.validationErrors.plateRegion,
                     address = if (address.isNotBlank()) null else it.validationErrors.address,
                     occurredAt = if (occurredAtIso.isNotBlank()) null else it.validationErrors.occurredAt
@@ -921,6 +1061,42 @@ class ComposerViewModel : ViewModel() {
         persistDraft()
     }
 
+    private fun acceptPlateCorrection() {
+        val prompt = _state.value.plateCorrectionPrompt ?: return
+        _state.update {
+            it.copy(
+                plate = prompt.suggestedPlate,
+                plateRegion = prompt.state,
+                plateCorrectionPrompt = null,
+                keptPlateCorrectionRaw = null,
+                validationErrors = it.validationErrors.copy(plate = null, plateRegion = null)
+            )
+        }
+        persistDraft()
+    }
+
+    private fun keepPlateCorrection() {
+        val prompt = _state.value.plateCorrectionPrompt ?: return
+        _state.update {
+            it.copy(
+                plateCorrectionPrompt = null,
+                keptPlateCorrectionRaw = prompt.rawPlate,
+                validationErrors = it.validationErrors.copy(plate = null, plateRegion = null)
+            )
+        }
+    }
+
+    private fun dismissPlateCorrection() {
+        _state.update { current ->
+            current.copy(
+                plateCorrectionPrompt = null,
+                validationErrors = current.validationErrors.copy(
+                    plate = "Review the plate format before submitting."
+                )
+            )
+        }
+    }
+
     private fun persistDraft() {
         val snapshot = _state.value
         viewModelScope.launch {
@@ -928,7 +1104,7 @@ class ComposerViewModel : ViewModel() {
                 ReportDraft(
                     plate = snapshot.plate,
                     plateRegion = snapshot.plateRegion,
-                    address = snapshot.address,
+                    address = snapshot.addressQuery.ifBlank { snapshot.address },
                     description = snapshot.description,
                     notes = snapshot.notes,
                     complaintIds = snapshot.selectedComplaintId?.let(::listOf) ?: snapshot.selectedComplaintIds,
@@ -951,12 +1127,111 @@ class ComposerViewModel : ViewModel() {
             AppGraph.shared.clearDraftUseCase.execute()
             _state.value = ComposerUiState(
                 complaintCategories = Catalogs.complaintCategories,
+                showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages,
                 draftLoaded = true
             )
         }
     }
 
     fun submit() {
+        Log.d("ReportedSubmit", "Submit requested; validating")
+        if (!prepareSubmit()) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    submitting = true,
+                    submitProgress = 0f,
+                    submitMessage = "Preparing report",
+                    error = null
+                )
+            }
+            runCatching {
+                val snapshot = _state.value
+                val submittedMedia = listOfNotNull(snapshot.primaryMedia) + snapshot.extraMedia
+                Log.d(
+                    "ReportedSubmit",
+                    "Validated report; media=${submittedMedia.size} plate=${snapshot.plate}/${snapshot.plateRegion} complaintIds=${snapshot.selectedComplaintIds}"
+                )
+                _state.update { it.copy(submitMessage = "Uploading media", submitProgress = 0.02f) }
+                val mediaFiles = ParseMediaUploader.uploadAll(
+                    AppGraph.applicationContext,
+                    submittedMedia
+                ) { progress ->
+                    val totalFiles = progress.totalFiles.coerceAtLeast(1)
+                    val overall = ((progress.currentFileIndex.toFloat() + progress.fraction) / totalFiles.toFloat())
+                        .coerceIn(0f, 1f)
+                    _state.update {
+                        it.copy(
+                            submitProgress = overall * 0.82f,
+                            submitMessage = "${progress.message} (${(progress.fraction * 100).toInt()}%)"
+                        )
+                    }
+                }
+                Log.d("ReportedSubmit", "Media upload complete; parseFiles=${mediaFiles.size}")
+                _state.update { it.copy(submitMessage = "Submitting report", submitProgress = 0.88f) }
+                val submittedObjectId = AppGraph.shared.submitReportUseCase.execute(
+                    SubmitReportCommand(
+                        plate = snapshot.plate,
+                        plateRegion = snapshot.plateRegion,
+                        description = snapshot.description,
+                        notes = snapshot.notes,
+                        address = snapshot.address,
+                        complaintIds = snapshot.selectedComplaintIds,
+                        timeOfIncidentIso = snapshot.occurredAtIso.ifBlank { null },
+                        latitude = snapshot.latitude,
+                        longitude = snapshot.longitude,
+                        mediaFiles = mediaFiles
+                    )
+                )
+                Log.d("ReportedSubmit", "Parse submission complete; cleaning local media")
+                _state.update { it.copy(submitMessage = "Cleaning up", submitProgress = 0.96f) }
+                LocalSubmissionMediaCleaner.cleanupAfterSuccessfulSubmit(
+                    context = AppGraph.applicationContext,
+                    media = submittedMedia,
+                    plateCandidates = snapshot.plateCandidates
+                )
+                submittedObjectId
+            }.onSuccess {
+                Log.d("ReportedSubmit", "Submit flow finished successfully")
+                AppGraph.shared.clearDraftUseCase.execute()
+                _state.value = ComposerUiState(
+                    complaintCategories = Catalogs.complaintCategories,
+                    showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages,
+                    infoMessage = "Report submitted."
+                )
+                _events.tryEmit(ComposerEvent.ReportSubmitted(it))
+            }.onFailure { error ->
+                Log.e("ReportedSubmit", "Submit flow failed", error)
+                _state.update { current ->
+                    current.copy(
+                        submitting = false,
+                        submitProgress = null,
+                        submitMessage = null,
+                        error = error.message ?: "Unable to submit report"
+                    )
+                }
+            }
+        }
+    }
+
+    fun prepareSubmit(): Boolean {
+        val suggestion = PlatePatternClassifier.suggestedCorrection(_state.value.plate)
+        if (suggestion != null && _state.value.keptPlateCorrectionRaw != _state.value.plate) {
+            _state.update {
+                it.copy(
+                    submitting = false,
+                    error = null,
+                    plateCorrectionPrompt = PlateCorrectionPrompt(
+                        rawPlate = it.plate,
+                        suggestedPlate = suggestion.normalizedPlate,
+                        state = suggestion.state,
+                        label = suggestion.label
+                    ),
+                    validationErrors = it.validationErrors.copy(plate = null, plateRegion = null)
+                )
+            }
+            return false
+        }
         val validationErrors = validateSubmission(_state.value)
         if (validationErrors.hasErrors) {
             _state.update {
@@ -967,41 +1242,26 @@ class ComposerViewModel : ViewModel() {
                     stage = if (it.hasComplaintData()) SubmissionStage.VERIFY else SubmissionStage.PICK_MEDIA
                 )
             }
-            return
+            return false
         }
-        viewModelScope.launch {
-            _state.update { it.copy(submitting = true, error = null) }
-            runCatching {
-                AppGraph.shared.submitReportUseCase.execute(
-                    SubmitReportCommand(
-                        plate = _state.value.plate,
-                        plateRegion = _state.value.plateRegion,
-                        description = _state.value.description,
-                        notes = _state.value.notes,
-                        address = _state.value.address,
-                        complaintIds = _state.value.selectedComplaintIds,
-                        timeOfIncidentIso = _state.value.occurredAtIso.ifBlank { null },
-                        latitude = _state.value.latitude,
-                        longitude = _state.value.longitude
-                    )
-                )
-            }.onSuccess {
-                AppGraph.shared.clearDraftUseCase.execute()
-                _state.value = ComposerUiState(
-                    complaintCategories = Catalogs.complaintCategories,
-                    infoMessage = "Report submitted. Media capture, uploads, and native location hooks are next on the migration path."
-                )
-            }.onFailure { error ->
-                _state.update { current -> current.copy(submitting = false, error = error.message ?: "Unable to submit report") }
-            }
-        }
+        _state.update { it.copy(error = null, validationErrors = ComposerValidationErrors()) }
+        return true
     }
 
     private fun validateSubmission(state: ComposerUiState): ComposerValidationErrors =
         ComposerValidationErrors(
-            media = if (state.primaryMedia == null) "Add at least one photo or video." else null,
+            media = when {
+                state.primaryMedia == null -> "Add at least one photo or video."
+                state.mediaItems().size > MaxSubmissionMediaCount -> MaxSubmissionMediaMessage
+                state.mediaItems().count { it.isVideo } > MaxSubmissionVideoCount -> MaxSubmissionVideoMessage
+                else -> null
+            },
             complaint = if (state.selectedComplaintId.isNullOrBlank()) "Choose a complaint type." else null,
-            plate = if (state.plate.isBlank()) "Enter the license plate." else null,
+            plate = when {
+                state.plate.isBlank() -> "Enter the license plate."
+                !PlatePatternClassifier.isValidForSubmission(state.plate) -> "License plate must be 8 characters or fewer."
+                else -> null
+            },
             plateRegion = if (state.plateRegion.isBlank()) "Choose a state." else null,
             address = if (state.addressQuery.isBlank() && state.address.isBlank()) "Enter or choose an address." else null,
             occurredAt = if (state.occurredAtIso.isBlank()) "Choose when this happened." else null
@@ -1025,6 +1285,8 @@ private fun SubmissionMedia.toDraftMedia() = DraftMedia(
 private fun DraftPlateCandidate.toPlateCandidate() = PlateCandidate(
     plate = plate,
     confidence = confidence,
+    rawPlateText = rawPlateText,
+    wasPlateCorrected = wasPlateCorrected,
     state = state,
     stateConfidence = stateConfidence,
     plateType = plateType,
@@ -1037,6 +1299,8 @@ private fun DraftPlateCandidate.toPlateCandidate() = PlateCandidate(
     boundsBottom = boundsBottom,
     rotationDegrees = rotationDegrees,
     cornerPoints = cornerPoints,
+    sourceImageWidth = sourceImageWidth,
+    sourceImageHeight = sourceImageHeight,
     thumbnailUri = thumbnailUri,
     videoFramePreviewUri = videoFramePreviewUri,
     videoFrameTimeMs = videoFrameTimeMs
@@ -1045,6 +1309,8 @@ private fun DraftPlateCandidate.toPlateCandidate() = PlateCandidate(
 private fun PlateCandidate.toDraftPlateCandidate() = DraftPlateCandidate(
     plate = plate,
     confidence = confidence,
+    rawPlateText = rawPlateText,
+    wasPlateCorrected = wasPlateCorrected,
     state = state,
     stateConfidence = stateConfidence,
     plateType = plateType,
@@ -1057,6 +1323,8 @@ private fun PlateCandidate.toDraftPlateCandidate() = DraftPlateCandidate(
     boundsBottom = boundsBottom,
     rotationDegrees = rotationDegrees,
     cornerPoints = cornerPoints,
+    sourceImageWidth = sourceImageWidth,
+    sourceImageHeight = sourceImageHeight,
     thumbnailUri = thumbnailUri,
     videoFramePreviewUri = videoFramePreviewUri,
     videoFrameTimeMs = videoFrameTimeMs
@@ -1064,6 +1332,28 @@ private fun PlateCandidate.toDraftPlateCandidate() = DraftPlateCandidate(
 
 private fun ComposerUiState.hasMedia(media: SubmissionMedia): Boolean =
     primaryMedia?.uri == media.uri || extraMedia.any { it.uri == media.uri }
+
+private const val MaxSubmissionMediaCount = 3
+private const val MaxSubmissionVideoCount = 1
+private const val MaxSubmissionMediaMessage = "You can attach up to 3 photos or videos."
+private const val MaxSubmissionVideoMessage = "You can attach no more than 1 video."
+private const val DuplicateSubmissionMediaMessage = "That photo or video is already attached."
+
+private fun ComposerUiState.mediaItems(): List<SubmissionMedia> =
+    listOfNotNull(primaryMedia) + extraMedia
+
+private fun ComposerUiState.mediaLimitErrorFor(
+    media: SubmissionMedia,
+    replacingPrimary: Boolean
+): String? {
+    val existingMedia = if (replacingPrimary) extraMedia else mediaItems()
+    return when {
+        existingMedia.any { it.uri == media.uri } -> DuplicateSubmissionMediaMessage
+        existingMedia.size + 1 > MaxSubmissionMediaCount -> MaxSubmissionMediaMessage
+        media.isVideo && existingMedia.count { it.isVideo } >= MaxSubmissionVideoCount -> MaxSubmissionVideoMessage
+        else -> null
+    }
+}
 
 private fun ReportSummary.reportKey(): String =
     objectId.ifBlank { id.toString() }

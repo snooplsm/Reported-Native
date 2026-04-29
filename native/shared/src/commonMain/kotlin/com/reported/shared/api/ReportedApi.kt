@@ -6,11 +6,16 @@ import com.reported.shared.model.ReportFilter
 import com.reported.shared.model.ReportStats
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.ReportsPage
+import com.reported.shared.model.PlatePatternClassifier
+import com.reported.shared.model.PlateType
+import com.reported.shared.model.RemoteConfigOverrides
 import com.reported.shared.model.SubmitReportCommand
 import com.reported.shared.model.UserSession
 import com.reported.shared.session.SessionStore
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
@@ -21,6 +26,8 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.contentType
+import kotlinx.datetime.Instant
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,14 +38,18 @@ import kotlinx.serialization.json.putJsonArray
 class ReportedApi(
     private val baseUrl: String,
     private val parseConfig: ParseConfig,
+    private val operatingSystem: String,
     private val client: HttpClient,
     private val sessionStore: SessionStore,
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
     suspend fun login(email: String, password: String): UserSession {
-        val dto = client.post("${baseUrl}login") {
-            contentType(ContentType.Application.Json)
-            setBody(LoginRequestDto(username = email, password = password))
+        val dto = client.get("${parseBaseUrl()}/login") {
+            headers {
+                appendParseHeaders()
+            }
+            parameter("username", email)
+            parameter("password", password)
         }.body<UserDto>()
         return dto.toModel()
     }
@@ -51,16 +62,20 @@ class ReportedApi(
         email: String,
         password: String
     ): UserSession {
-        val dto = client.post("${baseUrl}register") {
+        val dto = client.post("${parseBaseUrl()}/users") {
             contentType(ContentType.Application.Json)
+            headers {
+                appendParseHeaders()
+            }
             setBody(
-                RegisterRequestDto(
+                ParseRegisterRequestDto(
+                    username = email,
+                    email = email,
+                    password = password,
                     firstName = firstName,
                     lastName = lastName,
                     phone = phone,
-                    testify = testify,
-                    email = email,
-                    password = password
+                    testify = testify
                 )
             )
         }.body<UserDto>()
@@ -73,7 +88,9 @@ class ReportedApi(
         idToken: String,
         email: String,
         firstName: String,
-        lastName: String
+        lastName: String,
+        phone: String = "",
+        testify: Boolean = false
     ): UserSession {
         val dto = client.post("${parseBaseUrl()}/users") {
             contentType(ContentType.Application.Json)
@@ -86,6 +103,8 @@ class ReportedApi(
                     email = email,
                     firstName = firstName.ifBlank { null },
                     lastName = lastName.ifBlank { null },
+                    phone = phone.ifBlank { null },
+                    testify = testify,
                     authData = mapOf(
                         provider to ParseSocialAuthDataDto(
                             id = providerUserId,
@@ -100,8 +119,11 @@ class ReportedApi(
     }
 
     suspend fun forgotPassword(email: String) {
-        client.post("${baseUrl}forgot_password") {
+        client.post("${parseBaseUrl()}/requestPasswordReset") {
             contentType(ContentType.Application.Json)
+            headers {
+                appendParseHeaders()
+            }
             setBody(ForgotPasswordRequestDto(email))
         }
     }
@@ -110,21 +132,50 @@ class ReportedApi(
         email: String,
         phone: String,
         firstName: String,
-        lastName: String
+        lastName: String,
+        testify: Boolean
     ): UserSession {
-        val dto = client.put("${baseUrl}user/update") {
-            contentType(ContentType.Application.Json)
-            withSessionHeaders()
-            setBody(
-                UpdateProfileRequestDto(
-                    email = email,
-                    phone = phone,
-                    firstName = firstName,
-                    lastName = lastName
+        val session = sessionStore.read()
+        return if (session?.objectId?.isNotBlank() == true) {
+            client.put("${parseBaseUrl()}/users/${session.objectId}") {
+                contentType(ContentType.Application.Json)
+                headers {
+                    appendParseHeaders(sessionToken = session.sessionToken)
+                }
+                setBody(
+                    ParseUpdateProfileRequestDto(
+                        email = email,
+                        username = email,
+                        phone = phone,
+                        firstName = firstName,
+                        lastName = lastName,
+                        testify = testify
+                    )
                 )
+            }
+            session.copy(
+                email = email,
+                phone = phone,
+                firstName = firstName,
+                lastName = lastName,
+                testify = testify
             )
-        }.body<UserDto>()
-        return dto.toModel()
+        } else {
+            val dto = client.put("${apiBaseUrl()}user/update") {
+                contentType(ContentType.Application.Json)
+                withSessionHeaders()
+                setBody(
+                    UpdateProfileRequestDto(
+                        email = email,
+                        phone = phone,
+                        firstName = firstName,
+                        lastName = lastName,
+                        testify = testify
+                    )
+                )
+            }.body<UserDto>()
+            dto.toModel()
+        }
     }
 
     suspend fun fetchReports(
@@ -133,19 +184,21 @@ class ReportedApi(
         forCurrentUser: Boolean = true
     ): ReportsPage {
         val session = sessionStore.read()
+        val where = buildParseReportsWhere(filter = filter, forCurrentUser = forCurrentUser, session = session)
+        println("ReportedReports: GET submissions skip=$skip filter=$filter where=$where")
         val response = client.get("${parseBaseUrl()}/classes/submission") {
             headers { appendParseHeaders(sessionToken = session?.sessionToken) }
             parameter("skip", skip)
             parameter("limit", parseReportsPageSize)
             parameter("order", "-timeofincident,-createdAt")
             parameter("keys", parseReportListKeys)
-            val where = buildParseReportsWhere(filter = filter, forCurrentUser = forCurrentUser, session = session)
             if (where.isNotEmpty()) {
                 parameter("where", where.toString())
             }
         }.body<ParseReportsResponseDto>()
 
         val reports = response.results.map { it.toModel(emptyMap()) }
+        println("ReportedReports: fetched ${reports.size} submission(s); hasMore=${reports.size >= parseReportsPageSize}")
         return ReportsPage(
             reports = reports,
             hasMore = reports.size >= parseReportsPageSize
@@ -161,32 +214,78 @@ class ReportedApi(
     }
 
     suspend fun fetchReportStats(): ReportStats {
-        val raw = client.get("${baseUrl}reports/aggregate") {
+        val raw = client.get("${apiBaseUrl()}reports/aggregate") {
             withSessionHeaders()
         }.body<JsonObject>()
         return ReportStats(raw = raw.mapValues { (_, value) -> value.toString() })
     }
 
-    suspend fun submitReport(command: SubmitReportCommand) {
+    suspend fun submitReport(command: SubmitReportCommand): String {
         val session = sessionStore.read() ?: error("Not logged in")
-        client.post("${parseBaseUrl()}/classes/submission") {
+        val endpoint = "${parseBaseUrl()}/classes/submission"
+        println("ReportedSubmit: POST $endpoint")
+        val response = client.post(endpoint) {
             contentType(ContentType.Application.Json)
             headers {
                 appendParseHeaders(sessionToken = session.sessionToken)
             }
             setBody(buildParseSubmissionBody(command, session))
         }
+        val body = response.bodyAsText()
+        println("ReportedSubmit: POST submission completed status=${response.status} body=$body")
+        val created = json.decodeFromString<ParseCreateResponseDto>(body)
+        return created.objectId.ifBlank { error("Submission succeeded but no report id was returned.") }
     }
 
     suspend fun deleteParseReport(objectId: String) {
-        val session = sessionStore.read()
-        client.delete("${parseBaseUrl()}/classes/submission/$objectId") {
-            headers { appendParseHeaders(sessionToken = session?.sessionToken) }
+        val session = sessionStore.read() ?: error("Not logged in")
+        val endpoint = "${parseBaseUrl()}/classes/submission/$objectId"
+        println("ReportedReports: DELETE $endpoint")
+        try {
+            val response = client.delete(endpoint) {
+                headers { appendParseHeaders(sessionToken = session.sessionToken) }
+            }
+            val body = response.bodyAsText()
+            println("ReportedReports: DELETE submission completed status=${response.status} body=$body")
+        } catch (error: ResponseException) {
+            val body = error.response.bodyAsText()
+            println("ReportedReports: DELETE submission failed status=${error.response.status} body=$body")
+            if (
+                error.response.status.value == 404 ||
+                body.contains("\"code\":101") ||
+                body.contains("Object not found", ignoreCase = true)
+            ) {
+                return
+            }
+            if (error.response.status.value >= 500 && !parseSubmissionExists(objectId, session.sessionToken)) {
+                println("ReportedReports: DELETE returned ${error.response.status}, but submission no longer exists; treating as deleted")
+                return
+            }
+            throw IllegalStateException("Unable to delete report: ${error.response.status}. $body", error)
+        }
+    }
+
+    private suspend fun parseSubmissionExists(objectId: String, sessionToken: String): Boolean {
+        return try {
+            val response = client.get("${parseBaseUrl()}/classes/submission/$objectId") {
+                headers { appendParseHeaders(sessionToken = sessionToken) }
+                parameter("keys", "objectId")
+            }
+            println("ReportedReports: DELETE verification found submission status=${response.status}")
+            true
+        } catch (error: ResponseException) {
+            val body = error.response.bodyAsText()
+            println("ReportedReports: DELETE verification status=${error.response.status} body=$body")
+            !(
+                error.response.status.value == 404 ||
+                    body.contains("\"code\":101") ||
+                    body.contains("Object not found", ignoreCase = true)
+            )
         }
     }
 
     suspend fun changeStatus(reportId: Long, status: String) {
-        client.put("${baseUrl}report/change_status") {
+        client.put("${apiBaseUrl()}report/change_status") {
             contentType(ContentType.Application.Json)
             withSessionHeaders()
             setBody(ChangeStatusRequestDto(id = reportId, status = status))
@@ -194,7 +293,7 @@ class ReportedApi(
     }
 
     suspend fun deleteReport(reportId: Long) {
-        client.delete("${baseUrl}report/delete/$reportId") {
+        client.delete("${apiBaseUrl()}report/delete/$reportId") {
             withSessionHeaders()
         }
     }
@@ -208,8 +307,11 @@ class ReportedApi(
         }
     }
 
+    private fun apiBaseUrl(): String =
+        RemoteConfigOverrides.apiBaseUrl(baseUrl)
+
     private fun parseBaseUrl(): String {
-        val trimmed = parseConfig.serverUrl.trimEnd('/')
+        val trimmed = RemoteConfigOverrides.parseServerUrl(parseConfig.serverUrl).trimEnd('/')
         return when {
             trimmed.endsWith("/parse") -> trimmed
             trimmed.contains("parseapi.back4app.com") -> trimmed
@@ -279,16 +381,27 @@ class ReportedApi(
             .firstOrNull { it.id == command.complaintIds.firstOrNull() }
             ?.name
             ?: command.complaintIds.firstOrNull().orEmpty()
+        val colorTaxi = if (PlatePatternClassifier.classify(command.plate)?.type in setOf(PlateType.TAXI, PlateType.TLC)) {
+            "Black"
+        } else {
+            "private"
+        }
 
         return buildJsonObject {
             put("license", command.plate)
             put("state", command.plateRegion)
             put("medallionNo", command.plate)
             put("Username", session.email)
-            command.timeOfIncidentIso?.let {
-                put("timeofincident", parseDateJson(it))
-                put("timeofreported", parseDateJson(it))
-                put("timeofreport", parseDateJson(it))
+            if (session.objectId.isNotBlank()) {
+                put("user", buildJsonObject {
+                    put("__type", "Pointer")
+                    put("className", "_User")
+                    put("objectId", session.objectId)
+                })
+            }
+            command.timeOfIncidentIso?.let(::normalizedParseIso)?.let { incidentIso ->
+                val incidentDate = parseDateJson(incidentIso)
+                put("timeofreport", incidentDate)
             }
             put("LastName", session.lastName)
             put("FirstName", session.firstName)
@@ -306,26 +419,40 @@ class ReportedApi(
             }
             put("can_be_shared_publicly", true)
             put("typeofreport", "complaint")
+            put("colorTaxi", colorTaxi)
             put("loc1_address", command.address)
             put("reportDescription", command.description)
             if (command.notes.isNotBlank()) {
                 put("notes", command.notes)
             }
             put("testify", session.testify)
-            put("operating_system", "native-kmp")
-            put("version_number", "native-kmp")
+            put("operating_system", operatingSystem)
+            put("version_number", nativeVersionNumber)
             if (session.phone.isNotBlank()) {
                 put("Phone", session.phone)
             }
             put("Passenger", false)
+            put("passenger", false)
             if (complaintName.isNotBlank()) {
                 put("typeofcomplaint", complaintName)
             }
-            command.mediaUrls.forEachIndexed { index, url ->
-                put("photoData$index", buildJsonObject {
+            val typedMedia = command.mediaFiles.ifEmpty {
+                command.mediaUrls.map { url ->
+                    com.reported.shared.model.SubmitReportMediaFile(url = url, isVideo = false)
+                }
+            }
+            var photoIndex = 0
+            var videoIndex = 0
+            typedMedia.forEach { media ->
+                val fieldName = if (media.isVideo) {
+                    "videoData${videoIndex++}"
+                } else {
+                    "photoData${photoIndex++}"
+                }
+                put(fieldName, buildJsonObject {
                     put("__type", "File")
-                    put("name", url.substringAfterLast('/').substringBefore('?'))
-                    put("url", url)
+                    put("name", media.url.substringAfterLast('/').substringBefore('?'))
+                    put("url", media.url)
                 })
             }
         }
@@ -335,6 +462,9 @@ class ReportedApi(
         put("__type", "Date")
         put("iso", value)
     }
+
+    private fun normalizedParseIso(value: String): String? =
+        runCatching { Instant.parse(value.trim()).toString() }.getOrNull()
 
     private fun ReportFilter.toApiFilter(): JsonObject = buildJsonObject {
         if (keywords.isNotBlank()) put("keywords", keywords)
@@ -354,5 +484,6 @@ class ReportedApi(
         const val parseReportDetailKeys =
             "$parseReportListKeys,photoData0,photoData1,photoData2,PhotoData2,PhotoData3,videoData0,videoData1,videoData2"
         const val parseReportsPageSize = 100
+        const val nativeVersionNumber = 90
     }
 }

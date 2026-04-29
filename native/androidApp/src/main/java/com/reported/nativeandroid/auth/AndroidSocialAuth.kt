@@ -19,6 +19,8 @@ import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
+class SocialAuthCancelledException(cause: Throwable? = null) : Exception("Sign-in was cancelled.", cause)
+
 suspend fun signInWithGoogle(activity: Activity): SocialAuthProfile {
     val clientId = BuildConfig.GOOGLE_SERVER_CLIENT_ID
     require(clientId.isNotBlank()) { "Set REPORTED_GOOGLE_SERVER_CLIENT_ID to enable Google sign-in." }
@@ -33,6 +35,9 @@ suspend fun signInWithGoogle(activity: Activity): SocialAuthProfile {
     val result = try {
         credentialManager.getCredential(activity, request)
     } catch (error: GetCredentialException) {
+        if (error.isCredentialCancellation()) {
+            throw SocialAuthCancelledException(error)
+        }
         throw IllegalStateException(
             "Google sign-in failed (${error.type}): ${error.message ?: "check OAuth client ID, package name, and SHA-1 fingerprint."}",
             error
@@ -87,6 +92,16 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+fun Throwable.isSocialAuthCancellation(): Boolean =
+    this is SocialAuthCancelledException ||
+        (this as? GetCredentialException)?.isCredentialCancellation() == true ||
+        cause?.isSocialAuthCancellation() == true
+
+private fun GetCredentialException.isCredentialCancellation(): Boolean {
+    val marker = listOfNotNull(type, message, javaClass.simpleName).joinToString(" ").lowercase()
+    return "cancel" in marker || "canceled" in marker
 }
 
 private fun decodeJwtPayload(token: String): JSONObject {

@@ -49,6 +49,7 @@ class ReportedShared(
     }
     private val sessionStore = SettingsSessionStore(json)
     private val client = HttpClient(platformEngineFactory()) {
+        expectSuccess = true
         install(ContentNegotiation) {
             json(json)
         }
@@ -64,6 +65,7 @@ class ReportedShared(
     private val api = ReportedApi(
         baseUrl = config.apiBaseUrl,
         parseConfig = config.parse,
+        operatingSystem = config.operatingSystem,
         client = client,
         sessionStore = sessionStore,
         json = json

@@ -1,11 +1,15 @@
 package com.reported.nativeandroid.screens
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.view.Gravity
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -16,10 +20,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
@@ -49,8 +55,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Close
@@ -60,6 +66,7 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,12 +108,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
@@ -128,6 +138,7 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.reported.nativeandroid.app.ComposerAction
+import com.reported.nativeandroid.app.ComposerEvent
 import com.reported.nativeandroid.app.ComposerUiState
 import com.reported.nativeandroid.app.ComposerViewModel
 import com.reported.nativeandroid.app.AddressSuggestion
@@ -141,7 +152,9 @@ import com.reported.nativeandroid.app.SubmissionStage
 import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
+import com.reported.nativeandroid.report.NewReportTutorialSheet
 import com.reported.shared.model.AppThemeMode
+import com.reported.shared.model.ComplaintCategory
 import com.reported.shared.model.ReportSummary
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -154,6 +167,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
@@ -164,6 +178,25 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val ROTATED_PLATE_OVERLAY_THRESHOLD_DEGREES = 4f
+private const val REPORT_TUTORIAL_PREFS = "reported.report.tutorial"
+private const val REPORT_TUTORIAL_SEEN_KEY = "new_report_tutorial_seen"
+
+private fun hasSeenReportTutorial(context: Context): Boolean =
+    context.applicationContext
+        .getSharedPreferences(REPORT_TUTORIAL_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(REPORT_TUTORIAL_SEEN_KEY, false)
+
+private fun markReportTutorialSeen(context: Context) {
+    context.applicationContext
+        .getSharedPreferences(REPORT_TUTORIAL_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(REPORT_TUTORIAL_SEEN_KEY, true)
+        .apply()
+}
+
+private fun hasMediaLocationPermission(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_MEDIA_LOCATION) == PackageManager.PERMISSION_GRANTED
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -173,23 +206,20 @@ fun ReportComposerScreen(
     onOpenMenu: () -> Unit,
     sharedMediaRequest: SharedMediaRequest? = null,
     onSharedMediaConsumed: (Long) -> Unit = {},
+    onReportSubmitted: (String) -> Unit = {},
     vm: ComposerViewModel = viewModel()
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    val isScreenLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val verifyListState = rememberLazyListState()
     var isLandscapeLayout by remember { mutableStateOf(false) }
-    val complaintOptions = remember {
-        listOf(
-            ComplaintOption("blocked_bike_lane", "Blocked bike lane", "file:///android_asset/complaints/bikelane.svg"),
-            ComplaintOption("blocked_crosswalk", "Blocked crosswalk", "file:///android_asset/complaints/crosswalk.svg"),
-            ComplaintOption("ran_red_light", "Ran red light", "file:///android_asset/complaints/ranredlight.jpg", "complaints/ranredlight.json"),
-            ComplaintOption("drove_recklessly", "Drove recklessly", "file:///android_asset/complaints/reckless.png", "complaints/reckless.json"),
-            ComplaintOption("parked_illegally", "Parked illegally", "file:///android_asset/complaints/parkedillegally.jpg", "complaints/parkedillegally.json")
-        )
+    val complaintOptions = remember(state.complaintCategories) {
+        complaintOptionsFor(state.complaintCategories)
     }
     val animatedComplaintIndices = remember(complaintOptions) {
         complaintOptions.mapIndexedNotNull { index, option -> index.takeIf { option.lottieAssetPath != null } }
@@ -208,10 +238,16 @@ fun ReportComposerScreen(
     var detectionProgressMinimized by remember { mutableStateOf(false) }
     var metadataJob by remember { mutableStateOf<Job?>(null) }
     var videoScanJob by remember { mutableStateOf<Job?>(null) }
+    var videoScanGeneration by remember { mutableIntStateOf(0) }
     var videoScanPaused by remember { mutableStateOf(false) }
     var videoPreviewScrubMs by remember { mutableLongStateOf(0L) }
     var addressSearchJob by remember { mutableStateOf<Job?>(null) }
     var mapLookupJob by remember { mutableStateOf<Job?>(null) }
+    var showReportTutorial by remember { mutableStateOf(false) }
+    var tutorialScannerEnabled by remember { mutableStateOf(true) }
+    var tutorialNotificationsEnabled by remember { mutableStateOf(true) }
+    var pendingTutorialMediaPermissionAfterNotification by remember { mutableStateOf(false) }
+    var pendingTutorialCompleteAfterNotification by remember { mutableStateOf(false) }
     val hasDraftContent = remember(state) {
         state.stage != SubmissionStage.PICK_MEDIA ||
             state.selectedComplaintId != null ||
@@ -230,13 +266,25 @@ fun ReportComposerScreen(
             state.plateCandidates.isNotEmpty()
     }
 
+    fun advanceAnimatedComplaint(fromIndex: Int) {
+        if (animatedComplaintIndices.isEmpty() || activeAnimatedOptionIndex != fromIndex) return
+        val currentPosition = animatedComplaintIndices.indexOf(fromIndex).takeIf { it >= 0 } ?: 0
+        activeAnimatedOptionIndex = animatedComplaintIndices[(currentPosition + 1) % animatedComplaintIndices.size]
+    }
+
     LaunchedEffect(animatedComplaintIndices) {
-        if (animatedComplaintIndices.isEmpty()) return@LaunchedEffect
-        var pointer = 0
-        while (true) {
-            activeAnimatedOptionIndex = animatedComplaintIndices[pointer]
-            delay(1800)
-            pointer = (pointer + 1) % animatedComplaintIndices.size
+        activeAnimatedOptionIndex = when {
+            animatedComplaintIndices.isEmpty() -> -1
+            activeAnimatedOptionIndex in animatedComplaintIndices -> activeAnimatedOptionIndex
+            else -> animatedComplaintIndices.first()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        vm.events.collectLatest { event ->
+            when (event) {
+                is ComposerEvent.ReportSubmitted -> onReportSubmitted(event.objectId)
+            }
         }
     }
 
@@ -259,6 +307,61 @@ fun ReportComposerScreen(
     LaunchedEffect(state.detectionFrameTimeMs, videoScanPaused) {
         if (!videoScanPaused) {
             videoPreviewScrubMs = state.detectionFrameTimeMs
+        }
+    }
+
+    fun startVideoScan(
+        videoMedia: SubmissionMedia,
+        startTimeMs: Long = 0L,
+        confirmProcessing: Boolean = false
+    ) {
+        if (confirmProcessing) {
+            vm.onAction(ComposerAction.VideoProcessingDecision(true))
+        }
+        videoScanJob?.cancel()
+        videoScanGeneration += 1
+        videoScanPaused = false
+        val scanGeneration = videoScanGeneration
+        videoScanJob = scope.launch {
+            val candidates = NativeAlprEngine.detectLicensePlatesInVideo(
+                context = context,
+                media = videoMedia,
+                startTimeMs = startTimeMs,
+                expectedComplaintHint = selectedComplaintDetectionHint(state, complaintOptions)
+            ) { progress ->
+                if (scanGeneration != videoScanGeneration) return@detectLicensePlatesInVideo
+                val totalFrames = progress.totalFrames.coerceAtLeast(1)
+                val percent = progress.processedFrames.toFloat() / totalFrames.toFloat()
+                val foundText = when (progress.candidatesFound) {
+                    0 -> "no plates yet"
+                    1 -> "1 possible plate"
+                    else -> "${progress.candidatesFound} possible plates"
+                }
+                vm.onAction(
+                    ComposerAction.DetectionProgressChanged(
+                        message = "Scanning frame ${progress.processedFrames}/$totalFrames, $foundText",
+                        progress = percent,
+                        framePreviewUri = progress.framePreviewUri,
+                        frameTimeMs = progress.frameTimeUs / 1_000L,
+                        videoDurationMs = progress.durationMs,
+                        frameCandidates = progress.frameCandidates,
+                        allCandidates = progress.allCandidates
+                    )
+                )
+                while (videoScanPaused) {
+                    if (scanGeneration != videoScanGeneration) return@detectLicensePlatesInVideo
+                    delay(80)
+                }
+            }
+            if (scanGeneration != videoScanGeneration) return@launch
+            val topCandidate = candidates.firstOrNull()
+            vm.onAction(
+                ComposerAction.DetectionFinished(
+                    candidates = candidates,
+                    inferredPlate = topCandidate?.plate,
+                    inferredState = topCandidate?.state
+                )
+            )
         }
     }
 
@@ -285,26 +388,45 @@ fun ReportComposerScreen(
             metadataJob = launch {
                 vm.onAction(ComposerAction.DetectionProgressChanged("Reading media metadata", 0.1f))
                 val metadata = extractSubmissionMetadata(context, media)
-                val inferredState = if (metadata.latitude != null && metadata.longitude != null) "NY" else null
-                val inferredAddress = if (metadata.latitude != null && metadata.longitude != null) {
+                Log.d(
+                    "ReportedMetadata",
+                    "Media metadata: isVideo=${media.isVideo}, occurredAt=${metadata.occurredAtIso}, lat=${metadata.latitude}, lon=${metadata.longitude}"
+                )
+                if (BuildConfig.DEBUG && !media.isVideo) {
+                    val toastMessage = if (metadata.latitude != null && metadata.longitude != null) {
+                        String.format(Locale.US, "Image GPS: %.6f, %.6f", metadata.latitude, metadata.longitude)
+                    } else {
+                        "No image GPS metadata found"
+                    }
+                    Toast.makeText(context, toastMessage, Toast.LENGTH_LONG).apply {
+                        setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 96)
+                        show()
+                    }
+                }
+                val reverseGeocodeSuggestion = if (metadata.latitude != null && metadata.longitude != null) {
                     vm.onAction(ComposerAction.DetectionProgressChanged("Finding NYC address", 0.35f))
-                    reverseGeocodeNyc(metadata.latitude, metadata.longitude)?.label
+                    reverseGeocodeAddress(context, metadata.latitude, metadata.longitude)
                 } else null
                 vm.onAction(ComposerAction.MetadataApplied(
                     occurredAtIso = metadata.occurredAtIso,
+                    photoOccurredAtIso = if (!media.isVideo) metadata.occurredAtIso else null,
                     latitude = metadata.latitude,
                     longitude = metadata.longitude,
-                    inferredState = inferredState,
-                    inferredAddress = inferredAddress
+                    inferredState = reverseGeocodeSuggestion?.region,
+                    inferredAddress = reverseGeocodeSuggestion?.label
                 ))
                 if (!media.isVideo) {
                     vm.onAction(ComposerAction.DetectionProgressChanged("Detecting plates", 0.65f))
-                    val candidates = NativeAlprEngine.detectLicensePlates(context, media)
+                    val candidates = NativeAlprEngine.detectLicensePlates(
+                        context = context,
+                        media = media,
+                        expectedComplaintHint = selectedComplaintDetectionHint(vm.state.value, complaintOptions)
+                    )
                     val topCandidate = candidates.firstOrNull()
                     vm.onAction(ComposerAction.DetectionFinished(
                         candidates = candidates,
                         inferredPlate = topCandidate?.plate,
-                        inferredState = inferredState
+                        inferredState = reverseGeocodeSuggestion?.region
                     ))
                 }
             }
@@ -319,20 +441,33 @@ fun ReportComposerScreen(
         }
     }
 
+    fun persistDocumentRead(uri: Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+    }
+
     val mediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { handleChosenMedia(it, pendingComplaintId, pendingMediaForCurrentReport) }
+        uri?.let {
+            persistDocumentRead(it)
+            handleChosenMedia(it, pendingComplaintId, pendingMediaForCurrentReport)
+        }
         pendingComplaintId = null
         pendingMediaForCurrentReport = false
         pendingMultipleSelection = false
     }
 
     val multiMediaPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
+        contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         scope.launch {
             uris.forEach { uri ->
+                persistDocumentRead(uri)
                 val isVideo = isVideoUri(uri)
                 val media = buildSubmissionMedia(context, uri, isVideo)
                 vm.onAction(ComposerAction.ExtraMediaAdded(media))
@@ -342,18 +477,76 @@ fun ReportComposerScreen(
         pendingMultipleSelection = false
     }
 
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) {
-        val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+    fun launchDocumentPicker() {
+        val mimeTypes = arrayOf("image/*", "video/*")
         if (pendingMultipleSelection) {
-            multiMediaPicker.launch(request)
+            multiMediaPicker.launch(mimeTypes)
         } else {
-            mediaPicker.launch(request)
+            mediaPicker.launch(mimeTypes)
         }
     }
 
+    val tutorialMediaScannerPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = MediaScannerSettings.requiredPermissions().all { permission ->
+            grants[permission] == true ||
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        }
+        MediaScannerSettings.setOfflineProcessingEnabled(context, true)
+        MediaScannerSettings.setEnabled(context, granted)
+        if (granted) {
+            MediaScannerScheduler.scanNow(context)
+        }
+    }
+
+    fun finishReportTutorial() {
+        markReportTutorialSeen(context)
+        showReportTutorial = false
+        MediaScannerSettings.setEnabled(context, false)
+    }
+
+    val tutorialNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        MediaScannerSettings.setNotificationsEnabled(context, granted || MediaScannerSettings.hasNotificationPermission(context))
+        MediaScannerSettings.markNotificationPermissionAsked(context)
+        if (pendingTutorialCompleteAfterNotification) {
+            pendingTutorialCompleteAfterNotification = false
+            finishReportTutorial()
+            return@rememberLauncherForActivityResult
+        }
+        if (pendingTutorialMediaPermissionAfterNotification) {
+            pendingTutorialMediaPermissionAfterNotification = false
+            if (MediaScannerSettings.supportsBackgroundLibraryScanning()) {
+                tutorialMediaScannerPermissionLauncher.launch(MediaScannerSettings.requiredPermissions())
+            }
+        }
+    }
+
+    val tutorialMetadataPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {}
+
+    fun completeReportTutorialFromButton() {
+        finishReportTutorial()
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        launchDocumentPicker()
+    }
+
     LaunchedEffect(Unit) { vm.onAction(ComposerAction.LoadDraft) }
+
+    LaunchedEffect(state.draftLoaded) {
+        if (state.draftLoaded && !hasSeenReportTutorial(context)) {
+            tutorialScannerEnabled = false
+            tutorialNotificationsEnabled = true
+            showReportTutorial = true
+        }
+    }
 
     LaunchedEffect(sharedMediaRequest?.id, state.draftLoaded) {
         val request = sharedMediaRequest ?: return@LaunchedEffect
@@ -416,7 +609,10 @@ fun ReportComposerScreen(
                                 option = option,
                                 modifier = Modifier.weight(1f),
                                 animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
-                                showImage = BuildConfig.SHOW_COMPLAINT_IMAGES,
+                                showImage = state.showComplaintImages,
+                                onAnimationFinished = {
+                                    advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
+                                },
                                 onClick = { vm.onAction(ComposerAction.PendingComplaintConfirmed(option.id)) }
                             )
                         }
@@ -429,6 +625,26 @@ fun ReportComposerScreen(
         }
     }
 
+    if (showReportTutorial) {
+        NewReportTutorialSheet(
+            scannerAvailable = MediaScannerSettings.supportsBackgroundLibraryScanning(),
+            scannerEnabled = tutorialScannerEnabled,
+            onScannerEnabledChange = { tutorialScannerEnabled = it },
+            notificationsEnabled = tutorialNotificationsEnabled,
+            onNotificationsEnabledChange = { tutorialNotificationsEnabled = it },
+            onRequestMediaLocationPermission = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !hasMediaLocationPermission(context)) {
+                    tutorialMetadataPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                }
+            },
+            onSkip = {
+                markReportTutorialSeen(context)
+                showReportTutorial = false
+            },
+            onComplete = ::completeReportTutorialFromButton
+        )
+    }
+
     val pendingVideoMedia = state.pendingVideoProcessingMedia?.takeIf { it.isVideo }
     if (state.awaitingVideoProcessingDecision && pendingVideoMedia != null) {
         AlertDialog(
@@ -438,42 +654,7 @@ fun ReportComposerScreen(
             confirmButton = {
                 TextButton(onClick = {
                     val videoMedia = pendingVideoMedia
-                    videoScanPaused = false
-                    vm.onAction(ComposerAction.VideoProcessingDecision(true))
-                    videoScanJob?.cancel()
-                    videoScanJob = scope.launch {
-                        val candidates = NativeAlprEngine.detectLicensePlatesInVideo(context, videoMedia) { progress ->
-                            val totalFrames = progress.totalFrames.coerceAtLeast(1)
-                            val percent = progress.processedFrames.toFloat() / totalFrames.toFloat()
-                            val foundText = when (progress.candidatesFound) {
-                                0 -> "no plates yet"
-                                1 -> "1 possible plate"
-                                else -> "${progress.candidatesFound} possible plates"
-                            }
-                            vm.onAction(
-                                ComposerAction.DetectionProgressChanged(
-                                    message = "Scanning frame ${progress.processedFrames}/$totalFrames, $foundText",
-                                    progress = percent,
-                                    framePreviewUri = progress.framePreviewUri,
-                                    frameTimeMs = progress.frameTimeUs / 1_000L,
-                                    videoDurationMs = progress.durationMs,
-                                    frameCandidates = progress.frameCandidates,
-                                    allCandidates = progress.allCandidates
-                                )
-                            )
-                            while (videoScanPaused) {
-                                delay(80)
-                            }
-                        }
-                        val topCandidate = candidates.firstOrNull()
-                        vm.onAction(
-                            ComposerAction.DetectionFinished(
-                                candidates = candidates,
-                                inferredPlate = topCandidate?.plate,
-                                inferredState = topCandidate?.state
-                            )
-                        )
-                    }
+                    startVideoScan(videoMedia = videoMedia, confirmProcessing = true)
                 }) { Text("Process") }
             },
             dismissButton = {
@@ -506,6 +687,33 @@ fun ReportComposerScreen(
             dismissButton = {
                 TextButton(onClick = { showComplaintChooser = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    state.plateCorrectionPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { vm.onAction(ComposerAction.PlateCorrectionDismissed) },
+            title = { Text("Fix plate format?") },
+            text = {
+                Text(
+                    "This looks like a ${prompt.label} plate. Use ${prompt.suggestedPlate} instead of ${prompt.rawPlate}?"
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { vm.onAction(ComposerAction.PlateCorrectionKept) }) {
+                        Text("Keep")
+                    }
+                    TextButton(onClick = { vm.onAction(ComposerAction.PlateCorrectionAccepted) }) {
+                        Text("Use ${prompt.suggestedPlate}")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.onAction(ComposerAction.PlateCorrectionDismissed) }) {
+                    Text("Edit")
                 }
             }
         )
@@ -569,6 +777,13 @@ fun ReportComposerScreen(
                     PlateCandidateThumbnail(candidate = candidate)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(candidate.plate, style = MaterialTheme.typography.titleLarge)
+                        candidate.plateCorrectionText()?.let { correctionText ->
+                            Text(
+                                correctionText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         Text(
                             "${(candidate.confidence * 100).toInt()}% confidence",
                             style = MaterialTheme.typography.bodyMedium,
@@ -614,8 +829,9 @@ fun ReportComposerScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        val landscapeVerifyChrome = isLandscapeLayout && state.stage == SubmissionStage.VERIFY
-        if (!landscapeVerifyChrome) {
+        val landscapeColumnChrome = isScreenLandscape &&
+            (state.stage == SubmissionStage.VERIFY || state.stage == SubmissionStage.PICK_MEDIA)
+        if (!landscapeColumnChrome) {
             ReportComposerTopBar(
                 compact = false,
                 hasDraftContent = hasDraftContent,
@@ -641,97 +857,216 @@ fun ReportComposerScreen(
             SubmissionStage.PICK_MEDIA -> {
                 val selectedComplaintOption = state.selectedComplaintId
                     ?.let { selectedId -> complaintOptions.firstOrNull { it.id == selectedId } }
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
+                if (isScreenLandscape) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 6.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier.weight(0.86f),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
+                            ReportComposerTopBar(
+                                compact = true,
+                                hasDraftContent = false,
+                                onOpenMenu = onOpenMenu,
+                                onClear = { showDiscardDialog = true }
+                            )
                             Text(
                                 if (selectedComplaintOption == null) "What happened?" else "Upload Photo of Complaint",
-                                style = MaterialTheme.typography.headlineLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Start
                             )
                             Text(
                                 if (selectedComplaintOption == null) {
-                                    "Choose a complaint type, then pick a photo or video. We'll help verify the plate, time, and NYC address next."
+                                    "Choose a complaint type to pick a photo or video. We'll help verify the plate, time, and address next."
                                 } else {
                                     "${selectedComplaintOption.title} selected. Pick a photo or video to continue."
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth(),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Start
                             )
                         }
-                    }
-                    state.validationErrors.media?.let { message ->
-                        item {
-                            ValidationMessage(
-                                message = message,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                    if (selectedComplaintOption != null) {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                UploadTile(
-                                    modifier = Modifier.weight(1f),
-                                    showImage = BuildConfig.SHOW_COMPLAINT_IMAGES,
-                                    onClick = {
-                                        pendingMultipleSelection = false
-                                        pendingMediaForCurrentReport = false
-                                        pendingComplaintId = selectedComplaintOption.id
-                                        locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
-                                    }
-                                )
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    } else {
-                        items(complaintOptions.chunked(2)) { row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                row.forEach { option ->
-                                    ComplaintTile(
-                                        option = option,
-                                        modifier = Modifier.weight(1f),
-                                        animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
-                                        showImage = BuildConfig.SHOW_COMPLAINT_IMAGES,
-                                        onClick = {
-                                            pendingMultipleSelection = false
-                                            pendingMediaForCurrentReport = false
-                                            pendingComplaintId = option.id
-                                            locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
-                                        }
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1.14f)
+                                .fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            contentPadding = PaddingValues(bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            state.validationErrors.media?.let { message ->
+                                item {
+                                    ValidationMessage(
+                                        message = message,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
-                                if (row.size == 1) {
+                            }
+                            if (selectedComplaintOption != null) {
+                                item {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                    ) {
+                                        UploadTile(
+                                            modifier = Modifier.weight(1f),
+                                            showImage = state.showComplaintImages,
+                                            onClick = {
+                                                pendingMultipleSelection = false
+                                                pendingMediaForCurrentReport = false
+                                                pendingComplaintId = selectedComplaintOption.id
+                                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            } else {
+                                items(complaintOptions.chunked(3)) { row ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                    ) {
+                                        row.forEach { option ->
+                                            ComplaintTile(
+                                                option = option,
+                                                modifier = Modifier.weight(1f),
+                                                animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
+                                                showImage = state.showComplaintImages,
+                                                onAnimationFinished = {
+                                                    advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
+                                                },
+                                                onClick = {
+                                                    pendingMultipleSelection = false
+                                                    pendingMediaForCurrentReport = false
+                                                    pendingComplaintId = option.id
+                                                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                                                }
+                                            )
+                                        }
+                                        if (row.size < 3) {
+                                            UploadTile(
+                                                modifier = Modifier.weight(1f),
+                                                showImage = state.showComplaintImages,
+                                                onClick = {
+                                                    pendingMultipleSelection = false
+                                                    pendingMediaForCurrentReport = false
+                                                    pendingComplaintId = null
+                                                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                                                }
+                                            )
+                                            repeat(2 - row.size) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 28.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    if (selectedComplaintOption == null) "What happened?" else "Upload Photo of Complaint",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Text(
+                                    if (selectedComplaintOption == null) {
+                                        "Choose a complaint type to pick a photo or video. We'll help verify the plate, time, and address next."
+                                    } else {
+                                        "${selectedComplaintOption.title} selected. Pick a photo or video to continue."
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                        state.validationErrors.media?.let { message ->
+                            item {
+                                ValidationMessage(
+                                    message = message,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        if (selectedComplaintOption != null) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
                                     UploadTile(
                                         modifier = Modifier.weight(1f),
-                                        showImage = BuildConfig.SHOW_COMPLAINT_IMAGES,
+                                        showImage = state.showComplaintImages,
                                         onClick = {
                                             pendingMultipleSelection = false
                                             pendingMediaForCurrentReport = false
-                                            pendingComplaintId = null
+                                            pendingComplaintId = selectedComplaintOption.id
                                             locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
                                         }
                                     )
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        } else {
+                            items(complaintOptions.chunked(2)) { row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    row.forEach { option ->
+                                        ComplaintTile(
+                                            option = option,
+                                            modifier = Modifier.weight(1f),
+                                            animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
+                                            showImage = state.showComplaintImages,
+                                            onAnimationFinished = {
+                                                advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
+                                            },
+                                            onClick = {
+                                                pendingMultipleSelection = false
+                                                pendingMediaForCurrentReport = false
+                                                pendingComplaintId = option.id
+                                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                                            }
+                                        )
+                                    }
+                                    if (row.size == 1) {
+                                        UploadTile(
+                                            modifier = Modifier.weight(1f),
+                                            showImage = state.showComplaintImages,
+                                            onClick = {
+                                                pendingMultipleSelection = false
+                                                pendingMediaForCurrentReport = false
+                                                pendingComplaintId = null
+                                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -751,7 +1086,10 @@ fun ReportComposerScreen(
                     locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
                 }
                 val submitReport = {
-                    if (isAuthorized) {
+                    val readyToSubmit = vm.prepareSubmit()
+                    if (!readyToSubmit) {
+                        Unit
+                    } else if (isAuthorized) {
                         vm.onAction(ComposerAction.SubmitPressed)
                     } else {
                         onRequireLogin {
@@ -774,7 +1112,7 @@ fun ReportComposerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 Column(
-                                    modifier = Modifier.weight(0.9f),
+                                    modifier = Modifier.weight(0.86f),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     ReportComposerTopBar(
@@ -786,21 +1124,27 @@ fun ReportComposerScreen(
                                     VerifyMediaPanel(
                                         state = state,
                                         selectedCandidate = selectedCandidate,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth(),
+                                        expandPreview = true,
                                         onLaunchMediaPicker = launchMediaPicker,
                                         landscapeSubmit = null,
                                         onPlateCandidateTapped = { pendingPlateCandidate = it },
+                                        onPlateCandidateConfirmed = { vm.onAction(ComposerAction.PlateCandidateChosen(it)) },
+                                        onShowPlateCandidates = { showPlateCandidates = true },
                                         onRemoveMedia = { vm.onAction(ComposerAction.MediaRemoved(it)) }
                                     )
                                 }
                                 Box(
                                     modifier = Modifier
-                                        .weight(1.1f)
+                                        .weight(1.14f)
                                         .fillMaxSize()
                                 ) {
                                     LazyColumn(
                                         state = verifyListState,
                                         modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 88.dp)
+                                        contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 78.dp)
                                     ) {
                                         item {
                                             Column(
@@ -825,7 +1169,7 @@ fun ReportComposerScreen(
                                                 .align(Alignment.BottomCenter)
                                                 .fillMaxWidth()
                                                 .navigationBarsPadding()
-                                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                                .padding(horizontal = 4.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -840,8 +1184,8 @@ fun ReportComposerScreen(
                                                 onClick = {
                                                     if (!state.submitting) submitReport()
                                                 },
-                                                icon = { Icon(Icons.Outlined.Check, contentDescription = null) },
                                                 text = { Text(if (state.submitting) "Submitting" else "Submit") },
+                                                icon = { Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null) },
                                                 containerColor = MaterialTheme.colorScheme.primary,
                                                 contentColor = MaterialTheme.colorScheme.onPrimary
                                             )
@@ -863,6 +1207,8 @@ fun ReportComposerScreen(
                                             onLaunchMediaPicker = launchMediaPicker,
                                             landscapeSubmit = null,
                                             onPlateCandidateTapped = { pendingPlateCandidate = it },
+                                            onPlateCandidateConfirmed = { vm.onAction(ComposerAction.PlateCandidateChosen(it)) },
+                                            onShowPlateCandidates = { showPlateCandidates = true },
                                             onRemoveMedia = { vm.onAction(ComposerAction.MediaRemoved(it)) }
                                         )
                                         VerifyFieldsPanel(
@@ -883,16 +1229,19 @@ fun ReportComposerScreen(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .fillMaxWidth(),
-                                    color = Color.Transparent
+                                    color = MaterialTheme.colorScheme.background
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                                            .padding(top = 8.dp)
                                     ) {
                                         SubmitReportButton(
                                             submitting = state.submitting,
-                                            onClick = submitReport
+                                            progress = state.submitProgress,
+                                            message = state.submitMessage,
+                                            onClick = submitReport,
+                                            edgeToEdge = true
                                         )
                                     }
                                 }
@@ -916,12 +1265,20 @@ fun ReportComposerScreen(
                                 color = MaterialTheme.colorScheme.surface,
                                 shadowElevation = 4.dp
                             ) {
-                                Text(
-                                    text = message,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Row(
+                                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = message,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    IconButton(onClick = { vm.onAction(ComposerAction.DetectionResultDismissed) }) {
+                                        Icon(Icons.Outlined.Close, contentDescription = "Dismiss scan message")
+                                    }
+                                }
                             }
                         }
                     }
@@ -943,6 +1300,7 @@ fun ReportComposerScreen(
             allCandidates = state.plateCandidates,
             selectedPlate = state.selectedPlateCandidate,
             onCandidateSelected = { candidate ->
+                videoScanGeneration += 1
                 videoScanJob?.cancel()
                 vm.onAction(ComposerAction.PlateCandidateChosen(candidate))
                 vm.onAction(ComposerAction.DetectionFinished(
@@ -952,13 +1310,30 @@ fun ReportComposerScreen(
                 ))
             },
             onPausedChange = { paused ->
-                videoScanPaused = paused
                 if (paused) {
+                    videoScanPaused = true
                     videoPreviewScrubMs = state.detectionFrameTimeMs
+                } else {
+                    val resumeTimeMs = videoPreviewScrubMs.coerceAtLeast(0L)
+                    val shouldResumeFromScrubPosition =
+                        state.primaryMedia?.isVideo == true &&
+                            kotlin.math.abs(resumeTimeMs - state.detectionFrameTimeMs) > 250L
+                    videoScanPaused = false
+                    if (shouldResumeFromScrubPosition) {
+                        state.primaryMedia?.let { videoMedia ->
+                            startVideoScan(videoMedia = videoMedia, startTimeMs = resumeTimeMs)
+                        }
+                    }
                 }
             },
             onSeekFrame = { timeMs ->
                 videoPreviewScrubMs = timeMs
+            },
+            onCancel = {
+                videoScanGeneration += 1
+                videoScanJob?.cancel()
+                videoScanPaused = false
+                vm.onAction(ComposerAction.VideoProcessingCancelled)
             },
             onMinimize = { detectionProgressMinimized = true }
         )
@@ -981,6 +1356,7 @@ private fun DetectionProgressDialog(
     onCandidateSelected: (PlateCandidate) -> Unit,
     onPausedChange: (Boolean) -> Unit,
     onSeekFrame: (Long) -> Unit,
+    onCancel: () -> Unit,
     onMinimize: () -> Unit
 ) {
     val isVideoScan = videoUri != null
@@ -1009,6 +1385,9 @@ private fun DetectionProgressDialog(
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
                 TextButton(onClick = onMinimize) {
                     Text("Minimize")
                 }
@@ -1027,7 +1406,7 @@ private fun DetectionProgressDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f, fill = false)
-                            .height(360.dp)
+                            .height(310.dp)
                     )
                 }
                 Text(
@@ -1291,6 +1670,13 @@ private fun DetectionCandidateButton(
                 style = MaterialTheme.typography.labelLarge,
                 color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
             )
+            candidate.plateCorrectionText()?.let { correctionText ->
+                Text(
+                    text = correctionText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                )
+            }
             Text(
                 text = listOfNotNull(
                     candidate.state,
@@ -1366,6 +1752,84 @@ private data class ComplaintOption(
     val lottieAssetPath: String? = null
 )
 
+private fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOption> =
+    listOf(
+        complaintOptionFor(
+            categories = categories,
+            fallbackId = "blocked_bike_lane",
+            fallbackTitle = "Blocked bike lane",
+            imageUri = "file:///android_asset/complaints/bikelane.svg",
+            keywords = listOf("bike lane")
+        ),
+        complaintOptionFor(
+            categories = categories,
+            fallbackId = "blocked_crosswalk",
+            fallbackTitle = "Blocked crosswalk",
+            imageUri = "file:///android_asset/complaints/crosswalk.svg",
+            keywords = listOf("crosswalk")
+        ),
+        complaintOptionFor(
+            categories = categories,
+            fallbackId = "ran_red_light",
+            fallbackTitle = "Ran red light",
+            imageUri = "file:///android_asset/complaints/ranredlight.jpg",
+            lottieAssetPath = "complaints/ranredlight.json",
+            keywords = listOf("red light", "stop sign")
+        ),
+        complaintOptionFor(
+            categories = categories,
+            fallbackId = "drove_recklessly",
+            fallbackTitle = "Drove recklessly",
+            imageUri = "file:///android_asset/complaints/reckless.png",
+            lottieAssetPath = "complaints/reckless.json",
+            keywords = listOf("reckless", "aggressive")
+        ),
+        complaintOptionFor(
+            categories = categories,
+            fallbackId = "parked_illegally",
+            fallbackTitle = "Parked illegally",
+            imageUri = "file:///android_asset/complaints/parkedillegally.jpg",
+            lottieAssetPath = "complaints/parkedillegally.json",
+            keywords = listOf("parked")
+        )
+    )
+
+private fun complaintOptionFor(
+    categories: List<ComplaintCategory>,
+    fallbackId: String,
+    fallbackTitle: String,
+    imageUri: String,
+    keywords: List<String>,
+    lottieAssetPath: String? = null
+): ComplaintOption {
+    val category = categories.firstOrNull { category ->
+        val name = category.name.lowercase(Locale.US)
+        keywords.any { name.contains(it) }
+    }
+    return ComplaintOption(
+        id = category?.id ?: fallbackId,
+        title = category?.name?.toDisplayComplaintTitle() ?: fallbackTitle,
+        imageUri = imageUri,
+        lottieAssetPath = lottieAssetPath
+    )
+}
+
+private fun String.toDisplayComplaintTitle(): String =
+    when (trim().lowercase(Locale.US)) {
+        "blocked the bike lane", "blocked the biek lane" -> "Blocked bike lane"
+        "blocked the crosswalk" -> "Blocked crosswalk"
+        else -> this
+    }
+
+private fun selectedComplaintDetectionHint(
+    state: ComposerUiState,
+    complaintOptions: List<ComplaintOption>
+): String? {
+    val selectedId = state.selectedComplaintId ?: return null
+    val option = complaintOptions.firstOrNull { it.id == selectedId }
+    return listOfNotNull(option?.title, option?.id, selectedId).joinToString(" ")
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ReportComposerTopBar(
@@ -1436,51 +1900,75 @@ private fun ReportComposerTopBar(
 private fun VerifyMediaPanel(
     state: ComposerUiState,
     selectedCandidate: PlateCandidate?,
+    modifier: Modifier = Modifier,
+    expandPreview: Boolean = false,
     onLaunchMediaPicker: () -> Unit,
     landscapeSubmit: (() -> Unit)? = null,
     onPlateCandidateTapped: (PlateCandidate) -> Unit,
+    onPlateCandidateConfirmed: (PlateCandidate) -> Unit,
+    onShowPlateCandidates: () -> Unit,
     onRemoveMedia: (SubmissionMedia) -> Unit
 ) {
     val primaryMedia = state.primaryMedia
-    if (primaryMedia != null) {
-        PrimaryMediaPreview(
-            primaryMedia = primaryMedia,
-            extraMedia = state.extraMedia,
-            primaryFocalPointX = selectedCandidate?.focalPointX,
-            primaryFocalPointY = selectedCandidate?.focalPointY,
-            plateCandidates = state.plateCandidates,
-            selectedCandidate = selectedCandidate,
-            selectedPlate = state.selectedPlateCandidate,
-            onPlateCandidateTapped = onPlateCandidateTapped,
-            onRemoveMedia = onRemoveMedia
-        )
-    } else {
-        PrimaryMediaPlaceholder(
-            isError = state.validationErrors.media != null,
-            onClick = onLaunchMediaPicker
-        )
-    }
-    if (landscapeSubmit != null) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        val previewModifier = if (expandPreview) {
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        } else {
+            Modifier.fillMaxWidth()
+        }
+        if (primaryMedia != null) {
+            PrimaryMediaPreview(
+                primaryMedia = primaryMedia,
+                extraMedia = state.extraMedia,
+                primaryFocalPointX = selectedCandidate?.focalPointX,
+                primaryFocalPointY = selectedCandidate?.focalPointY,
+                plateCandidates = state.plateCandidates,
+                selectedCandidate = selectedCandidate,
+                selectedPlate = state.selectedPlateCandidate,
+                modifier = previewModifier,
+                expand = expandPreview,
+                onPlateCandidateTapped = onPlateCandidateTapped,
+                onPlateCandidateConfirmed = onPlateCandidateConfirmed,
+                onShowPlateCandidates = onShowPlateCandidates,
+                onRemoveMedia = onRemoveMedia
+            )
+        } else {
+            PrimaryMediaPlaceholder(
+                isError = state.validationErrors.media != null,
+                modifier = previewModifier,
+                expand = expandPreview,
+                onClick = onLaunchMediaPicker
+            )
+        }
+        if (landscapeSubmit != null) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SecondaryButton(
+                    if (state.primaryMedia == null) "Add photo or video" else "Add more photos or videos",
+                    onClick = onLaunchMediaPicker
+                )
+                SubmitReportButton(
+                    submitting = state.submitting,
+                    progress = state.submitProgress,
+                    message = state.submitMessage,
+                    onClick = landscapeSubmit
+                )
+            }
+        } else {
             SecondaryButton(
                 if (state.primaryMedia == null) "Add photo or video" else "Add more photos or videos",
                 onClick = onLaunchMediaPicker
             )
-            SubmitReportButton(
-                submitting = state.submitting,
-                onClick = landscapeSubmit
-            )
         }
-    } else {
-        SecondaryButton(
-            if (state.primaryMedia == null) "Add photo or video" else "Add more photos or videos",
-            onClick = onLaunchMediaPicker
-        )
+        state.validationErrors.media?.let { ValidationMessage(it) }
     }
-    state.validationErrors.media?.let { ValidationMessage(it) }
 }
 
 @Composable
@@ -1500,7 +1988,7 @@ private fun VerifyFieldsPanel(
         ReportedSelectionField(
             label = "Complaint",
             value = complaintOptions.firstOrNull { it.id == state.selectedComplaintId }?.title ?: "Select complaint",
-            modifier = Modifier.weight(1.05f),
+            modifier = Modifier.weight(if (isLandscape) 0.9f else 0.9f),
             onClick = onShowComplaintChooser,
             isError = state.validationErrors.complaint != null
         )
@@ -1508,7 +1996,7 @@ private fun VerifyFieldsPanel(
             label = "Plate",
             value = state.plate,
             onValueChange = { onAction(ComposerAction.FieldsChanged(plate = it.take(8))) },
-            modifier = Modifier.weight(0.9f),
+            modifier = Modifier.weight(if (isLandscape) 0.84f else 0.87f),
             isError = state.validationErrors.plate != null,
             trailingContent = if (state.plateCandidates.isNotEmpty()) {
                 {
@@ -1534,7 +2022,7 @@ private fun VerifyFieldsPanel(
             label = "State",
             value = state.plateRegion,
             onSelected = { onAction(ComposerAction.FieldsChanged(plateRegion = it)) },
-            modifier = Modifier.weight(0.32f),
+            modifier = Modifier.weight(if (isLandscape) 0.36f else 0.32f),
             isError = state.validationErrors.plateRegion != null
         )
     }
@@ -1546,29 +2034,21 @@ private fun VerifyFieldsPanel(
         )
     )
     if (isLandscape) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                AddressField(
-                    state = state,
-                    onAction = onAction,
-                    onShowAddressMap = onShowAddressMap
-                )
-                state.validationErrors.address?.let { ValidationMessage(it) }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                OccurredAtField(
-                    label = "Occurred At",
-                    isoValue = state.occurredAtIso,
-                    onValueSelected = { onAction(ComposerAction.FieldsChanged(occurredAtIso = it)) },
-                    isError = state.validationErrors.occurredAt != null,
-                    onClear = { onAction(ComposerAction.FieldsChanged(occurredAtIso = "")) }
-                )
-                state.validationErrors.occurredAt?.let { ValidationMessage(it) }
-            }
-        }
+        AddressField(
+            state = state,
+            onAction = onAction,
+            onShowAddressMap = onShowAddressMap
+        )
+        state.validationErrors.address?.let { ValidationMessage(it) }
+        OccurredAtField(
+            label = "Occurred At",
+            isoValue = state.occurredAtIso,
+            photoIsoValue = state.photoOccurredAtIso,
+            onValueSelected = { onAction(ComposerAction.FieldsChanged(occurredAtIso = it)) },
+            isError = state.validationErrors.occurredAt != null,
+            onClear = { onAction(ComposerAction.FieldsChanged(occurredAtIso = "")) }
+        )
+        state.validationErrors.occurredAt?.let { ValidationMessage(it) }
     } else {
         AddressField(
             state = state,
@@ -1606,22 +2086,45 @@ private fun VerifyFieldsPanel(
         OccurredAtField(
             label = "Occurred At",
             isoValue = state.occurredAtIso,
+            photoIsoValue = state.photoOccurredAtIso,
             onValueSelected = { onAction(ComposerAction.FieldsChanged(occurredAtIso = it)) },
             isError = state.validationErrors.occurredAt != null,
             onClear = { onAction(ComposerAction.FieldsChanged(occurredAtIso = "")) }
         )
         state.validationErrors.occurredAt?.let { ValidationMessage(it) }
     }
-    ReportedField(
-        "Description (public facing)",
-        state.description,
-        onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) }
-    )
-    ReportedField(
-        "Notes (for your records)",
-        state.notes,
-        onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) }
-    )
+    if (isLandscape) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ReportedField(
+                "Description (public facing)",
+                state.description,
+                onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) },
+                modifier = Modifier.weight(1f),
+                minHeight = 96.dp
+            )
+            ReportedField(
+                "Notes (for your records)",
+                state.notes,
+                onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) },
+                modifier = Modifier.weight(1f),
+                minHeight = 96.dp
+            )
+        }
+    } else {
+        ReportedField(
+            "Description (public facing)",
+            state.description,
+            onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) }
+        )
+        ReportedField(
+            "Notes (for your records)",
+            state.notes,
+            onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) }
+        )
+    }
 }
 
 @Composable
@@ -1636,6 +2139,8 @@ private fun AddressField(
         onValueChange = { onAction(ComposerAction.AddressQueryChanged(it)) },
         isError = state.validationErrors.address != null,
         onClear = { onAction(ComposerAction.AddressQueryChanged("")) },
+        autoFitText = true,
+        trailingWidth = if (state.addressQuery.isNotEmpty()) 88.dp else 48.dp,
         trailingContent = {
             IconButton(onClick = onShowAddressMap) {
                 Icon(Icons.Outlined.Map, contentDescription = "Pick address on map")
@@ -1647,13 +2152,47 @@ private fun AddressField(
 @Composable
 private fun SubmitReportButton(
     submitting: Boolean,
-    onClick: () -> Unit
+    progress: Float?,
+    message: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    edgeToEdge: Boolean = false
 ) {
-    PrimaryButton(
-        "Submit Report",
-        onClick = onClick,
-        enabled = !submitting
-    )
+    val buttonShape = if (edgeToEdge) {
+        RoundedCornerShape(0.dp)
+    } else {
+        RoundedCornerShape(8.dp)
+    }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        PrimaryButton(
+            "Submit Report",
+            onClick = onClick,
+            enabled = !submitting,
+            shape = buttonShape,
+            contentPadding = if (edgeToEdge) {
+                PaddingValues(top = 26.dp, bottom = 26.dp)
+            } else {
+                PaddingValues(vertical = 16.dp)
+            },
+            textSize = if (edgeToEdge) 20.sp else 16.sp
+        )
+        if (submitting) {
+            LinearProgressIndicator(
+                progress = { progress ?: 0f },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = message ?: "Submitting report",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
 }
 
 @Composable
@@ -1686,6 +2225,7 @@ private fun ComplaintTile(
     modifier: Modifier = Modifier,
     animate: Boolean = false,
     showImage: Boolean,
+    onAnimationFinished: () -> Unit = {},
     onClick: () -> Unit
 ) {
     OutlinedCard(
@@ -1712,6 +2252,7 @@ private fun ComplaintTile(
                 ComplaintTileArt(
                     option = option,
                     animate = animate,
+                    onAnimationFinished = onAnimationFinished,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -1740,6 +2281,7 @@ private fun ComplaintTile(
 private fun ComplaintTileArt(
     option: ComplaintOption,
     animate: Boolean,
+    onAnimationFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1752,11 +2294,7 @@ private fun ComplaintTileArt(
     val artModifier = modifier
         .background(artBackground, shape)
         .clip(shape)
-    val lottieScale = if (option.id == "drove_recklessly" || option.id == "ran_red_light") {
-        ContentScale.Crop
-    } else {
-        ContentScale.Fit
-    }
+    val lottieAlignment = if (option.id == "ran_red_light") Alignment.BottomCenter else Alignment.Center
     if (option.lottieAssetPath != null) {
         val composition by rememberLottieComposition(LottieCompositionSpec.Asset(option.lottieAssetPath))
         val progress by animateLottieCompositionAsState(
@@ -1765,12 +2303,24 @@ private fun ComplaintTileArt(
             iterations = 1,
             restartOnPlay = true
         )
+        var notifiedFinished by remember(option.id, animate) { mutableStateOf(false) }
+        LaunchedEffect(animate, progress) {
+            if (!animate) {
+                notifiedFinished = false
+                return@LaunchedEffect
+            }
+            if (progress >= 0.999f && !notifiedFinished) {
+                notifiedFinished = true
+                onAnimationFinished()
+            }
+        }
         if (composition != null) {
             LottieAnimation(
                 composition = composition,
                 progress = { if (animate) progress else 0f },
                 modifier = artModifier,
-                contentScale = lottieScale
+                contentScale = ContentScale.Crop,
+                alignment = lottieAlignment
             )
             return
         }
@@ -1868,7 +2418,11 @@ private fun PrimaryMediaPreview(
     plateCandidates: List<PlateCandidate> = emptyList(),
     selectedCandidate: PlateCandidate? = null,
     selectedPlate: String? = null,
+    modifier: Modifier = Modifier,
+    expand: Boolean = false,
     onPlateCandidateTapped: (PlateCandidate) -> Unit,
+    onPlateCandidateConfirmed: (PlateCandidate) -> Unit,
+    onShowPlateCandidates: () -> Unit,
     onRemoveMedia: (SubmissionMedia) -> Unit
 ) {
     val mediaItems = remember(primaryMedia, extraMedia) { listOf(primaryMedia) + extraMedia }
@@ -1877,11 +2431,11 @@ private fun PrimaryMediaPreview(
     var fullScreenVideoCandidate by remember { mutableStateOf<PlateCandidate?>(null) }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
     ) {
         OutlinedCard(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = if (expand) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.outlinedCardColors(
                 containerColor = MaterialTheme.colorScheme.surface
@@ -1892,12 +2446,18 @@ private fun PrimaryMediaPreview(
             )
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = if (expand) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = if (expand) {
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    } else {
+                        Modifier.fillMaxWidth()
+                    }
                 ) { page ->
                     val media = mediaItems[page]
                     var imageSize by remember(media.uri) { mutableStateOf<Size?>(null) }
@@ -1910,26 +2470,57 @@ private fun PrimaryMediaPreview(
                         Alignment.Center
                     }
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
+                        modifier = if (expand) {
+                            Modifier.fillMaxSize()
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                        }
                     ) {
                         if (media.isVideo) {
+                            var videoFrameImageSize by remember(media.uri, selectedCandidate?.videoFramePreviewUri) {
+                                mutableStateOf<Size?>(null)
+                            }
                             val videoPreviewCandidate = selectedCandidate
                                 ?.takeIf { page == 0 && it.videoFramePreviewUri != null }
                             if (videoPreviewCandidate?.videoFramePreviewUri != null) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(videoPreviewCandidate.videoFramePreviewUri)
-                                        .crossfade(false)
-                                        .build(),
-                                    contentDescription = "Selected video frame",
+                                Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { fullScreenVideoCandidate = videoPreviewCandidate },
-                                    contentScale = ContentScale.Crop
-                                )
+                                        .background(Color.Black)
+                                        .clickable { fullScreenVideoCandidate = videoPreviewCandidate }
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(videoPreviewCandidate.videoFramePreviewUri)
+                                            .crossfade(false)
+                                            .build(),
+                                        contentDescription = "Selected video frame",
+                                        onSuccess = { state ->
+                                            val intrinsicSize = state.painter.intrinsicSize
+                                            if (
+                                                intrinsicSize.width.isFinite() &&
+                                                intrinsicSize.height.isFinite() &&
+                                                intrinsicSize.width > 0f &&
+                                                intrinsicSize.height > 0f
+                                            ) {
+                                                videoFrameImageSize = intrinsicSize
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    LicensePlateBoundsOverlay(
+                                        candidates = listOf(videoPreviewCandidate),
+                                        selectedPlate = videoPreviewCandidate.plate,
+                                        imageSize = videoFrameImageSize,
+                                        alignment = Alignment.Center,
+                                        contentScale = ContentScale.Fit,
+                                        onCandidateTapped = onPlateCandidateTapped,
+                                        onEmptyTap = { fullScreenVideoCandidate = videoPreviewCandidate }
+                                    )
+                                }
                                 Surface(
                                     modifier = Modifier
                                         .align(Alignment.BottomStart)
@@ -1985,7 +2576,7 @@ private fun PrimaryMediaPreview(
                                 LicensePlateBoundsOverlay(
                                     candidates = plateCandidates,
                                     selectedPlate = selectedPlate,
-                                    imageSize = imageSize,
+                                    imageSize = plateCandidates.detectionSourceSize() ?: imageSize,
                                     alignment = imageAlignment,
                                     contentScale = ContentScale.Crop,
                                     onCandidateTapped = onPlateCandidateTapped,
@@ -2022,6 +2613,7 @@ private fun PrimaryMediaPreview(
                 media = media,
                 plateCandidates = if (media.uri == primaryMedia.uri) plateCandidates else emptyList(),
                 selectedPlate = selectedPlate,
+                onPlateCandidateConfirmed = onPlateCandidateConfirmed,
                 onDismiss = { fullScreenMedia = null }
             )
         }
@@ -2057,10 +2649,12 @@ private fun PrimaryMediaPreview(
 @Composable
 private fun PrimaryMediaPlaceholder(
     isError: Boolean,
+    modifier: Modifier = Modifier,
+    expand: Boolean = false,
     onClick: () -> Unit
 ) {
     OutlinedCard(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -2073,10 +2667,16 @@ private fun PrimaryMediaPlaceholder(
         )
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)),
+            modifier = if (expand) {
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
+            },
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -2191,8 +2791,13 @@ private fun plateCandidatePolygon(
     contentScale: ContentScale,
     inflateByPx: Float
 ): List<Offset>? {
-    val sourceWidth = imageSize?.width?.takeIf { it.isFinite() && it > 0f } ?: viewportSize.width
-    val sourceHeight = imageSize?.height?.takeIf { it.isFinite() && it > 0f } ?: viewportSize.height
+    val candidateSourceSize = candidatesSourceSize(candidate)
+    val sourceWidth = candidateSourceSize?.width
+        ?: imageSize?.width?.takeIf { it.isFinite() && it > 0f }
+        ?: viewportSize.width
+    val sourceHeight = candidateSourceSize?.height
+        ?: imageSize?.height?.takeIf { it.isFinite() && it > 0f }
+        ?: viewportSize.height
     val scale = when (contentScale) {
         ContentScale.Fit -> min(viewportSize.width / sourceWidth, viewportSize.height / sourceHeight)
         else -> max(viewportSize.width / sourceWidth, viewportSize.height / sourceHeight)
@@ -2232,6 +2837,15 @@ private fun plateCandidatePolygon(
         Offset(rect.left, rect.bottom)
     )
     return rectPoints
+}
+
+private fun List<PlateCandidate>.detectionSourceSize(): Size? =
+    firstNotNullOfOrNull(::candidatesSourceSize)
+
+private fun candidatesSourceSize(candidate: PlateCandidate): Size? {
+    val width = candidate.sourceImageWidth?.takeIf { it > 0 } ?: return null
+    val height = candidate.sourceImageHeight?.takeIf { it > 0 } ?: return null
+    return Size(width.toFloat(), height.toFloat())
 }
 
 private fun PlateCandidate.hasUsableCornerPoints(): Boolean {
@@ -2312,6 +2926,14 @@ private fun FullScreenVideoViewer(
         player.seekTo(candidate.videoFrameTimeMs?.coerceAtLeast(0L) ?: 0L)
         player.play()
     }
+    var currentPositionMs by remember(player) { mutableLongStateOf(candidate.videoFrameTimeMs ?: 0L) }
+    LaunchedEffect(player) {
+        while (true) {
+            currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            delay(100)
+        }
+    }
+    val shouldShowDetectionOverlay = abs(currentPositionMs - (candidate.videoFrameTimeMs ?: 0L)) <= 750L
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -2335,19 +2957,22 @@ private fun FullScreenVideoViewer(
                     },
                     update = { it.player = player }
                 )
-                PlateCandidateOverlay(
-                    candidates = listOf(candidate),
-                    selectedPlate = candidate.plate,
-                    onCandidateSelected = {},
-                    modifier = Modifier.fillMaxSize()
-                )
+                if (shouldShowDetectionOverlay) {
+                    PlateCandidateOverlay(
+                        candidates = listOf(candidate),
+                        selectedPlate = candidate.plate,
+                        onCandidateSelected = {},
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
             Surface(
                 modifier = Modifier
+                    .zIndex(10f)
                     .align(Alignment.TopEnd)
-                    .safeDrawingPadding()
-                    .padding(16.dp)
-                    .size(44.dp),
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End))
+                    .padding(top = 12.dp, end = 12.dp)
+                    .size(52.dp),
                 shape = CircleShape,
                 color = Color.Black.copy(alpha = 0.62f)
             ) {
@@ -2368,12 +2993,14 @@ private fun FullScreenMediaViewer(
     media: SubmissionMedia,
     plateCandidates: List<PlateCandidate>,
     selectedPlate: String?,
+    onPlateCandidateConfirmed: (PlateCandidate) -> Unit,
     onDismiss: () -> Unit
 ) {
     var scale by remember(media.uri) { mutableStateOf(1f) }
     var offsetX by remember(media.uri) { mutableStateOf(0f) }
     var offsetY by remember(media.uri) { mutableStateOf(0f) }
     var imageSize by remember(media.uri) { mutableStateOf<Size?>(null) }
+    var pendingCandidate by remember(media.uri) { mutableStateOf<PlateCandidate?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -2432,18 +3059,77 @@ private fun FullScreenMediaViewer(
                         imageSize = imageSize,
                         alignment = Alignment.Center,
                         contentScale = ContentScale.Fit,
-                        inputEnabled = false,
-                        onCandidateTapped = {},
+                        inputEnabled = true,
+                        onCandidateTapped = { pendingCandidate = it },
                         onEmptyTap = {}
                     )
                 }
             }
+            pendingCandidate?.let { candidate ->
+                AlertDialog(
+                    onDismissRequest = { pendingCandidate = null },
+                    title = { Text("Use this plate?") },
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            PlateCandidateThumbnail(candidate = candidate)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(candidate.plate, style = MaterialTheme.typography.titleLarge)
+                                candidate.plateCorrectionText()?.let { correctionText ->
+                                    Text(
+                                        correctionText,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Text(
+                                    "${(candidate.confidence * 100).toInt()}% confidence",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                candidate.stateClassifierText()?.let { classifierText ->
+                                    Text(
+                                        classifierText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                candidate.plateTypeText()?.let { typeText ->
+                                    Text(
+                                        typeText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                onPlateCandidateConfirmed(candidate)
+                                pendingCandidate = null
+                            }
+                        ) {
+                            Text("Yes")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingCandidate = null }) {
+                            Text("No")
+                        }
+                    }
+                )
+            }
             Surface(
                 modifier = Modifier
+                    .zIndex(10f)
                     .align(Alignment.TopEnd)
-                    .safeDrawingPadding()
-                    .padding(16.dp)
-                    .size(44.dp),
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End))
+                    .padding(top = 12.dp, end = 12.dp)
+                    .size(52.dp),
                 shape = CircleShape,
                 color = Color.Black.copy(alpha = 0.62f)
             ) {
@@ -2461,12 +3147,13 @@ private fun FullScreenMediaViewer(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun AddressMapSheet(
+fun AddressMapSheet(
     initialLatLng: LatLng,
     initialAddress: String,
     onDismiss: () -> Unit,
     onLocationSettled: (AddressSuggestion) -> Unit
 ) {
+    val context = LocalContext.current
     val initialSuggestion = remember(initialLatLng, initialAddress) {
         initialAddress.takeIf { it.isNotBlank() }?.let {
             AddressSuggestion(
@@ -2512,7 +3199,7 @@ private fun AddressMapSheet(
         }
 
         lookupInFlight = true
-        val suggestion = reverseGeocodeNyc(latLng.latitude, latLng.longitude)
+        val suggestion = reverseGeocodeAddress(context, latLng.latitude, latLng.longitude)
             ?: AddressSuggestion(
                 label = "${latLng.latitude}, ${latLng.longitude}",
                 latitude = latLng.latitude,
@@ -2545,71 +3232,85 @@ private fun AddressMapSheet(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            contentAlignment = Alignment.BottomCenter
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val isLandscape = maxWidth > maxHeight
-                if (BuildConfig.GOOGLE_MAPS_API_KEY.isBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        MessageCard("Set REPORTED_ANDROID_GOOGLE_MAPS_API_KEY in your environment to enable the map picker.")
-                    }
-                } else if (isLandscape) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        AddressMapCanvas(
-                            cameraPositionState = cameraPositionState,
-                            mapUiSettings = mapUiSettings,
-                            modifier = Modifier
-                                .weight(1.35f)
-                                .fillMaxSize()
-                        )
-                        AddressMapControls(
-                            resolvedAddress = resolvedAddress,
-                            lookupInFlight = lookupInFlight,
-                            pendingSuggestion = pendingSuggestion,
-                            onDismiss = onDismiss,
-                            onDone = {
-                                pendingSuggestion?.let(onLocationSettled)
-                                onDismiss()
-                            },
-                            modifier = Modifier
-                                .weight(0.8f)
-                                .fillMaxSize()
-                        )
-                    }
-                } else {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        AddressMapTopBar(
-                            pendingSuggestion = pendingSuggestion,
-                            onDismiss = onDismiss,
-                            onDone = {
-                                pendingSuggestion?.let(onLocationSettled)
-                                onDismiss()
+                val sheetIsLandscape = maxWidth > maxHeight
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth(if (sheetIsLandscape) 0.75f else 1f)
+                        .fillMaxHeight(0.96f),
+                    shape = RoundedCornerShape(22.dp),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val isLandscape = maxWidth > maxHeight
+                        if (BuildConfig.GOOGLE_MAPS_API_KEY.isBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                MessageCard("Set REPORTED_ANDROID_GOOGLE_MAPS_API_KEY in your environment to enable the map picker.")
                             }
-                        )
-                        AddressMapStatus(
-                            resolvedAddress = resolvedAddress,
-                            lookupInFlight = lookupInFlight,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        AddressMapCanvas(
-                            cameraPositionState = cameraPositionState,
-                            mapUiSettings = mapUiSettings,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                        )
+                        } else if (isLandscape) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                AddressMapCanvas(
+                                    cameraPositionState = cameraPositionState,
+                                    mapUiSettings = mapUiSettings,
+                                    modifier = Modifier
+                                        .weight(1.35f)
+                                        .fillMaxSize()
+                                )
+                                AddressMapControls(
+                                    resolvedAddress = resolvedAddress,
+                                    lookupInFlight = lookupInFlight,
+                                    pendingSuggestion = pendingSuggestion,
+                                    onDismiss = onDismiss,
+                                    onDone = {
+                                        pendingSuggestion?.let(onLocationSettled)
+                                        onDismiss()
+                                    },
+                                    modifier = Modifier
+                                        .weight(0.8f)
+                                        .fillMaxSize()
+                                )
+                            }
+                        } else {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                AddressMapTopBar(
+                                    pendingSuggestion = pendingSuggestion,
+                                    onDismiss = onDismiss,
+                                    onDone = {
+                                        pendingSuggestion?.let(onLocationSettled)
+                                        onDismiss()
+                                    }
+                                )
+                                AddressMapStatus(
+                                    resolvedAddress = resolvedAddress,
+                                    lookupInFlight = lookupInFlight,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                AddressMapCanvas(
+                                    cameraPositionState = cameraPositionState,
+                                    mapUiSettings = mapUiSettings,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2680,7 +3381,7 @@ private fun AddressMapControls(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(
-                    WindowInsets.safeDrawing.only(
+                    WindowInsets.navigationBars.only(
                         WindowInsetsSides.End + WindowInsetsSides.Bottom
                     )
                 ),
@@ -2809,6 +3510,13 @@ private fun PlateCandidatePickerDialog(
                                 verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Text(candidate.plate, style = MaterialTheme.typography.titleMedium)
+                                candidate.plateCorrectionText()?.let { correctionText ->
+                                    Text(
+                                        correctionText,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Text(
                                     "${(candidate.confidence * 100).toInt()}% confidence",
                                     style = MaterialTheme.typography.bodySmall,
@@ -2892,505 +3600,7 @@ private fun PlateCandidate.plateTypeText(): String? {
     return "Plate type: $label"
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun ReportsScreen(
-    isAuthorized: Boolean,
-    onRequireLogin: () -> Unit,
-    onOpenMenu: () -> Unit,
-    vm: ReportsViewModel = viewModel()
-) {
-    if (!isAuthorized) {
-        LoginRequiredScreen(
-            title = "My Reports",
-            message = "Sign in to see your history and keep track of the reports you've submitted.",
-            onLogin = onRequireLogin
-        )
-        return
-    }
-
-    val state by vm.state.collectAsState()
-    var expandedReports by remember { mutableStateOf(setOf<String>()) }
-    var pendingDeleteReport by remember { mutableStateOf<ReportSummary?>(null) }
-    val listState = rememberLazyListState()
-
-    LaunchedEffect(listState, state.reports.size, state.hasMore, state.loadingMore, state.loading) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .distinctUntilChanged()
-            .collect { lastVisibleIndex ->
-                val totalItems = listState.layoutInfo.totalItemsCount
-                if (totalItems > 0 && lastVisibleIndex >= totalItems - 4) {
-                    vm.loadNextPage()
-                }
-            }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        pendingDeleteReport?.let { report ->
-            AlertDialog(
-                onDismissRequest = { pendingDeleteReport = null },
-                title = { Text("Delete report?") },
-                text = {
-                    Text("This pending report for ${listOf(report.plateRegion, report.plate).filter { it.isNotBlank() }.joinToString(" ")} will be removed.")
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            vm.deleteReport(report)
-                            pendingDeleteReport = null
-                        }
-                    ) {
-                        Text("Delete")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingDeleteReport = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        CenterAlignedTopAppBar(
-            title = { Text("My Reports") },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent,
-                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                actionIconContentColor = MaterialTheme.colorScheme.onSurface
-            ),
-            navigationIcon = {
-                IconButton(onClick = onOpenMenu) {
-                    Icon(Icons.Outlined.Menu, contentDescription = "Open menu")
-                }
-            }
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                ScreenSection {
-                    Text(
-                        "Choose how you want to pull your reports. We will not load the list until you ask.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        SecondaryButton(
-                            "Search",
-                            onClick = vm::chooseSearch,
-                            modifier = Modifier.weight(1f)
-                        )
-                        PrimaryButton(
-                            "List",
-                            onClick = vm::chooseList,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            if (state.mode == ReportsMode.SEARCH) {
-                item {
-                    ScreenSection(title = "Search Filters") {
-                        ReportedField(
-                            label = "License plate",
-                            value = state.licenseQuery,
-                            onValueChange = { vm.updateSearch(license = it) }
-                        )
-                        OccurredAtField(
-                            label = "Start Date",
-                            isoValue = state.startDate,
-                            onValueSelected = { vm.updateSearch(startDate = it) },
-                            onClear = { vm.updateSearch(startDate = "") }
-                        )
-                        OccurredAtField(
-                            label = "End Date",
-                            isoValue = state.endDate,
-                            onValueSelected = { vm.updateSearch(endDate = it) },
-                            onClear = { vm.updateSearch(endDate = "") }
-                        )
-                        PrimaryButton(
-                            "Search reports",
-                            onClick = vm::search,
-                            enabled = !state.loading
-                        )
-                    }
-                }
-            }
-
-            if (state.error != null) {
-                item {
-                    ScreenSection(title = "Error") {
-                        MessageCard(state.error ?: "Unknown error")
-                    }
-                }
-            }
-
-            if (state.loading) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-            } else if (state.mode != null) {
-                item {
-                    ScreenSection(title = "Results") {
-                        Text(
-                            if (state.reports.isEmpty()) "No reports found." else "${state.reports.size} reports",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
-                }
-            }
-
-            items(state.reports, key = { it.objectId.ifBlank { it.id.toString() } }) { report ->
-                val reportKey = report.objectId.ifBlank { report.id.toString() }
-                val expanded = reportKey in expandedReports
-                val detail = state.reportDetails[report.objectId] ?: report
-                OutlinedCard(
-                    modifier = Modifier.clickable {
-                            expandedReports = if (expanded) {
-                                expandedReports - reportKey
-                            } else {
-                                if (report.objectId.isNotBlank()) vm.loadDetail(report.objectId)
-                                expandedReports + reportKey
-                            }
-                        },
-                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    report.street.ifBlank { "Unknown address" },
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    listOf(report.plate, report.plateRegion).filter { it.isNotBlank() }.joinToString(" - ")
-                                        .ifBlank { "No plate captured" },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                report.status.ifBlank { "Pending" },
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                        val incidentAtDisplay = remember(report.incidentAt) { report.incidentAt.toReportDateTimeDisplay() }
-                        if (incidentAtDisplay.isNotBlank()) {
-                            Text(incidentAtDisplay, style = MaterialTheme.typography.bodySmall)
-                        }
-                        if (report.complaint.isNotBlank()) {
-                            Text(report.complaint, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        if (expanded) {
-                            if (report.objectId in state.detailLoadingIds) {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            }
-                            if (detail.description.isNotBlank()) {
-                                Text(detail.description, style = MaterialTheme.typography.bodyMedium)
-                            }
-                            if (detail.notes.isNotBlank()) {
-                                Text(
-                                    "Notes: ${detail.notes}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            val mediaUrls = detail.mediaUrls
-                            val videoUrls = detail.videoUrls
-                            if (mediaUrls.isNotEmpty()) {
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    items(mediaUrls, key = { it }) { url ->
-                                        AsyncImage(
-                                            model = ImageRequest.Builder(LocalContext.current)
-                                                .data(url)
-                                                .crossfade(true)
-                                                .build(),
-                                            contentDescription = "Report photo",
-                                            modifier = Modifier
-                                                .size(112.dp)
-                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    }
-                                }
-                            }
-                            if (videoUrls.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    videoUrls.forEachIndexed { index, _ ->
-                                        Text(
-                                            "Video ${index + 1}",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
-                            if (mediaUrls.isEmpty() && videoUrls.isEmpty() && report.objectId !in state.detailLoadingIds) {
-                                Text(
-                                    "No media attached.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (report.canDelete) {
-                                val isDeleting = reportKey in state.deletingReportKeys
-                                TextButton(
-                                    onClick = { pendingDeleteReport = report },
-                                    enabled = !isDeleting
-                                ) {
-                                    Text(if (isDeleting) "Deleting..." else "Delete report")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (state.loadingMore) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun ProfileScreen(
-    isAuthorized: Boolean,
-    onRequireLogin: () -> Unit,
-    onLogout: () -> Unit,
-    onThemeModeSelected: (AppThemeMode) -> Unit,
-    onOpenMenu: () -> Unit,
-    vm: ProfileViewModel = viewModel()
-) {
-    if (!isAuthorized) {
-        LoginRequiredScreen(
-            title = "Profile",
-            message = "Sign in to edit your profile, sync your settings, and manage your account.",
-            onLogin = onRequireLogin
-        )
-        return
-    }
-
-    val state by vm.state.collectAsState()
-    val context = LocalContext.current
-    var mediaScannerEnabled by remember { mutableStateOf(MediaScannerSettings.isEnabled(context)) }
-    var offlineProcessingEnabled by remember { mutableStateOf(MediaScannerSettings.isOfflineProcessingEnabled(context)) }
-    var notificationsEnabled by remember { mutableStateOf(MediaScannerSettings.hasNotificationPermission(context)) }
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        notificationsEnabled = granted || MediaScannerSettings.hasNotificationPermission(context)
-        MediaScannerSettings.markNotificationPermissionAsked(context)
-    }
-    val mediaScannerPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        val granted = MediaScannerSettings.requiredPermissions().all { permission ->
-            grants[permission] == true ||
-                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
-        mediaScannerEnabled = granted
-        MediaScannerSettings.setEnabled(context, granted)
-        if (granted) {
-            MediaScannerScheduler.scanNow(context)
-        }
-    }
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.load() }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        CenterAlignedTopAppBar(
-            title = { Text("Profile") },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent,
-                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                actionIconContentColor = MaterialTheme.colorScheme.onSurface
-            ),
-            navigationIcon = {
-                IconButton(onClick = onOpenMenu) {
-                    Icon(Icons.Outlined.Menu, contentDescription = "Open menu")
-                }
-            }
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                ScreenSection {
-                    state.error?.let { MessageCard(it) }
-                    ReportedField("First Name", state.firstName, { vm.update(firstName = it) }, enabled = state.editing)
-                    ReportedField("Last Name", state.lastName, { vm.update(lastName = it) }, enabled = state.editing)
-                    ReportedField("Phone", state.phone, { vm.update(phone = it) }, enabled = state.editing)
-                    ReportedField("Email", state.email, { vm.update(email = it) }, enabled = state.editing)
-                    ComplaintChipGroup(
-                        selectedIds = listOf(state.themeMode.name),
-                        options = listOf(
-                            AppThemeMode.SYSTEM.name to "System",
-                            AppThemeMode.LIGHT.name to "Light",
-                            AppThemeMode.DARK.name to "Dark"
-                        ),
-                        onToggle = {
-                            val mode = AppThemeMode.valueOf(it)
-                            vm.setThemeMode(mode)
-                            onThemeModeSelected(mode)
-                        }
-                    )
-                    SettingsSwitchRow(
-                        title = "Notifications",
-                        description = "Allow Reported to notify you when a high-confidence infraction is detected.",
-                        checked = notificationsEnabled,
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                val permission = MediaScannerSettings.notificationPermission()
-                                if (permission != null && !MediaScannerSettings.hasNotificationPermission(context)) {
-                                    notificationPermissionLauncher.launch(permission)
-                                } else {
-                                    notificationsEnabled = true
-                                }
-                            } else {
-                                notificationsEnabled = false
-                            }
-                        }
-                    )
-                    SettingsSwitchRow(
-                        title = "Allow offline photo processing to detect violations",
-                        description = "Process new photos on this device only. Nothing uploads unless you choose to submit.",
-                        checked = offlineProcessingEnabled,
-                        onCheckedChange = { enabled ->
-                            offlineProcessingEnabled = enabled
-                            MediaScannerSettings.setOfflineProcessingEnabled(context, enabled)
-                            if (enabled && mediaScannerEnabled) {
-                                MediaScannerScheduler.scanNow(context)
-                            }
-                        }
-                    )
-                    SettingsSwitchRow(
-                        title = "Media scanner",
-                        description = "Watch for new photos and queue a local scan when offline processing is allowed.",
-                        checked = mediaScannerEnabled,
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                if (MediaScannerSettings.hasRequiredPermissions(context)) {
-                                    mediaScannerEnabled = true
-                                    MediaScannerSettings.setEnabled(context, true)
-                                    if (offlineProcessingEnabled) {
-                                        MediaScannerScheduler.scanNow(context)
-                                    }
-                                } else {
-                                    mediaScannerPermissionLauncher.launch(MediaScannerSettings.requiredPermissions())
-                                }
-                            } else {
-                                mediaScannerEnabled = false
-                                MediaScannerSettings.setEnabled(context, false)
-                            }
-                        }
-                    )
-                    if (state.editing) {
-                        PrimaryButton("Save", onClick = { vm.save {} }, enabled = !state.loading)
-                    } else {
-                        PrimaryButton("Edit Profile", onClick = vm::toggleEditing)
-                    }
-                    Text(
-                        text = "Logout",
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable(onClick = onLogout)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSwitchRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange
-            )
-        }
-    }
-}
-
-private fun String.toReportDateTimeDisplay(): String {
-    if (isBlank()) return ""
-    val zoneId = ZoneId.systemDefault()
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy 'at' h:mm a")
-    return try {
-        OffsetDateTime.parse(this).atZoneSameInstant(zoneId).format(formatter)
-    } catch (_: DateTimeParseException) {
-        try {
-            Instant.parse(this).atZone(zoneId).format(formatter)
-        } catch (_: DateTimeParseException) {
-            this
-        }
-    }
+private fun PlateCandidate.plateCorrectionText(): String? {
+    val raw = rawPlateText?.takeIf { wasPlateCorrected && it != plate } ?: return null
+    return "Corrected from OCR: $raw"
 }

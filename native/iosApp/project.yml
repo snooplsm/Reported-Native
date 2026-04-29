@@ -7,6 +7,12 @@ packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: 12.12.1
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios
+    from: 4.5.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
   onnxruntime:
     url: https://github.com/microsoft/onnxruntime-swift-package-manager
     from: 1.24.2
@@ -20,24 +26,45 @@ targets:
     info:
       path: ReportediOS/Generated/Info.plist
       properties:
-        CFBundleDisplayName: Reported Native
+        CFBundleDisplayName: Reported
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        GIDClientID: 131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois.apps.googleusercontent.com
+        NSPhotoLibraryUsageDescription: Reported uses your photo library to attach report media, read photo time and location metadata, and run optional on-device infraction detection.
+        NSPhotoLibraryAddUsageDescription: Reported may save temporary report media generated while preparing a submission.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         CFBundleURLTypes:
-          - CFBundleURLName: cab.reported.nyc
+          - CFBundleURLName: cab.reported
             CFBundleURLSchemes:
               - reported
+          - CFBundleURLName: Google Sign-In
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIApplicationSupportsIndirectInputEvents: true
     entitlements:
       path: ReportediOS/Resources/ReportediOS.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)cab.reported
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cab.reported.nyc
+        PRODUCT_BUNDLE_IDENTIFIER: cab.reported
         PRODUCT_NAME: ReportediOS
         SWIFT_VERSION: "5.10"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+        MARKETING_VERSION: 3.0.8
+        CURRENT_PROJECT_VERSION: 92
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
@@ -47,6 +74,12 @@ targets:
         codeSign: true
       - package: Firebase
         product: FirebaseAnalytics
+      - package: Firebase
+        product: FirebaseRemoteConfig
+      - package: Lottie
+        product: Lottie
+      - package: GoogleSignIn
+        product: GoogleSignIn
       - package: onnxruntime
         product: onnxruntime
       - target: ReportedShareExtension
@@ -57,6 +90,14 @@ targets:
           export JAVA_HOME=$(/usr/libexec/java_home)
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+    postBuildScripts:
+      - name: Normalize Embedded Framework Minimum OS
+        script: |
+          ONNX_PLIST="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework/Info.plist"
+          if [ -f "$ONNX_PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion ${IPHONEOS_DEPLOYMENT_TARGET}" "$ONNX_PLIST" || \
+              /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string ${IPHONEOS_DEPLOYMENT_TARGET}" "$ONNX_PLIST"
+          fi
   ReportedShareExtension:
     type: app-extension
     platform: iOS
@@ -67,6 +108,8 @@ targets:
       path: ReportedShareExtension/Generated/Info.plist
       properties:
         CFBundleDisplayName: Reported
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -78,9 +121,11 @@ targets:
       path: ReportedShareExtension/Resources/ReportedShareExtension.entitlements
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cab.reported.nyc.shareextension
+        PRODUCT_BUNDLE_IDENTIFIER: cab.reported.shareextension
         PRODUCT_NAME: ReportedShareExtension
         SWIFT_VERSION: "5.10"
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+        MARKETING_VERSION: 3.0.8
+        CURRENT_PROJECT_VERSION: 92

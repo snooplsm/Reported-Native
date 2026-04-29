@@ -8,10 +8,12 @@ import UIKit
 private let detectorModelName = "yolo-v9-t-640-license-plates-end2end"
 private let ocrModelName = "global_mobile_vit_v2_ocr"
 private let plateStateModelName = "reported-plate-class-best"
+private let complaintModelName = "reported-v13-optimized"
 private let plateSegmentationModelName = "reported-plate-seg"
 private let vehicleSegmentationModelName = "yolov8n-seg"
 private let vehicleSegmentationNmsModelName = "nms-yolov8"
 private let detectorSize = 640
+private let complaintDetectorSize = 512
 private let vehicleSegmentationSize = 640
 private let vehicleSegmentationClasses = 80
 private let vehicleSegmentationRowSize = 116
@@ -25,6 +27,9 @@ private let plateSegmentationSize = 160
 private let ocrWidth = 140
 private let ocrHeight = 70
 private let detectionThreshold: Float = 0.2
+private let complaintDetectionThreshold: Float = 0.9
+private let complaintClassBlockedBikeLane = 0
+private let complaintClassBlockedCrosswalk = 1
 private let segmentationMaskThreshold: Float = 0.5
 private let maxCandidates = 8
 private let ocrAlphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_")
@@ -85,30 +90,72 @@ final class NativeAlprEngine {
     private var detectorSession: ORTSession?
     private var ocrSession: ORTSession?
     private var plateStateSession: ORTSession?
+    private var complaintSession: ORTSession?
     private var plateSegmentationSession: ORTSession?
     private var vehicleSegmentationSession: ORTSession?
     private var vehicleSegmentationNmsSession: ORTSession?
 
-    func detectLicensePlates(media: ComposerState.SubmissionMedia) async -> [ComposerState.PlateCandidate] {
+    func detectLicensePlates(
+        media: ComposerState.SubmissionMedia,
+        expectedComplaintHint: String? = nil
+    ) async -> [ComposerState.PlateCandidate] {
         guard !media.isVideo else { return [] }
         return await Task.detached(priority: .userInitiated) {
-            self.detectLicensePlatesSync(media: media)
+            self.detectLicensePlatesSync(media: media, expectedComplaintHint: expectedComplaintHint)
         }.value
     }
 
     func detectLicensePlatesInVideo(
         media: ComposerState.SubmissionMedia,
+        startTimeSeconds: Double = 0,
+        expectedComplaintHint: String? = nil,
         onProgress: @escaping (VideoFrameScanProgress) async -> Void
     ) async -> [ComposerState.PlateCandidate] {
         guard media.isVideo else {
-            return await detectLicensePlates(media: media)
+            return await detectLicensePlates(media: media, expectedComplaintHint: expectedComplaintHint)
         }
         return await Task.detached(priority: .userInitiated) {
-            await self.detectLicensePlatesInVideoSync(media: media, onProgress: onProgress)
+            await self.detectLicensePlatesInVideoSync(
+                media: media,
+                startTimeSeconds: startTimeSeconds,
+                expectedComplaintHint: expectedComplaintHint,
+                onProgress: onProgress
+            )
         }.value
     }
 
-    private func detectLicensePlatesSync(media: ComposerState.SubmissionMedia) -> [ComposerState.PlateCandidate] {
+    func inferComplaintId(media: ComposerState.SubmissionMedia) async -> String? {
+        guard !media.isVideo else { return nil }
+        return await Task.detached(priority: .utility) {
+            guard
+                let image = UIImage(contentsOfFile: media.fileURL.path),
+                let complaint = try? self.session(for: complaintModelName, cached: \.complaintSession)
+            else {
+                return nil
+            }
+            let bikeLaneRegions = self.detectComplaintRegions(
+                in: image,
+                session: complaint,
+                expectedLabel: complaintClassBlockedBikeLane
+            )
+            let crosswalkRegions = self.detectComplaintRegions(
+                in: image,
+                session: complaint,
+                expectedLabel: complaintClassBlockedCrosswalk
+            )
+            let bikeLaneScore = bikeLaneRegions.map(\.score).max() ?? 0
+            let crosswalkScore = crosswalkRegions.map(\.score).max() ?? 0
+            guard max(bikeLaneScore, crosswalkScore) >= complaintDetectionThreshold else {
+                return nil
+            }
+            return bikeLaneScore >= crosswalkScore ? "Z8vjWz8uYr" : "GzRxlMN1vl"
+        }.value
+    }
+
+    private func detectLicensePlatesSync(
+        media: ComposerState.SubmissionMedia,
+        expectedComplaintHint: String?
+    ) -> [ComposerState.PlateCandidate] {
         guard
             let image = UIImage(contentsOfFile: media.fileURL.path),
             let detector = try? session(for: detectorModelName, cached: \.detectorSession),
@@ -123,6 +170,8 @@ final class NativeAlprEngine {
             detector: detector,
             ocr: ocr,
             plateState: plateState,
+            complaint: try? session(for: complaintModelName, cached: \.complaintSession),
+            expectedComplaintHint: expectedComplaintHint,
             plateSegmentation: nil,
             vehicleSegmentation: nil,
             vehicleSegmentationNms: nil
@@ -131,6 +180,8 @@ final class NativeAlprEngine {
 
     private func detectLicensePlatesInVideoSync(
         media: ComposerState.SubmissionMedia,
+        startTimeSeconds: Double,
+        expectedComplaintHint: String?,
         onProgress: (VideoFrameScanProgress) async -> Void
     ) async -> [ComposerState.PlateCandidate] {
         guard
@@ -140,6 +191,7 @@ final class NativeAlprEngine {
         else {
             return []
         }
+        let complaint = try? session(for: complaintModelName, cached: \.complaintSession)
         let asset = AVAsset(url: media.fileURL)
         let videoTrack = asset.tracks(withMediaType: .video).first
         let durationSeconds = CMTimeGetSeconds(asset.duration)
@@ -168,7 +220,9 @@ final class NativeAlprEngine {
         var plateOrder: [String] = []
         var recentProcessedFramesHadPlate: [Bool] = []
         var lastSuccessfulFallbackRotationDegrees: CGFloat?
-        var index = 0
+        let requestedStartFrame = max(0, Int((min(max(startTimeSeconds, 0), durationSeconds) * frameRate).rounded(.down)))
+        let alignedStartFrame = min(totalFrames - 1, (requestedStartFrame / videoFrameStride) * videoFrameStride)
+        var index = alignedStartFrame
         while index < totalFrames {
             if Task.isCancelled { break }
             var samples: [VideoFrameSample] = []
@@ -205,6 +259,8 @@ final class NativeAlprEngine {
                 detector: detector,
                 ocr: ocr,
                 plateState: plateState,
+                complaint: complaint,
+                expectedComplaintHint: expectedComplaintHint,
                 plateSegmentation: nil,
                 vehicleSegmentation: nil,
                 vehicleSegmentationNms: nil
@@ -221,13 +277,21 @@ final class NativeAlprEngine {
                             detector: detector,
                             ocr: ocr,
                             plateState: plateState,
+                            complaint: complaint,
+                            expectedComplaintHint: expectedComplaintHint,
                             plateSegmentation: nil,
                             vehicleSegmentation: nil,
                             vehicleSegmentationNms: nil
                         )
                         if !rotatedCandidates.isEmpty {
-                            image = rotatedImage
-                            candidates = rotatedCandidates
+                            candidates = rotatedCandidates.compactMap {
+                                $0.mapFromRotatedToSource(
+                                    sourceImage: image,
+                                    rotatedSize: rotatedImage.size,
+                                    sourceSize: image.size,
+                                    degrees: degrees
+                                )
+                            }
                             lastSuccessfulFallbackRotationDegrees = degrees
                             break
                         }
@@ -317,6 +381,8 @@ final class NativeAlprEngine {
         detector: ORTSession,
         ocr: ORTSession,
         plateState: ORTSession,
+        complaint: ORTSession?,
+        expectedComplaintHint: String?,
         plateSegmentation: ORTSession?,
         vehicleSegmentation: ORTSession?,
         vehicleSegmentationNms: ORTSession?
@@ -335,11 +401,15 @@ final class NativeAlprEngine {
             guard !plate.isEmpty else { continue }
             let classification = classifications[safe: index] ?? nil
             let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
-            let state = patternMatch?.state ?? (plate.hasPrefix("T") && plate.hasSuffix("C") ? "NY" : classification?.state)
-            guard !candidates.contains(where: { $0.plate == plate }) else { continue }
+            let correctedPlate = patternMatch?.normalizedPlate ?? plate
+            let wasPlateCorrected = correctedPlate != plate
+            let state = patternMatch?.state ?? (correctedPlate.hasPrefix("T") && correctedPlate.hasSuffix("C") ? "NY" : classification?.state)
+            guard !candidates.contains(where: { $0.plate == correctedPlate }) else { continue }
             candidates.append(ComposerState.PlateCandidate(
-                plate: plate,
+                plate: correctedPlate,
                 confidence: Double(min(1, work.detection.score)),
+                rawPlateText: wasPlateCorrected ? plate : nil,
+                wasPlateCorrected: wasPlateCorrected,
                 state: state,
                 stateConfidence: patternMatch.map { Double($0.confidence) } ?? classification?.confidence,
                 plateType: patternMatch?.type.name,
@@ -350,13 +420,21 @@ final class NativeAlprEngine {
                     width: (work.detection.x2 - work.detection.x1) / image.size.width,
                     height: (work.detection.y2 - work.detection.y1) / image.size.height
                 ),
+                plateCropPreview: work.crop,
                 videoFramePreview: nil,
+                videoFramePreviewURL: nil,
                 videoFrameTimeSeconds: nil
             ))
         }
-        return candidates.sorted { lhs, rhs in
+        let sorted = candidates.sorted { lhs, rhs in
             lhs.confidence > rhs.confidence
         }
+        return rankCandidatesForComplaint(
+            sorted,
+            image: image,
+            complaint: complaint,
+            expectedComplaintHint: expectedComplaintHint
+        )
     }
 
     private func detectLicensePlatesBatched(
@@ -364,6 +442,8 @@ final class NativeAlprEngine {
         detector: ORTSession,
         ocr: ORTSession,
         plateState: ORTSession,
+        complaint: ORTSession?,
+        expectedComplaintHint: String?,
         plateSegmentation: ORTSession?,
         vehicleSegmentation: ORTSession?,
         vehicleSegmentationNms: ORTSession?
@@ -375,6 +455,8 @@ final class NativeAlprEngine {
                 detector: detector,
                 ocr: ocr,
                 plateState: plateState,
+                complaint: complaint,
+                expectedComplaintHint: expectedComplaintHint,
                 plateSegmentation: plateSegmentation,
                 vehicleSegmentation: vehicleSegmentation,
                 vehicleSegmentationNms: vehicleSegmentationNms
@@ -395,6 +477,7 @@ final class NativeAlprEngine {
         var ocrIndex = 0
         var classifierIndex = 0
         return cropWorkByImage.map { works in
+            let image = works.first?.image
             var candidates: [ComposerState.PlateCandidate] = []
             for work in works {
                 let plate = normalizePlateText(ocrTexts[safe: ocrIndex] ?? "")
@@ -403,11 +486,15 @@ final class NativeAlprEngine {
                 classifierIndex += 1
                 guard !plate.isEmpty else { continue }
                 let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
-                let state = patternMatch?.state ?? (plate.hasPrefix("T") && plate.hasSuffix("C") ? "NY" : classification?.state)
-                guard !candidates.contains(where: { $0.plate == plate }) else { continue }
+                let correctedPlate = patternMatch?.normalizedPlate ?? plate
+                let wasPlateCorrected = correctedPlate != plate
+                let state = patternMatch?.state ?? (correctedPlate.hasPrefix("T") && correctedPlate.hasSuffix("C") ? "NY" : classification?.state)
+                guard !candidates.contains(where: { $0.plate == correctedPlate }) else { continue }
                 candidates.append(ComposerState.PlateCandidate(
-                    plate: plate,
+                    plate: correctedPlate,
                     confidence: Double(min(1, work.detection.score)),
+                    rawPlateText: wasPlateCorrected ? plate : nil,
+                    wasPlateCorrected: wasPlateCorrected,
                     state: state,
                     stateConfidence: patternMatch.map { Double($0.confidence) } ?? classification?.confidence,
                     plateType: patternMatch?.type.name,
@@ -418,12 +505,104 @@ final class NativeAlprEngine {
                         width: (work.detection.x2 - work.detection.x1) / work.image.size.width,
                         height: (work.detection.y2 - work.detection.y1) / work.image.size.height
                     ),
+                    plateCropPreview: work.crop,
                     videoFramePreview: nil,
+                    videoFramePreviewURL: nil,
                     videoFrameTimeSeconds: nil
                 ))
             }
-            return candidates.sorted { $0.confidence > $1.confidence }
+            let sorted = candidates.sorted { $0.confidence > $1.confidence }
+            guard let image else { return sorted }
+            return rankCandidatesForComplaint(
+                sorted,
+                image: image,
+                complaint: complaint,
+                expectedComplaintHint: expectedComplaintHint
+            )
         }
+    }
+
+    private func rankCandidatesForComplaint(
+        _ candidates: [ComposerState.PlateCandidate],
+        image: UIImage,
+        complaint: ORTSession?,
+        expectedComplaintHint: String?
+    ) -> [ComposerState.PlateCandidate] {
+        guard candidates.count > 1,
+              let expectedLabel = expectedComplaintHint.expectedComplaintClass(),
+              let complaint
+        else {
+            return candidates
+        }
+        let regions = detectComplaintRegions(in: image, session: complaint, expectedLabel: expectedLabel)
+        guard !regions.isEmpty else { return candidates }
+        return candidates.sorted { lhs, rhs in
+            let lhsScore = lhs.complaintLocationScore(regions: regions, imageSize: image.size)
+            let rhsScore = rhs.complaintLocationScore(regions: regions, imageSize: image.size)
+            if abs(lhsScore - rhsScore) > 0.001 { return lhsScore > rhsScore }
+            if abs(lhs.confidence - rhs.confidence) > 0.001 { return lhs.confidence > rhs.confidence }
+            return lhs.centerBiasedScore() > rhs.centerBiasedScore()
+        }
+    }
+
+    private func detectComplaintRegions(
+        in image: UIImage,
+        session: ORTSession,
+        expectedLabel: Int
+    ) -> [Detection] {
+        let letterboxed = letterbox(image: image, targetSize: complaintDetectorSize)
+        guard let raw = runFloatModel(
+            session: session,
+            input: rgbFloatData(from: letterboxed.image, width: complaintDetectorSize, height: complaintDetectorSize),
+            shape: [1, 3, complaintDetectorSize, complaintDetectorSize].map(NSNumber.init(value:))
+        ), !raw.isEmpty else {
+            return []
+        }
+        let rowSize = inferComplaintRowSize(raw.count)
+        guard rowSize >= 6 else { return [] }
+        let rowCount = raw.count / rowSize
+        return (0..<rowCount).compactMap { rowIndex in
+            let offset = rowIndex * rowSize
+            guard let (label, score) = decodeComplaintScore(raw: raw, offset: offset, rowSize: rowSize),
+                  label == expectedLabel,
+                  score >= complaintDetectionThreshold
+            else {
+                return nil
+            }
+            let coordinateOffset = rowSize >= 7 ? 1 : 0
+            let x1 = ((CGFloat(raw[offset + coordinateOffset]) - letterboxed.padX) / letterboxed.scale)
+                .clamped(to: 0...image.size.width)
+            let y1 = ((CGFloat(raw[offset + coordinateOffset + 1]) - letterboxed.padY) / letterboxed.scale)
+                .clamped(to: 0...image.size.height)
+            let x2 = ((CGFloat(raw[offset + coordinateOffset + 2]) - letterboxed.padX) / letterboxed.scale)
+                .clamped(to: 0...image.size.width)
+            let y2 = ((CGFloat(raw[offset + coordinateOffset + 3]) - letterboxed.padY) / letterboxed.scale)
+                .clamped(to: 0...image.size.height)
+            guard x2 - x1 >= 8, y2 - y1 >= 8 else { return nil }
+            return Detection(x1: x1, y1: y1, x2: x2, y2: y2, score: score)
+        }
+    }
+
+    private func inferComplaintRowSize(_ flatSize: Int) -> Int {
+        if flatSize % 7 == 0 { return 7 }
+        if flatSize % 6 == 0 { return 6 }
+        if flatSize % 5 == 0 { return 5 }
+        return flatSize
+    }
+
+    private func decodeComplaintScore(raw: [Float], offset: Int, rowSize: Int) -> (Int, Float)? {
+        if rowSize >= 7 {
+            return (Int(raw[offset + 5].rounded()), raw[offset + 6])
+        }
+        if rowSize == 6 {
+            return (Int(raw[offset + 4].rounded()), raw[offset + 5])
+        }
+        if rowSize == 5 {
+            return (Int(raw[offset + 4].rounded()), raw[offset + 3])
+        }
+        guard rowSize >= 2 else { return nil }
+        let label = (0..<rowSize).max { raw[offset + $0] < raw[offset + $1] } ?? 0
+        return (label, raw[offset + label])
     }
 
     private func annotatedFramePreview(image: UIImage, candidates: [ComposerState.PlateCandidate]) -> UIImage {
@@ -1015,20 +1194,9 @@ final class NativeAlprEngine {
     }
 
     private func normalizePlateText(_ raw: String) -> String {
-        let cleaned = raw.replacingOccurrences(of: "_", with: "")
+        return raw.replacingOccurrences(of: "_", with: "")
             .filter { $0.isLetter || $0.isNumber }
             .uppercased()
-        guard cleaned.count == 7, cleaned.hasPrefix("T"), cleaned.hasSuffix("C") else {
-            return cleaned
-        }
-        return cleaned
-            .replacingOccurrences(of: "I", with: "1")
-            .replacingOccurrences(of: "L", with: "1")
-            .replacingOccurrences(of: "Z", with: "2")
-            .replacingOccurrences(of: "G", with: "6")
-            .replacingOccurrences(of: "B", with: "8")
-            .replacingOccurrences(of: "A", with: "4")
-            .replacingOccurrences(of: "O", with: "0")
     }
 }
 
@@ -1096,24 +1264,171 @@ private extension NSMutableData {
 }
 
 private extension ComposerState.PlateCandidate {
+    func complaintLocationScore(regions: [Detection], imageSize: CGSize) -> Double {
+        guard let bounds, !regions.isEmpty else { return 0 }
+        let center = CGPoint(
+            x: bounds.midX * imageSize.width,
+            y: bounds.midY * imageSize.height
+        )
+        return regions.map { region in
+            let inside = centerInside(region: region, center: center)
+            let regionCenter = CGPoint(x: (region.x1 + region.x2) / 2, y: (region.y1 + region.y2) / 2)
+            let dx = (center.x - regionCenter.x) / max(imageSize.width, 1)
+            let dy = (center.y - regionCenter.y) / max(imageSize.height, 1)
+            let proximity = max(0, min(1, 1 - sqrt(dx * dx + dy * dy) / 0.70710677))
+            let overlap = normalizedOverlap(with: region, imageSize: imageSize)
+            return (inside ? 2 : 0) + proximity + overlap
+        }.max() ?? 0
+    }
+
+    private func centerInside(region: Detection, center: CGPoint) -> Bool {
+        let paddingX = (region.x2 - region.x1) * 0.04
+        let paddingY = (region.y2 - region.y1) * 0.04
+        return center.x >= region.x1 - paddingX &&
+            center.x <= region.x2 + paddingX &&
+            center.y >= region.y1 - paddingY &&
+            center.y <= region.y2 + paddingY
+    }
+
+    private func normalizedOverlap(with region: Detection, imageSize: CGSize) -> Double {
+        guard let bounds else { return 0 }
+        let plateRect = CGRect(
+            x: bounds.minX * imageSize.width,
+            y: bounds.minY * imageSize.height,
+            width: bounds.width * imageSize.width,
+            height: bounds.height * imageSize.height
+        )
+        let regionRect = CGRect(x: region.x1, y: region.y1, width: region.x2 - region.x1, height: region.y2 - region.y1)
+        let intersection = plateRect.intersection(regionRect)
+        guard !intersection.isNull, plateRect.width > 0, plateRect.height > 0 else { return 0 }
+        return max(0, min(1, (intersection.width * intersection.height) / (plateRect.width * plateRect.height)))
+    }
+
+    func centerInside(anyOf regions: [Detection], imageSize: CGSize) -> Bool {
+        guard let bounds else { return false }
+        let center = CGPoint(
+            x: bounds.midX * imageSize.width,
+            y: bounds.midY * imageSize.height
+        )
+        return regions.contains { centerInside(region: $0, center: center) }
+    }
+
+    func centerBiasedScore() -> Double {
+        guard let bounds else { return confidence }
+        let dx = bounds.midX - 0.5
+        let dy = bounds.midY - 0.5
+        let distance = sqrt(dx * dx + dy * dy)
+        let centerScore = max(0, min(1, 1 - distance / 0.70710677))
+        return confidence * 0.72 + centerScore * 0.28
+    }
+
+    func mapFromRotatedToSource(sourceImage: UIImage, rotatedSize: CGSize, sourceSize: CGSize, degrees: CGFloat) -> ComposerState.PlateCandidate? {
+        guard
+            let bounds,
+            sourceSize.width > 0,
+            sourceSize.height > 0,
+            rotatedSize.width > 0,
+            rotatedSize.height > 0
+        else {
+            return nil
+        }
+
+        let radians = degrees * .pi / 180
+        var sourceToRotated = CGAffineTransform.identity
+        sourceToRotated = sourceToRotated.translatedBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
+        sourceToRotated = sourceToRotated.rotated(by: radians)
+        sourceToRotated = sourceToRotated.translatedBy(x: -sourceSize.width / 2, y: -sourceSize.height / 2)
+        let rotatedToSource = sourceToRotated.inverted()
+
+        let points = [
+            CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
+            CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
+            CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.maxY * rotatedSize.height),
+            CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.maxY * rotatedSize.height)
+        ].map { $0.applying(rotatedToSource) }
+
+        let minX = points.map(\.x).min() ?? 0
+        let maxX = points.map(\.x).max() ?? 0
+        let minY = points.map(\.y).min() ?? 0
+        let maxY = points.map(\.y).max() ?? 0
+        let mappedBounds = CGRect(
+            x: (minX / sourceSize.width).clamped(to: 0...1),
+            y: (minY / sourceSize.height).clamped(to: 0...1),
+            width: ((maxX - minX) / sourceSize.width).clamped(to: 0...1),
+            height: ((maxY - minY) / sourceSize.height).clamped(to: 0...1)
+        )
+        guard mappedBounds.width > 0, mappedBounds.height > 0 else {
+            return nil
+        }
+
+        return ComposerState.PlateCandidate(
+            plate: plate,
+            confidence: confidence,
+            rawPlateText: rawPlateText,
+            wasPlateCorrected: wasPlateCorrected,
+            state: state,
+            stateConfidence: stateConfidence,
+            plateType: plateType,
+            plateTypeLabel: plateTypeLabel,
+            bounds: mappedBounds,
+            plateCropPreview: sourceImage.cropped(normalizedBounds: mappedBounds) ?? plateCropPreview,
+            videoFramePreview: videoFramePreview,
+            videoFramePreviewURL: videoFramePreviewURL,
+            videoFrameTimeSeconds: videoFrameTimeSeconds
+        )
+    }
+
     func withVideoFrame(preview: UIImage?, timeSeconds: Double) -> ComposerState.PlateCandidate {
         ComposerState.PlateCandidate(
             plate: plate,
             confidence: confidence,
+            rawPlateText: rawPlateText,
+            wasPlateCorrected: wasPlateCorrected,
             state: state,
             stateConfidence: stateConfidence,
             plateType: plateType,
             plateTypeLabel: plateTypeLabel,
             bounds: bounds,
+            plateCropPreview: plateCropPreview,
             videoFramePreview: preview,
+            videoFramePreviewURL: nil,
             videoFrameTimeSeconds: timeSeconds
         )
+    }
+}
+
+private extension Optional where Wrapped == String {
+    func expectedComplaintClass() -> Int? {
+        let normalized = self?.lowercased() ?? ""
+        if normalized.contains("bike"), normalized.contains("lane") {
+            return complaintClassBlockedBikeLane
+        }
+        if normalized.contains("crosswalk") {
+            return complaintClassBlockedCrosswalk
+        }
+        return nil
     }
 }
 
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+private extension UIImage {
+    func cropped(normalizedBounds bounds: CGRect) -> UIImage? {
+        guard let cgImage else { return nil }
+        let pixelRect = CGRect(
+            x: bounds.minX.clamped(to: 0...1) * CGFloat(cgImage.width),
+            y: bounds.minY.clamped(to: 0...1) * CGFloat(cgImage.height),
+            width: bounds.width.clamped(to: 0...1) * CGFloat(cgImage.width),
+            height: bounds.height.clamped(to: 0...1) * CGFloat(cgImage.height)
+        ).integral.intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        guard pixelRect.width > 0, pixelRect.height > 0, let cropped = cgImage.cropping(to: pixelRect) else {
+            return nil
+        }
+        return UIImage(cgImage: cropped)
     }
 }
 

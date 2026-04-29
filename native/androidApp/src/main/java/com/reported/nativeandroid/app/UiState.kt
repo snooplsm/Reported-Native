@@ -14,12 +14,15 @@ data class SubmissionMedia(
     val uri: String,
     val displayName: String,
     val mimeType: String,
-    val isVideo: Boolean
+    val isVideo: Boolean,
+    val sourceUri: String? = null
 )
 
 data class PlateCandidate(
     val plate: String,
     val confidence: Float,
+    val rawPlateText: String? = null,
+    val wasPlateCorrected: Boolean = false,
     val state: String? = null,
     val stateConfidence: Float? = null,
     val plateType: String? = null,
@@ -32,6 +35,8 @@ data class PlateCandidate(
     val boundsBottom: Float? = null,
     val rotationDegrees: Float = 0f,
     val cornerPoints: List<Float> = emptyList(),
+    val sourceImageWidth: Int? = null,
+    val sourceImageHeight: Int? = null,
     val thumbnailUri: String? = null,
     val videoFramePreviewUri: String? = null,
     val videoFrameTimeMs: Long? = null
@@ -40,7 +45,8 @@ data class PlateCandidate(
 data class AddressSuggestion(
     val label: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val region: String? = null
 )
 
 data class SessionUiState(
@@ -103,6 +109,7 @@ data class ProfileUiState(
     val lastName: String = "",
     val phone: String = "",
     val email: String = "",
+    val testify: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val error: String? = null,
     val editing: Boolean = false
@@ -123,6 +130,13 @@ data class ComposerValidationErrors(
     val hasErrors: Boolean
         get() = listOf(media, complaint, plate, plateRegion, address, occurredAt).any { it != null }
 }
+
+data class PlateCorrectionPrompt(
+    val rawPlate: String,
+    val suggestedPlate: String,
+    val state: String,
+    val label: String
+)
 
 data class ComposerUiState(
     val stage: SubmissionStage = SubmissionStage.PICK_MEDIA,
@@ -154,20 +168,33 @@ data class ComposerUiState(
     val description: String = "",
     val notes: String = "",
     val occurredAtIso: String = "",
+    val photoOccurredAtIso: String? = null,
     val complaintCategories: List<ComplaintCategory> = emptyList(),
+    val showComplaintImages: Boolean = true,
     val selectedComplaintIds: List<String> = emptyList(),
     val draftLoaded: Boolean = false,
     val submitting: Boolean = false,
+    val submitProgress: Float? = null,
+    val submitMessage: String? = null,
     val error: String? = null,
+    val plateCorrectionPrompt: PlateCorrectionPrompt? = null,
+    val keptPlateCorrectionRaw: String? = null,
     val validationErrors: ComposerValidationErrors = ComposerValidationErrors(),
     val infoMessage: String = "Upload a photo or video first, then verify the plate, complaint, time, and NYC address before submitting."
 )
+
+sealed interface ComposerEvent {
+    data class ReportSubmitted(val objectId: String) : ComposerEvent
+}
 
 sealed interface ComposerAction {
     data object LoadDraft : ComposerAction
     data object SubmitPressed : ComposerAction
     data object DiscardDraftConfirmed : ComposerAction
     data object ClearComposerError : ComposerAction
+    data object PlateCorrectionAccepted : ComposerAction
+    data object PlateCorrectionDismissed : ComposerAction
+    data object PlateCorrectionKept : ComposerAction
 
     data class ComplaintTileChosen(val complaintId: String) : ComposerAction
     data class SelectedComplaintChanged(val complaintId: String) : ComposerAction
@@ -178,6 +205,8 @@ sealed interface ComposerAction {
     data class ExtraMediaAdded(val media: SubmissionMedia) : ComposerAction
     data class MediaRemoved(val media: SubmissionMedia) : ComposerAction
     data class VideoProcessingDecision(val process: Boolean) : ComposerAction
+    data object VideoProcessingCancelled : ComposerAction
+    data object DetectionResultDismissed : ComposerAction
 
     data class DetectionProgressChanged(
         val message: String,
@@ -205,6 +234,7 @@ sealed interface ComposerAction {
 
     data class MetadataApplied(
         val occurredAtIso: String? = null,
+        val photoOccurredAtIso: String? = null,
         val latitude: Double? = null,
         val longitude: Double? = null,
         val inferredState: String? = null,

@@ -11,7 +11,7 @@ class MediaScannerNotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val candidateId = intent.getStringExtra(DetectedInfractionNotifications.EXTRA_CANDIDATE_ID) ?: return
         when (intent.action) {
-            DetectedInfractionNotifications.ACTION_YES -> {
+            DetectedInfractionNotifications.ACTION_SUBMIT_NOW -> {
                 val request = OneTimeWorkRequestBuilder<SubmitDetectedInfractionWorker>()
                     .setInputData(
                         Data.Builder()
@@ -21,7 +21,7 @@ class MediaScannerNotificationReceiver : BroadcastReceiver() {
                     .build()
                 WorkManager.getInstance(context.applicationContext).enqueue(request)
             }
-            DetectedInfractionNotifications.ACTION_NO -> {
+            DetectedInfractionNotifications.ACTION_CANCEL -> {
                 DetectedInfractionStore.remove(context, candidateId)
                 DetectedInfractionNotifications.cancel(context, candidateId)
             }

@@ -18,7 +18,7 @@ class ReportsRepository(
 
     suspend fun fetchStats(): ReportStats = api.fetchReportStats()
 
-    suspend fun submitReport(command: SubmitReportCommand) = api.submitReport(command)
+    suspend fun submitReport(command: SubmitReportCommand): String = api.submitReport(command)
 
     suspend fun changeStatus(reportId: Long, status: String) = api.changeStatus(reportId, status)
 
