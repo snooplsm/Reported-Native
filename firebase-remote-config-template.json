@@ -1,0 +1,61 @@
+{
+  "parameters": {
+    "reported_api_base_url": {
+      "defaultValue": {
+        "value": "https://reported-stats.herokuapp.com/prod/"
+      },
+      "description": "Legacy/shared API base URL. Keep trailing slash.",
+      "valueType": "STRING"
+    },
+    "reported_parse_server_url": {
+      "defaultValue": {
+        "value": "https://parseapi.back4app.com"
+      },
+      "description": "Parse server base URL. Use https://parseapi.back4app.com for Back4App, or your proxy base URL if it exposes /parse.",
+      "valueType": "STRING"
+    },
+    "reported_complaint_categories": {
+      "defaultValue": {
+        "value": "[{\"objectId\":\"Z8vjWz8uYr\",\"text\":\"Blocked bike lane\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"GzRxlMN1vl\",\"text\":\"Blocked crosswalk\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"X0dD3EB1Ym\",\"text\":\"Drove aggressively\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"WstZSmJr4t\",\"text\":\"Drove recklessly\",\"audience\":\"passenger\"},{\"objectId\":\"tpMiIrIuCe\",\"text\":\"Failed to yield\",\"audience\":\"cyclist, walker, pedestrian\"},{\"objectId\":\"wm7Yim3Pc5\",\"text\":\"Honked horn (no emergency)\",\"audience\":\"cyclist, walker, pedestrian\"},{\"objectId\":\"0iEd9qaziB\",\"text\":\"Parked illegally\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"DauBz1MDhJ\",\"text\":\"Ran a red light or stop sign\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"XSIsLAVA2f\",\"text\":\"Used phone while driving\",\"audience\":\"cyclist, walker, pedestrian, passenger\"},{\"objectId\":\"lVwiCXEK7G\",\"text\":\"Was on a cell phone\",\"audience\":\"passenger\"},{\"objectId\":\"dJwrDRrD47\",\"text\":\"Was speeding\",\"audience\":\"cyclist, walker, pedestrian, passenger\"}]"
+      },
+      "description": "Ordered JSON array of complaint categories. Each item supports objectId/id, text/name, and audience.",
+      "valueType": "STRING"
+    },
+    "reported_report_statuses": {
+      "defaultValue": {
+        "value": "[{\"id\":3,\"key\":\"HEARING\",\"text\":\"Hearing Scheduled\"},{\"id\":7,\"key\":\"NO_REASON_ARCHIVE\",\"text\":\"No Reason / Archive\"},{\"id\":4,\"key\":\"GUILTY\",\"text\":\"Driver Paid Fine / Guilty\"},{\"id\":2,\"key\":\"SUMMONS\",\"text\":\"Summons Issued\"},{\"id\":6,\"key\":\"NOT_GUILTY\",\"text\":\"Driver Not Guilty\"},{\"id\":5,\"key\":\"UNABLE_TO_ID\",\"text\":\"Unable to ID Driver\"},{\"id\":-1,\"key\":\"ERROR_PENDING\",\"text\":\"Error Pending\"},{\"id\":-3,\"key\":\"PRE_PROCESSING\",\"text\":\"Processing\"},{\"id\":-2,\"key\":\"POST_PROCESSING\",\"text\":\"Processing\"}]"
+      },
+      "description": "JSON array of report statuses. Do not include status 0 or 1; the app protects Pending and Submitted locally.",
+      "valueType": "STRING"
+    },
+    "reported_show_complaint_images": {
+      "defaultValue": {
+        "value": "true"
+      },
+      "description": "A/B flag. true shows complaint artwork/animations; false shows text-only complaint cells.",
+      "valueType": "BOOLEAN"
+    },
+    "reported_enable_live": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Feature flag for Live mode in the left navigation.",
+      "valueType": "BOOLEAN"
+    },
+    "reported_enable_media_scanner": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Feature flag for background media scanner UI and scanner scheduling. Defaults off for store builds.",
+      "valueType": "BOOLEAN"
+    },
+    "reported_enable_offline_photo_processing": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Feature flag for offline/on-device photo processing controls. Defaults off.",
+      "valueType": "BOOLEAN"
+    }
+  },
+  "conditions": []
+}

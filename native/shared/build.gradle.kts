@@ -26,6 +26,7 @@ kotlin {
         val settingsVersion = "1.2.0"
         val coroutinesVersion = "1.10.2"
         val serializationVersion = "1.8.1"
+        val datetimeVersion = "0.6.2"
 
         commonMain.dependencies {
             implementation("io.ktor:ktor-client-core:$ktorVersion")
@@ -34,6 +35,7 @@ kotlin {
             implementation("io.ktor:ktor-client-logging:$ktorVersion")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
             implementation("com.russhwolf:multiplatform-settings-no-arg:$settingsVersion")
         }
         commonTest.dependencies {

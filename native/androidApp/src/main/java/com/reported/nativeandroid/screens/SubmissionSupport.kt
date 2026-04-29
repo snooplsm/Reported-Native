@@ -3,8 +3,13 @@ package com.reported.nativeandroid.screens
 import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.location.Geocoder
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.exifinterface.media.ExifInterface
 import com.reported.nativeandroid.app.AddressSuggestion
@@ -18,8 +23,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class ExtractedSubmissionMetadata(
     val occurredAtIso: String? = null,
@@ -37,14 +44,17 @@ suspend fun buildSubmissionMedia(
     isVideo: Boolean
 ): SubmissionMedia = withContext(Dispatchers.IO) {
     val durableUri = persistSubmissionMedia(context, uri, isVideo)
-    val mimeType = context.contentResolver.getType(uri).orEmpty().ifBlank {
-        if (isVideo) "video/*" else "image/*"
+    val mimeType = if (isVideo) {
+        context.contentResolver.getType(uri).orEmpty().ifBlank { "video/*" }
+    } else {
+        "image/jpeg"
     }
     SubmissionMedia(
         uri = durableUri.toString(),
-        displayName = queryDisplayName(context.contentResolver, uri),
+        displayName = displayNameForUri(context, uri),
         mimeType = mimeType,
-        isVideo = isVideo
+        isVideo = isVideo,
+        sourceUri = uri.toString()
     )
 }
 
@@ -52,10 +62,12 @@ suspend fun extractSubmissionMetadata(
     context: Context,
     media: SubmissionMedia
 ): ExtractedSubmissionMetadata = withContext(Dispatchers.IO) {
+    val durableUri = Uri.parse(media.uri)
+    val sourceUri = media.sourceUri?.let(Uri::parse)
     if (media.isVideo) {
-        extractVideoMetadata(context, Uri.parse(media.uri))
+        extractVideoMetadata(context, sourceUri ?: durableUri)
     } else {
-        extractImageMetadata(context, Uri.parse(media.uri))
+        extractImageMetadata(context, sourceUri, durableUri)
     }
 }
 
@@ -77,6 +89,10 @@ suspend fun reverseGeocodeNyc(latitude: Double, longitude: Double): AddressSugge
             connection.disconnect()
         }
     }
+
+suspend fun reverseGeocodeAddress(context: Context, latitude: Double, longitude: Double): AddressSuggestion? =
+    reverseGeocodeNyc(latitude, longitude)
+        ?: withContext(Dispatchers.IO) { reverseGeocodePlatform(context, latitude, longitude) }
 
 suspend fun searchNycAddresses(query: String): List<AddressSuggestion> = withContext(Dispatchers.IO) {
     if (query.isBlank()) {
@@ -112,22 +128,142 @@ private fun featureToSuggestion(feature: JSONObject): AddressSuggestion? {
     return AddressSuggestion(
         label = properties.optString("label"),
         latitude = coordinates.optDouble(1),
-        longitude = coordinates.optDouble(0)
+        longitude = coordinates.optDouble(0),
+        region = "NY"
     )
 }
 
-private fun extractImageMetadata(context: Context, uri: Uri): ExtractedSubmissionMetadata {
-    val input = openInputStreamSafely(context, uri) ?: return ExtractedSubmissionMetadata()
-    return input.use {
-        val exif = ExifInterface(it)
-        val latLong = exif.latLong
-        val dateTimeOriginal = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-        ExtractedSubmissionMetadata(
-            occurredAtIso = dateTimeOriginal?.let(::parseExifDateTime),
-            latitude = latLong?.getOrNull(0),
-            longitude = latLong?.getOrNull(1)
-        )
+@Suppress("DEPRECATION")
+private fun reverseGeocodePlatform(context: Context, latitude: Double, longitude: Double): AddressSuggestion? {
+    val geocoder = Geocoder(context, Locale.US)
+    val address = runCatching {
+        geocoder.getFromLocation(latitude, longitude, 1)?.firstOrNull()
+    }.getOrNull() ?: return null
+    val label = address.getAddressLine(0)
+        ?: listOfNotNull(
+            address.thoroughfare,
+            address.locality,
+            address.adminArea,
+            address.countryName
+        ).joinToString(", ")
+    if (label.isBlank()) return null
+    return AddressSuggestion(
+        label = label,
+        latitude = latitude,
+        longitude = longitude,
+        region = normalizeUsState(address.adminArea)
+    )
+}
+
+private fun normalizeUsState(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val value = raw.trim()
+    if (value.length == 2) return value.uppercase(Locale.US)
+    return usStateAbbreviations[value.lowercase(Locale.US)]
+}
+
+private val usStateAbbreviations = mapOf(
+    "alabama" to "AL",
+    "alaska" to "AK",
+    "arizona" to "AZ",
+    "arkansas" to "AR",
+    "california" to "CA",
+    "colorado" to "CO",
+    "connecticut" to "CT",
+    "delaware" to "DE",
+    "florida" to "FL",
+    "georgia" to "GA",
+    "hawaii" to "HI",
+    "idaho" to "ID",
+    "illinois" to "IL",
+    "indiana" to "IN",
+    "iowa" to "IA",
+    "kansas" to "KS",
+    "kentucky" to "KY",
+    "louisiana" to "LA",
+    "maine" to "ME",
+    "maryland" to "MD",
+    "massachusetts" to "MA",
+    "michigan" to "MI",
+    "minnesota" to "MN",
+    "mississippi" to "MS",
+    "missouri" to "MO",
+    "montana" to "MT",
+    "nebraska" to "NE",
+    "nevada" to "NV",
+    "new hampshire" to "NH",
+    "new jersey" to "NJ",
+    "new mexico" to "NM",
+    "new york" to "NY",
+    "north carolina" to "NC",
+    "north dakota" to "ND",
+    "ohio" to "OH",
+    "oklahoma" to "OK",
+    "oregon" to "OR",
+    "pennsylvania" to "PA",
+    "rhode island" to "RI",
+    "south carolina" to "SC",
+    "south dakota" to "SD",
+    "tennessee" to "TN",
+    "texas" to "TX",
+    "utah" to "UT",
+    "vermont" to "VT",
+    "virginia" to "VA",
+    "washington" to "WA",
+    "west virginia" to "WV",
+    "wisconsin" to "WI",
+    "wyoming" to "WY",
+    "district of columbia" to "DC"
+)
+
+private fun extractImageMetadata(
+    context: Context,
+    sourceUri: Uri?,
+    durableUri: Uri
+): ExtractedSubmissionMetadata {
+    val candidates = buildList {
+        if (sourceUri != null) {
+            val mediaStoreUri = mediaStoreUriForPickerOrDocument(context, sourceUri)
+            if (mediaStoreUri != null) {
+                originalMediaUri(mediaStoreUri)?.let(::add)
+                add(mediaStoreUri)
+            }
+            if (!sourceUri.isPickerUri()) {
+                originalMediaUri(sourceUri)?.let(::add)
+            }
+            add(sourceUri)
+        }
+        add(durableUri)
+    }.distinctBy(Uri::toString)
+
+    var best = ExtractedSubmissionMetadata()
+    candidates.forEach { uri ->
+        val exifMetadata = extractImageExifMetadata(context, uri)
+        best = best.withFallback(exifMetadata)
+        val mediaStoreDate = queryMediaDateTaken(context, uri)
+        if (best.occurredAtIso == null && mediaStoreDate != null) {
+            best = best.copy(occurredAtIso = mediaStoreDate)
+        }
+        if (best.occurredAtIso != null && best.latitude != null && best.longitude != null) {
+            return best
+        }
     }
+    return best
+}
+
+private fun extractImageExifMetadata(context: Context, uri: Uri): ExtractedSubmissionMetadata {
+    val input = openInputStreamSafely(context, uri) ?: return ExtractedSubmissionMetadata()
+    return runCatching {
+        input.use {
+            val exif = ExifInterface(it)
+            val latLong = exif.latLong
+            ExtractedSubmissionMetadata(
+                occurredAtIso = readExifDateTime(exif),
+                latitude = latLong?.getOrNull(0),
+                longitude = latLong?.getOrNull(1)
+            )
+        }
+    }.getOrDefault(ExtractedSubmissionMetadata())
 }
 
 private fun extractVideoMetadata(context: Context, uri: Uri): ExtractedSubmissionMetadata {
@@ -149,10 +285,93 @@ private fun extractVideoMetadata(context: Context, uri: Uri): ExtractedSubmissio
     }
 }
 
-private fun parseExifDateTime(raw: String): String? = runCatching {
+private fun ExtractedSubmissionMetadata.withFallback(other: ExtractedSubmissionMetadata): ExtractedSubmissionMetadata =
+    ExtractedSubmissionMetadata(
+        occurredAtIso = occurredAtIso ?: other.occurredAtIso,
+        latitude = latitude ?: other.latitude,
+        longitude = longitude ?: other.longitude,
+        videoThumbnail = videoThumbnail ?: other.videoThumbnail
+    )
+
+private fun originalMediaUri(uri: Uri): Uri? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        runCatching { MediaStore.setRequireOriginal(uri) }.getOrNull()
+    } else {
+        null
+    }
+
+private fun mediaStoreUriForPickerOrDocument(context: Context, uri: Uri): Uri? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == ContentResolver.SCHEME_CONTENT) {
+        runCatching { MediaStore.getMediaUri(context, uri) }.getOrNull()
+    } else {
+        null
+    }
+
+private fun Uri.isPickerUri(): Boolean =
+    authority == "media" && pathSegments.firstOrNull() == "picker"
+
+private fun readExifDateTime(exif: ExifInterface): String? {
+    val candidates = listOf(
+        ExifInterface.TAG_DATETIME_ORIGINAL to ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
+        ExifInterface.TAG_DATETIME_DIGITIZED to ExifInterface.TAG_OFFSET_TIME_DIGITIZED,
+        ExifInterface.TAG_DATETIME to ExifInterface.TAG_OFFSET_TIME
+    )
+    candidates.forEach { (dateTag, offsetTag) ->
+        val rawDate = exif.getAttribute(dateTag)
+        val rawOffset = exif.getAttribute(offsetTag)
+        parseExifDateTime(rawDate, rawOffset)?.let { return it }
+    }
+    return parseExifGpsDateTime(
+        dateStamp = exif.getAttribute(ExifInterface.TAG_GPS_DATESTAMP),
+        timeStamp = exif.getAttribute(ExifInterface.TAG_GPS_TIMESTAMP)
+    )
+}
+
+private fun parseExifDateTime(raw: String?, offset: String? = null): String? = runCatching {
+    if (raw.isNullOrBlank()) return@runCatching null
+    val formatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
+    val localDateTime = LocalDateTime.parse(raw, formatter)
+    val zoneOffset = offset?.takeIf { it.matches(Regex("[+-]\\d{2}:?\\d{2}")) }
+        ?.let { normalized ->
+            ZoneOffset.of(
+                if (normalized.length == 5) {
+                    normalized
+                } else {
+                    "${normalized.substring(0, 3)}:${normalized.substring(3)}"
+                }
+            )
+        }
+    if (zoneOffset != null) {
+        localDateTime.atOffset(zoneOffset).toInstant().toString()
+    } else {
+        localDateTime.atZone(ZoneId.systemDefault()).toInstant().toString()
+    }
+}.getOrNull()
+
+private fun parseExifGpsDateTime(dateStamp: String?, timeStamp: String?): String? = runCatching {
+    if (dateStamp.isNullOrBlank() || timeStamp.isNullOrBlank()) return@runCatching null
+    val raw = "${dateStamp.trim()} ${timeStamp.trim()}"
     val formatter = DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss")
     LocalDateTime.parse(raw, formatter).atOffset(ZoneOffset.UTC).toInstant().toString()
 }.getOrNull()
+
+private fun queryMediaDateTaken(context: Context, uri: Uri): String? {
+    if (uri.scheme != ContentResolver.SCHEME_CONTENT) return null
+    val projection = arrayOf(MediaStore.MediaColumns.DATE_TAKEN, MediaStore.MediaColumns.DATE_MODIFIED)
+    return runCatching {
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            val dateTakenIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+            val dateTaken = if (dateTakenIndex >= 0) cursor.getLong(dateTakenIndex) else 0L
+            if (dateTaken > 0L) {
+                return@use Instant.ofEpochMilli(dateTaken).toString()
+            }
+            val dateModifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+            val dateModified = if (dateModifiedIndex >= 0) cursor.getLong(dateModifiedIndex) else 0L
+            if (dateModified > 0L) Instant.ofEpochSecond(dateModified).toString() else null
+        }
+    }.getOrNull()
+}
 
 private fun parseVideoDate(raw: String): String? = runCatching {
     Instant.parse(raw).toString()
@@ -181,36 +400,166 @@ private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String {
     return uri.lastPathSegment ?: "Upload"
 }
 
+private fun displayNameForUri(context: Context, uri: Uri): String =
+    if (uri.scheme == "file") {
+        uri.path?.let(::File)?.name ?: uri.lastPathSegment ?: "Upload"
+    } else {
+        queryDisplayName(context.contentResolver, uri)
+    }
+
 private fun persistSubmissionMedia(context: Context, sourceUri: Uri, isVideo: Boolean): Uri {
-    if (sourceUri.scheme == "file") {
+    if (sourceUri.scheme == "file" && isVideo) {
         return sourceUri
     }
 
-    val displayName = queryDisplayName(context.contentResolver, sourceUri)
-    val extension = displayName.substringAfterLast('.', "").ifBlank {
-        when {
-            isVideo -> "mp4"
-            else -> "jpg"
+    val displayName = displayNameForUri(context, sourceUri)
+    val extension = if (isVideo) {
+        displayName.substringAfterLast('.', "").ifBlank {
+            "mp4"
         }
+    } else {
+        "jpg"
     }
     val sanitizedBaseName = displayName.substringBeforeLast('.')
         .ifBlank { if (isVideo) "video" else "image" }
         .replace(Regex("[^A-Za-z0-9._-]"), "_")
     val mediaDir = File(context.filesDir, "submission-media").apply { mkdirs() }
     val targetFile = File(mediaDir, "${System.currentTimeMillis()}_${sanitizedBaseName}.$extension")
+    val persisted = if (isVideo) {
+        copyOriginalMediaFile(context, sourceUri, targetFile)
+    } else {
+        copyNormalizedImageFile(context, sourceUri, targetFile)
+    }
+    return if (persisted) Uri.fromFile(targetFile) else sourceUri
+}
+
+private fun copyOriginalMediaFile(context: Context, sourceUri: Uri, targetFile: File): Boolean {
     openInputStreamSafely(context, sourceUri)?.use { input ->
         targetFile.outputStream().use { output ->
             input.copyTo(output)
         }
-    } ?: return sourceUri
-    return Uri.fromFile(targetFile)
+        return true
+    }
+    return false
 }
 
-private fun openInputStreamSafely(context: Context, uri: Uri): InputStream? =
+private fun copyNormalizedImageFile(context: Context, sourceUri: Uri, targetFile: File): Boolean {
+    val orientation = readExifOrientation(context, sourceUri)
+    val sourceBitmap = openInputStreamSafely(context, sourceUri)?.use(BitmapFactory::decodeStream)
+        ?: return copyOriginalMediaFile(context, sourceUri, targetFile)
+    val normalizedBitmap = sourceBitmap.normalizedForExifOrientation(orientation)
+    val wroteImage = targetFile.outputStream().use { output ->
+        normalizedBitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
+    }
+    if (normalizedBitmap !== sourceBitmap) {
+        sourceBitmap.recycle()
+    }
+    normalizedBitmap.recycle()
+    if (!wroteImage) {
+        targetFile.delete()
+        return false
+    }
+    copyExifMetadataWithNormalOrientation(context, sourceUri, targetFile)
+    return true
+}
+
+private fun readExifOrientation(context: Context, uri: Uri): Int {
+    val input = openInputStreamSafely(context, uri) ?: return ExifInterface.ORIENTATION_UNDEFINED
+    return runCatching {
+        input.use {
+            ExifInterface(it).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_UNDEFINED
+            )
+        }
+    }.getOrDefault(ExifInterface.ORIENTATION_UNDEFINED)
+}
+
+private fun Bitmap.normalizedForExifOrientation(orientation: Int): Bitmap {
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+            matrix.setRotate(180f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matrix.setRotate(90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matrix.setRotate(-90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+        else -> return this
+    }
+    return runCatching {
+        Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+    }.getOrDefault(this)
+}
+
+private fun copyExifMetadataWithNormalOrientation(context: Context, sourceUri: Uri, targetFile: File) {
+    val input = openInputStreamSafely(context, sourceUri) ?: return
+    runCatching {
+        input.use {
+            val sourceExif = ExifInterface(it)
+            val targetExif = ExifInterface(targetFile.absolutePath)
+            exifTagsToCopy.forEach { tag ->
+                sourceExif.getAttribute(tag)?.let { value ->
+                    targetExif.setAttribute(tag, value)
+                }
+            }
+            targetExif.setAttribute(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL.toString()
+            )
+            targetExif.saveAttributes()
+        }
+    }
+}
+
+@Suppress("DEPRECATION")
+private val exifTagsToCopy = listOf(
+    ExifInterface.TAG_DATETIME,
+    ExifInterface.TAG_DATETIME_ORIGINAL,
+    ExifInterface.TAG_DATETIME_DIGITIZED,
+    ExifInterface.TAG_OFFSET_TIME,
+    ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
+    ExifInterface.TAG_OFFSET_TIME_DIGITIZED,
+    ExifInterface.TAG_SUBSEC_TIME,
+    ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,
+    ExifInterface.TAG_SUBSEC_TIME_DIGITIZED,
+    ExifInterface.TAG_GPS_LATITUDE,
+    ExifInterface.TAG_GPS_LATITUDE_REF,
+    ExifInterface.TAG_GPS_LONGITUDE,
+    ExifInterface.TAG_GPS_LONGITUDE_REF,
+    ExifInterface.TAG_GPS_ALTITUDE,
+    ExifInterface.TAG_GPS_ALTITUDE_REF,
+    ExifInterface.TAG_GPS_DATESTAMP,
+    ExifInterface.TAG_GPS_TIMESTAMP,
+    ExifInterface.TAG_GPS_PROCESSING_METHOD,
+    ExifInterface.TAG_MAKE,
+    ExifInterface.TAG_MODEL,
+    ExifInterface.TAG_SOFTWARE,
+    ExifInterface.TAG_ARTIST,
+    ExifInterface.TAG_COPYRIGHT,
+    ExifInterface.TAG_EXPOSURE_TIME,
+    ExifInterface.TAG_F_NUMBER,
+    ExifInterface.TAG_ISO_SPEED_RATINGS,
+    ExifInterface.TAG_FOCAL_LENGTH,
+    ExifInterface.TAG_FLASH,
+    ExifInterface.TAG_WHITE_BALANCE
+)
+
+private fun openInputStreamSafely(context: Context, uri: Uri): InputStream? = runCatching {
     when (uri.scheme) {
         "file" -> uri.path?.let(::File)?.takeIf { it.exists() }?.inputStream()
         else -> context.contentResolver.openInputStream(uri)
     }
+}.getOrNull()
 
 private fun setRetrieverDataSource(context: Context, retriever: MediaMetadataRetriever, uri: Uri) {
     if (uri.scheme == "file") {

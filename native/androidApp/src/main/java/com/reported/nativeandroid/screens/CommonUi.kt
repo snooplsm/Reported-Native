@@ -43,16 +43,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Close
@@ -77,7 +80,9 @@ private fun ReportedFieldShell(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isError: Boolean = false,
+    minHeight: Dp = ReportedFieldMinHeight,
     onClick: (() -> Unit)? = null,
+    trailingWidth: Dp = 40.dp,
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable (Modifier) -> Unit
 ) {
@@ -91,6 +96,11 @@ private fun ReportedFieldShell(
         isError -> MaterialTheme.colorScheme.error
         enabled -> ReportedFieldBorderColor
         else -> ReportedFieldBorderColorDisabled
+    }
+    val fieldBackground = if (isError) {
+        ReportedFieldErrorBackground
+    } else {
+        MaterialTheme.colorScheme.background
     }
     val clickableModifier = if (enabled && onClick != null) {
         Modifier.clickable(
@@ -110,99 +120,51 @@ private fun ReportedFieldShell(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .drawBehind {
+                .drawWithContent {
+                    drawContent()
                     val left = strokeWidthPx / 2f
                     val top = strokeWidthPx / 2f
                     val right = size.width - strokeWidthPx / 2f
                     val bottom = size.height - strokeWidthPx / 2f
-                    val radius = cornerRadiusPx - strokeWidthPx / 2f
+                    val radius = (cornerRadiusPx - strokeWidthPx / 2f)
+                        .coerceAtMost((right - left) / 2f)
+                        .coerceAtMost((bottom - top) / 2f)
                     val notchStart = (labelStartPx - notchInsetPx).coerceAtLeast(left + radius)
                     val notchEnd = (labelStartPx + labelWidthPx + notchInsetPx).coerceAtMost(right - radius)
-                    val topY = top + strokeWidthPx / 2f
 
-                    drawArc(
+                    val outline = Path().apply {
+                        moveTo(notchStart, top)
+                        lineTo(left + radius, top)
+                        quadraticTo(left, top, left, top + radius)
+                        lineTo(left, bottom - radius)
+                        quadraticTo(left, bottom, left + radius, bottom)
+                        lineTo(right - radius, bottom)
+                        quadraticTo(right, bottom, right, bottom - radius)
+                        lineTo(right, top + radius)
+                        quadraticTo(right, top, right - radius, top)
+                        lineTo(notchEnd, top)
+                    }
+                    drawPath(
+                        path = outline,
                         color = outlineColor,
-                        startAngle = 180f,
-                        sweepAngle = 90f,
-                        useCenter = false,
-                        topLeft = Offset(left, top),
-                        size = Size(radius * 2f, radius * 2f),
                         style = Stroke(width = strokeWidthPx)
-                    )
-                    drawArc(
-                        color = outlineColor,
-                        startAngle = 270f,
-                        sweepAngle = 90f,
-                        useCenter = false,
-                        topLeft = Offset(right - radius * 2f, top),
-                        size = Size(radius * 2f, radius * 2f),
-                        style = Stroke(width = strokeWidthPx)
-                    )
-                    drawArc(
-                        color = outlineColor,
-                        startAngle = 0f,
-                        sweepAngle = 90f,
-                        useCenter = false,
-                        topLeft = Offset(right - radius * 2f, bottom - radius * 2f),
-                        size = Size(radius * 2f, radius * 2f),
-                        style = Stroke(width = strokeWidthPx)
-                    )
-                    drawArc(
-                        color = outlineColor,
-                        startAngle = 90f,
-                        sweepAngle = 90f,
-                        useCenter = false,
-                        topLeft = Offset(left, bottom - radius * 2f),
-                        size = Size(radius * 2f, radius * 2f),
-                        style = Stroke(width = strokeWidthPx)
-                    )
-
-                    drawLine(
-                        color = outlineColor,
-                        start = Offset(left + radius, topY),
-                        end = Offset(notchStart, topY),
-                        strokeWidth = strokeWidthPx
-                    )
-                    drawLine(
-                        color = outlineColor,
-                        start = Offset(notchEnd, topY),
-                        end = Offset(right - radius, topY),
-                        strokeWidth = strokeWidthPx
-                    )
-                    drawLine(
-                        color = outlineColor,
-                        start = Offset(left, top + radius),
-                        end = Offset(left, bottom - radius),
-                        strokeWidth = strokeWidthPx
-                    )
-                    drawLine(
-                        color = outlineColor,
-                        start = Offset(right, top + radius),
-                        end = Offset(right, bottom - radius),
-                        strokeWidth = strokeWidthPx
-                    )
-                    drawLine(
-                        color = outlineColor,
-                        start = Offset(left + radius, bottom),
-                        end = Offset(right - radius, bottom),
-                        strokeWidth = strokeWidthPx
                     )
                 }
                 .then(clickableModifier),
             shape = ReportedFieldShape,
-            color = if (isError) ReportedFieldErrorBackground else Color.White
+            color = fieldBackground
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .defaultMinSize(minHeight = ReportedFieldMinHeight)
+                    .defaultMinSize(minHeight = minHeight)
                     .padding(horizontal = ReportedFieldHorizontalPadding, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 content(Modifier.weight(1f))
                 if (trailing != null) {
                     Box(
-                        modifier = Modifier.width(40.dp),
+                        modifier = Modifier.width(trailingWidth),
                         contentAlignment = Alignment.Center
                     ) {
                         trailing()
@@ -231,10 +193,11 @@ private fun ReportedFieldShell(
 fun ScreenSection(
     title: String? = null,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
     content: @Composable () -> Unit
 ) {
     Column(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier.padding(contentPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (title != null) {
@@ -253,13 +216,25 @@ fun ReportedField(
     enabled: Boolean = true,
     isError: Boolean = false,
     onClear: (() -> Unit)? = null,
-    trailingContent: @Composable (() -> Unit)? = null
+    trailingContent: @Composable (() -> Unit)? = null,
+    trailingWidth: Dp = 40.dp,
+    autoFitText: Boolean = false,
+    minHeight: Dp = ReportedFieldMinHeight
 ) {
+    val bodyStyle = MaterialTheme.typography.bodyLarge
+    val inputTextColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    var textSize by remember(value) { mutableStateOf(bodyStyle.fontSize) }
     ReportedFieldShell(
         label = label,
         modifier = modifier,
         enabled = enabled,
         isError = isError,
+        minHeight = minHeight,
+        trailingWidth = trailingWidth,
         trailing = if ((onClear != null && value.isNotEmpty()) || trailingContent != null) {
             {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -282,9 +257,15 @@ fun ReportedField(
             modifier = fieldModifier,
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
-                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                fontSize = textSize,
+                color = inputTextColor
             ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(inputTextColor),
+            onTextLayout = { layoutResult ->
+                if (autoFitText && layoutResult.hasVisualOverflow && textSize.value > 14f) {
+                    textSize = (textSize.value - 1f).coerceAtLeast(14f).sp
+                }
+            },
             decorationBox = { innerTextField ->
                 Box(
                     modifier = Modifier.fillMaxWidth(),
@@ -322,7 +303,9 @@ fun LoginRequiredScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        if (title.isNotBlank()) {
+            Text(text = title, style = MaterialTheme.typography.headlineSmall)
+        }
         MessageCard(message)
         PrimaryButton(text = "Login", onClick = onLogin)
     }
@@ -333,16 +316,19 @@ fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: Shape = RoundedCornerShape(8.dp),
+    contentPadding: PaddingValues = PaddingValues(vertical = 16.dp),
+    textSize: TextUnit = TextUnit.Unspecified
 ) {
     Button(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        shape = shape,
+        contentPadding = contentPadding
     ) {
-        Text(text, color = MaterialTheme.colorScheme.onPrimary)
+        Text(text, color = MaterialTheme.colorScheme.onPrimary, fontSize = textSize)
     }
 }
 
@@ -400,7 +386,8 @@ private fun PickerStyleField(
     onClick: () -> Unit,
     isError: Boolean = false,
     textAlign: TextAlign = TextAlign.Start,
-    trailing: @Composable (() -> Unit)? = null
+    trailing: @Composable (() -> Unit)? = null,
+    autoFitText: Boolean = false
 ) {
     ReportedFieldShell(
         label = label,
@@ -413,15 +400,41 @@ private fun PickerStyleField(
             modifier = fieldModifier,
             contentAlignment = Alignment.CenterStart
         ) {
-            Text(
+            AutoFitSingleLineText(
                 text = value,
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = textAlign
+                textAlign = textAlign,
+                enabled = autoFitText
             )
         }
     }
+}
+
+@Composable
+private fun AutoFitSingleLineText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle,
+    color: Color,
+    textAlign: TextAlign,
+    enabled: Boolean
+) {
+    var textSize by remember(text) { mutableStateOf(style.fontSize) }
+    Text(
+        text = text,
+        modifier = modifier,
+        style = style.copy(fontSize = textSize),
+        color = color,
+        textAlign = textAlign,
+        maxLines = 1,
+        onTextLayout = { layoutResult ->
+            if (enabled && layoutResult.hasVisualOverflow && textSize.value > 14f) {
+                textSize = (textSize.value - 1f).coerceAtLeast(14f).sp
+            }
+        }
+    )
 }
 
 @Composable
@@ -441,7 +454,8 @@ fun ReportedSelectionField(
         onClick = onClick,
         isError = isError,
         textAlign = textAlign,
-        trailing = trailing
+        trailing = trailing,
+        autoFitText = true
     )
 }
 
@@ -522,6 +536,7 @@ fun PlateRegionPickerField(
 fun OccurredAtField(
     label: String,
     isoValue: String,
+    photoIsoValue: String? = null,
     onValueSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
@@ -581,43 +596,77 @@ fun OccurredAtField(
             onDismissRequest = { showPicker = false },
             title = { Text(label) },
             text = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WheelSpinner(
-                        values = monthLabels,
-                        selectedIndex = selectedMonthIndex,
-                        onSelectedIndexChange = { selectedMonthIndex = it },
-                        modifier = Modifier.weight(1.2f)
-                    )
-                    WheelSpinner(
-                        values = (1..maxDay).map(Int::toString),
-                        selectedIndex = (selectedDay - 1).coerceIn(0, maxDay - 1),
-                        onSelectedIndexChange = { selectedDay = it + 1 },
-                        modifier = Modifier.weight(0.9f)
-                    )
-                    WheelSpinner(
-                        values = years.map(Int::toString),
-                        selectedIndex = years.indexOf(selectedYear).coerceAtLeast(0),
-                        onSelectedIndexChange = { selectedYear = years[it] },
-                        modifier = Modifier.weight(1.1f)
-                    )
-                    WheelSpinner(
-                        values = (1..12).map(Int::toString),
-                        selectedIndex = (selectedHour12 - 1).coerceIn(0, 11),
-                        onSelectedIndexChange = { selectedHour12 = it + 1 },
-                        modifier = Modifier.weight(0.8f)
-                    )
-                    WheelSpinner(
-                        values = (0..59).map { it.toString().padStart(2, '0') },
-                        selectedIndex = selectedMinute,
-                        onSelectedIndexChange = { selectedMinute = it },
-                        modifier = Modifier.weight(0.8f)
-                    )
-                    WheelSpinner(
-                        values = listOf("AM", "PM"),
-                        selectedIndex = selectedMeridiemIndex.coerceIn(0, 1),
-                        onSelectedIndexChange = { selectedMeridiemIndex = it },
-                        modifier = Modifier.weight(0.9f)
-                    )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    photoIsoValue
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { photoIso ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onValueSelected(photoIso)
+                                        showPicker = false
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.CalendarToday,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        "Use photo time of ${formatDisplay(photoIso)}",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WheelSpinner(
+                            values = monthLabels,
+                            selectedIndex = selectedMonthIndex,
+                            onSelectedIndexChange = { selectedMonthIndex = it },
+                            modifier = Modifier.weight(1.2f)
+                        )
+                        WheelSpinner(
+                            values = (1..maxDay).map(Int::toString),
+                            selectedIndex = (selectedDay - 1).coerceIn(0, maxDay - 1),
+                            onSelectedIndexChange = { selectedDay = it + 1 },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                        WheelSpinner(
+                            values = years.map(Int::toString),
+                            selectedIndex = years.indexOf(selectedYear).coerceAtLeast(0),
+                            onSelectedIndexChange = { selectedYear = years[it] },
+                            modifier = Modifier.weight(1.1f)
+                        )
+                        WheelSpinner(
+                            values = (1..12).map(Int::toString),
+                            selectedIndex = (selectedHour12 - 1).coerceIn(0, 11),
+                            onSelectedIndexChange = { selectedHour12 = it + 1 },
+                            modifier = Modifier.weight(0.8f)
+                        )
+                        WheelSpinner(
+                            values = (0..59).map { it.toString().padStart(2, '0') },
+                            selectedIndex = selectedMinute,
+                            onSelectedIndexChange = { selectedMinute = it },
+                            modifier = Modifier.weight(0.8f)
+                        )
+                        WheelSpinner(
+                            values = listOf("AM", "PM"),
+                            selectedIndex = selectedMeridiemIndex.coerceIn(0, 1),
+                            onSelectedIndexChange = { selectedMeridiemIndex = it },
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -659,6 +708,7 @@ fun OccurredAtField(
         modifier = modifier,
         onClick = { showPicker = true },
         isError = isError,
+        autoFitText = true,
         trailing = {
             if (onClear != null && isoValue.isNotBlank()) {
                 IconButton(onClick = onClear) {

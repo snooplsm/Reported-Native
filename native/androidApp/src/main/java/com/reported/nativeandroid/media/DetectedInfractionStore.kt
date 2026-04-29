@@ -71,6 +71,8 @@ object DetectedInfractionStore {
 private fun PlateCandidate.toDraft() = DraftPlateCandidate(
     plate = plate,
     confidence = confidence,
+    rawPlateText = rawPlateText,
+    wasPlateCorrected = wasPlateCorrected,
     state = state,
     stateConfidence = stateConfidence,
     plateType = plateType,
@@ -83,6 +85,8 @@ private fun PlateCandidate.toDraft() = DraftPlateCandidate(
     boundsBottom = boundsBottom,
     rotationDegrees = rotationDegrees,
     cornerPoints = cornerPoints,
+    sourceImageWidth = sourceImageWidth,
+    sourceImageHeight = sourceImageHeight,
     thumbnailUri = thumbnailUri,
     videoFramePreviewUri = videoFramePreviewUri,
     videoFrameTimeMs = videoFrameTimeMs
@@ -110,6 +114,8 @@ private fun DetectedInfraction.toJson(): JSONObject = JSONObject()
             put(JSONObject()
                 .put("plate", candidate.plate)
                 .put("confidence", candidate.confidence.toDouble())
+                .put("rawPlateText", candidate.rawPlateText)
+                .put("wasPlateCorrected", candidate.wasPlateCorrected)
                 .put("state", candidate.state)
                 .put("stateConfidence", candidate.stateConfidence)
                 .put("plateType", candidate.plateType)
@@ -122,6 +128,8 @@ private fun DetectedInfraction.toJson(): JSONObject = JSONObject()
                 .put("boundsBottom", candidate.boundsBottom)
                 .put("rotationDegrees", candidate.rotationDegrees.toDouble())
                 .put("cornerPoints", JSONArray(candidate.cornerPoints))
+                .put("sourceImageWidth", candidate.sourceImageWidth)
+                .put("sourceImageHeight", candidate.sourceImageHeight)
                 .put("thumbnailUri", candidate.thumbnailUri)
                 .put("videoFramePreviewUri", candidate.videoFramePreviewUri)
                 .put("videoFrameTimeMs", candidate.videoFrameTimeMs)
@@ -160,6 +168,8 @@ private fun JSONArray?.toPlateCandidates(): List<PlateCandidate> {
             add(PlateCandidate(
                 plate = item.optString("plate"),
                 confidence = item.optDouble("confidence").toFloat(),
+                rawPlateText = item.optNullableString("rawPlateText"),
+                wasPlateCorrected = item.optBoolean("wasPlateCorrected", false),
                 state = item.optNullableString("state"),
                 stateConfidence = item.optNullableDouble("stateConfidence")?.toFloat(),
                 plateType = item.optNullableString("plateType"),
@@ -172,6 +182,8 @@ private fun JSONArray?.toPlateCandidates(): List<PlateCandidate> {
                 boundsBottom = item.optNullableDouble("boundsBottom")?.toFloat(),
                 rotationDegrees = item.optDouble("rotationDegrees", 0.0).toFloat(),
                 cornerPoints = item.optJSONArray("cornerPoints").toFloatList(),
+                sourceImageWidth = item.optNullableInt("sourceImageWidth"),
+                sourceImageHeight = item.optNullableInt("sourceImageHeight"),
                 thumbnailUri = item.optNullableString("thumbnailUri"),
                 videoFramePreviewUri = item.optNullableString("videoFramePreviewUri"),
                 videoFrameTimeMs = item.optNullableLong("videoFrameTimeMs")
@@ -194,6 +206,9 @@ private fun JSONObject.optNullableString(name: String): String? =
 
 private fun JSONObject.optNullableDouble(name: String): Double? =
     if (isNull(name) || !has(name)) null else optDouble(name)
+
+private fun JSONObject.optNullableInt(name: String): Int? =
+    if (isNull(name) || !has(name)) null else optInt(name)
 
 private fun JSONObject.optNullableLong(name: String): Long? =
     if (isNull(name) || !has(name)) null else optLong(name)

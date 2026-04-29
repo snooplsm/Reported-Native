@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "131272311428-g3jp286jmqifi8o16feuvuccoc4k07p1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "cab.reported.nyc",
+            "certificate_hash": "8c983b9c9fd27ec2a63c1ed1a5a3a9790492d0b3"
+          }
+        },
+        {
+          "client_id": "131272311428-lrmj6jq6oga1n8017am7hot4tr9btpkm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "cab.reported.nyc",
+            "certificate_hash": "e86c90626417784ac1b8daaa4d55a6da7c8a1770"
+          }
+        },
+        {
           "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
           "client_type": 3
         }

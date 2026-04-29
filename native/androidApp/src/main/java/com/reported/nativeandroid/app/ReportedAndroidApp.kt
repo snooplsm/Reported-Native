@@ -8,13 +8,17 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,9 +26,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -54,14 +66,19 @@ import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.navigation.AuthDestination
 import com.reported.nativeandroid.navigation.TabDestination
 import com.reported.nativeandroid.auth.SocialAuthDeepLinks
+import com.reported.nativeandroid.remoteconfig.ReportedRemoteConfig
 import com.reported.shared.model.AppThemeMode
-import com.reported.nativeandroid.screens.LoginScreen
-import com.reported.nativeandroid.screens.ProfileScreen
-import com.reported.nativeandroid.screens.RegisterScreen
+import com.reported.nativeandroid.auth.LoginScreen
+import com.reported.nativeandroid.auth.RegisterScreen
+import com.reported.nativeandroid.auth.SplashScreen
+import com.reported.nativeandroid.batch.BatchScreen
+import com.reported.nativeandroid.live.LiveScreen
+import com.reported.nativeandroid.profile.ProfileScreen
+import com.reported.nativeandroid.profile.SettingsScreen
 import com.reported.nativeandroid.screens.ReportComposerScreen
-import com.reported.nativeandroid.screens.ReportsScreen
-import com.reported.nativeandroid.screens.SplashScreen
+import com.reported.nativeandroid.reports.ReportsScreen
 import com.reported.nativeandroid.theme.ReportedTheme
+import kotlinx.coroutines.launch
 
 private enum class AuthOverlayDestination(val route: String) {
     Login(AuthDestination.Login.route),
@@ -112,10 +129,31 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
         }
 
         if (inMainShell) {
-            val items = listOf(TabDestination.Report, TabDestination.Reports, TabDestination.Profile)
+            val remoteConfigSnapshot by ReportedRemoteConfig.snapshot.collectAsState()
+            val items = buildList {
+                add(TabDestination.Report)
+                add(TabDestination.Batch)
+                if (remoteConfigSnapshot.enableLive) add(TabDestination.Live)
+                add(TabDestination.Reports)
+                add(TabDestination.Profile)
+                add(TabDestination.Settings)
+            }
             val mainNavController = rememberNavController()
+            val snackbarHostState = remember { SnackbarHostState() }
+            val scope = rememberCoroutineScope()
+            var pendingOpenReportObjectId by remember { mutableStateOf<String?>(null) }
             val mainBackStackEntry by mainNavController.currentBackStackEntryAsState()
             val selectedTab = items.firstOrNull { it.route == mainBackStackEntry?.destination?.route } ?: TabDestination.Report
+            fun openSubmittedReport(objectId: String) {
+                pendingOpenReportObjectId = objectId
+                mainNavController.navigate(TabDestination.Reports.route) {
+                    launchSingleTop = true
+                    restoreState = true
+                    popUpTo(mainNavController.graph.startDestinationId) {
+                        saveState = true
+                    }
+                }
+            }
             LaunchedEffect(sharedMediaRequest?.id) {
                 if (sharedMediaRequest != null) {
                     mainNavController.navigate(TabDestination.Report.route) {
@@ -130,22 +168,34 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
             LaunchedEffect(selectedTab.route) {
                 ReportedAnalytics.logScreenView(selectedTab.label)
             }
+            LaunchedEffect(remoteConfigSnapshot.enableLive, mainBackStackEntry?.destination?.route) {
+                if (!remoteConfigSnapshot.enableLive && mainBackStackEntry?.destination?.route == TabDestination.Live.route) {
+                    mainNavController.navigate(TabDestination.Report.route) {
+                        launchSingleTop = true
+                        popUpTo(mainNavController.graph.startDestinationId) {
+                            saveState = true
+                        }
+                    }
+                }
+            }
             Scaffold(
-                contentWindowInsets = WindowInsets.safeDrawing,
+                contentWindowInsets = WindowInsets.safeDrawing.only(
+                    WindowInsetsSides.Top + WindowInsetsSides.Start + WindowInsetsSides.End
+                ),
                 containerColor = MaterialTheme.colorScheme.background,
+                snackbarHost = { SnackbarHost(snackbarHostState) },
             ) { innerPadding ->
                 SliderNavShell(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .consumeWindowInsets(innerPadding),
+                        .fillMaxSize(),
+                    contentPadding = innerPadding,
                     leftContent = { closeDrawer ->
                         LeftGliderNavRail(
                             items = items,
                             selectedTab = selectedTab,
                             closeDrawer = closeDrawer,
                             onSelected = { item, closeDrawer ->
-                                if (isAuthorized || item == TabDestination.Report) {
+                                if (isAuthorized || item == TabDestination.Report || item == TabDestination.Live || item == TabDestination.Settings) {
                                     mainNavController.navigate(item.route) {
                                         launchSingleTop = true
                                         restoreState = true
@@ -178,21 +228,51 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                             },
                                             onOpenMenu = onOpenMenu,
                                             sharedMediaRequest = sharedMediaRequest,
-                                            onSharedMediaConsumed = SharedMediaIntents::consume
+                                            onSharedMediaConsumed = SharedMediaIntents::consume,
+                                            onReportSubmitted = { objectId ->
+                                                scope.launch {
+                                                    val result = snackbarHostState.showSnackbar(
+                                                        message = "Report Submitted",
+                                                        actionLabel = "View",
+                                                        withDismissAction = true,
+                                                        duration = SnackbarDuration.Long
+                                                    )
+                                                    if (result == SnackbarResult.ActionPerformed) {
+                                                        openSubmittedReport(objectId)
+                                                    }
+                                                }
+                                            }
                                         )
                                     }
                             composable(TabDestination.Reports.route) {
                                 ReportsScreen(
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
+                                    onOpenMenu = onOpenMenu,
+                                    openReportObjectId = pendingOpenReportObjectId,
+                                    onOpenedReport = { pendingOpenReportObjectId = null }
+                                )
+                            }
+                            composable(TabDestination.Batch.route) {
+                                BatchScreen(
+                                    isAuthorized = isAuthorized,
+                                    onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
                                     onOpenMenu = onOpenMenu
                                 )
+                            }
+                            composable(TabDestination.Live.route) {
+                                LiveScreen(onOpenMenu = onOpenMenu)
                             }
                             composable(TabDestination.Profile.route) {
                                 ProfileScreen(
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
                                     onLogout = sessionViewModel::logout,
+                                    onOpenMenu = onOpenMenu
+                                )
+                            }
+                            composable(TabDestination.Settings.route) {
+                                SettingsScreen(
                                     onThemeModeSelected = themeViewModel::update,
                                     onOpenMenu = onOpenMenu
                                 )
@@ -305,6 +385,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
 private fun SliderNavShell(
     modifier: Modifier = Modifier,
     drawerWidth: androidx.compose.ui.unit.Dp = 116.dp,
+    contentPadding: PaddingValues = PaddingValues(),
     leftContent: @Composable ((() -> Unit)) -> Unit,
     centerContent: @Composable ((() -> Unit)) -> Unit
 ) {
@@ -346,6 +427,8 @@ private fun SliderNavShell(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(contentPadding)
+                .consumeWindowInsets(contentPadding)
                 .graphicsLayer {
                     translationX = currentOffset
                 }
@@ -376,6 +459,7 @@ private fun LeftGliderNavRail(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -400,8 +484,11 @@ private fun LeftGliderNavRail(
                 ) {
                     val image = when (item) {
                         TabDestination.Report -> Icons.Outlined.AddCircle
+                        TabDestination.Batch -> Icons.Outlined.Collections
+                        TabDestination.Live -> Icons.Outlined.Videocam
                         TabDestination.Reports -> Icons.AutoMirrored.Outlined.List
                         TabDestination.Profile -> Icons.Outlined.AccountCircle
+                        TabDestination.Settings -> Icons.Outlined.Settings
                     }
                     Icon(
                         imageVector = image,

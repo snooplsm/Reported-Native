@@ -1,6 +1,8 @@
 import Foundation
+import ImageIO
 import SharedCore
 import UIKit
+import UniformTypeIdentifiers
 
 struct SessionState {
     var loading = true
@@ -31,6 +33,7 @@ struct ProfileState {
     var lastName = ""
     var phone = ""
     var email = ""
+    var testify = false
     var themeMode: AppThemeMode = .system
     var editing = false
     var loading = false
@@ -54,12 +57,16 @@ struct ComposerState {
         let id = UUID()
         let plate: String
         let confidence: Double
+        let rawPlateText: String?
+        let wasPlateCorrected: Bool
         let state: String?
         let stateConfidence: Double?
         let plateType: String?
         let plateTypeLabel: String?
         let bounds: CGRect?
+        let plateCropPreview: UIImage?
         let videoFramePreview: UIImage?
+        let videoFramePreviewURL: URL?
         let videoFrameTimeSeconds: Double?
     }
 
@@ -81,6 +88,13 @@ struct ComposerState {
         var hasErrors: Bool {
             media != nil || complaint != nil || plate != nil || plateRegion != nil || address != nil || occurredAt != nil
         }
+    }
+
+    struct PlateCorrectionPrompt {
+        let rawPlate: String
+        let suggestedPlate: String
+        let state: String
+        let label: String
     }
 
     var stage: SubmissionStage = .pickMedia
@@ -111,11 +125,17 @@ struct ComposerState {
     var description = ""
     var notes = ""
     var occurredAtIso = ""
+    var photoOccurredAtIso: String?
     var complaintCategories: [ComplaintCategory] = Array(Catalogs.shared.complaintCategories)
+    var showComplaintImages = RemoteConfigOverrides.shared.showComplaintImages
     var selectedComplaintIds: [String] = []
     var draftLoaded = false
     var loading = false
+    var submitProgress: Double?
+    var submitMessage: String?
     var error: String?
+    var plateCorrectionPrompt: PlateCorrectionPrompt?
+    var keptPlateCorrectionRaw: String?
     var validationErrors = ValidationErrors()
     let info = "Media, location, uploads, and notifications are the next native migration slice. This Swift app already shares the live API, use cases, and draft state with the KMP core."
 }
@@ -187,6 +207,62 @@ final class LoginViewModel: ObservableObject {
         }
     }
 
+    func signInWithGoogle(onSuccess: @escaping () -> Void) {
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                let profile = try await NativeSocialAuth.signInWithGoogle()
+                completeSocialSignIn(profile, onSuccess: onSuccess)
+            } catch {
+                state.loading = false
+                if !NativeSocialAuth.isCancellation(error) {
+                    state.error = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func signInWithApple(onSuccess: @escaping () -> Void) {
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                let profile = try await NativeSocialAuth.signInWithApple()
+                completeSocialSignIn(profile, onSuccess: onSuccess)
+            } catch {
+                state.loading = false
+                if !NativeSocialAuth.isCancellation(error) {
+                    state.error = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func completeSocialSignIn(_ profile: SocialAuthProfile, onSuccess: @escaping () -> Void) {
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                _ = try await SharedBridge.shared.container.socialLoginUseCase.execute(
+                    provider: profile.provider,
+                    providerUserId: profile.providerUserId,
+                    idToken: profile.idToken,
+                    email: profile.email,
+                    firstName: profile.firstName,
+                    lastName: profile.lastName,
+                    phone: "",
+                    testify: false
+                )
+                state.loading = false
+                onSuccess()
+            } catch {
+                state.loading = false
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
     func forgotPassword() {
         guard !state.email.isEmpty else {
             state.error = "Enter your email first."
@@ -234,6 +310,64 @@ final class RegisterViewModel: ObservableObject {
                     testify: state.testify,
                     email: state.email,
                     password: state.password
+                )
+                state.loading = false
+                onSuccess()
+            } catch {
+                state.loading = false
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    func signInWithGoogle(onSuccess: @escaping () -> Void) {
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                let profile = try await NativeSocialAuth.signInWithGoogle()
+                completeSocialSignIn(profile, onSuccess: onSuccess)
+            } catch {
+                state.loading = false
+                if !NativeSocialAuth.isCancellation(error) {
+                    state.error = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func signInWithApple(onSuccess: @escaping () -> Void) {
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                let profile = try await NativeSocialAuth.signInWithApple()
+                completeSocialSignIn(profile, onSuccess: onSuccess)
+            } catch {
+                state.loading = false
+                if !NativeSocialAuth.isCancellation(error) {
+                    state.error = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func completeSocialSignIn(_ profile: SocialAuthProfile, onSuccess: @escaping () -> Void) {
+        let fallbackFirstName = state.firstName
+        let fallbackLastName = state.lastName
+        state.loading = true
+        state.error = nil
+        Task {
+            do {
+                _ = try await SharedBridge.shared.container.socialLoginUseCase.execute(
+                    provider: profile.provider,
+                    providerUserId: profile.providerUserId,
+                    idToken: profile.idToken,
+                    email: profile.email,
+                    firstName: profile.firstName.isEmpty ? fallbackFirstName : profile.firstName,
+                    lastName: profile.lastName.isEmpty ? fallbackLastName : profile.lastName,
+                    phone: state.phone,
+                    testify: state.testify
                 )
                 state.loading = false
                 onSuccess()
@@ -361,6 +495,34 @@ final class ReportsViewModel: ObservableObject {
         }
     }
 
+    func openReport(objectId: String) {
+        guard !objectId.isEmpty else { return }
+        mode = .list
+        loading = true
+        loadingMore = false
+        error = nil
+        detailLoadingIds.insert(objectId)
+        Task {
+            do {
+                let detail = try await SharedBridge.shared.container.fetchReportDetailUseCase.execute(objectId: objectId)
+                let existingKeys = Set(reports.map(reportKey))
+                if existingKeys.contains(reportKey(detail)) {
+                    reports = reports.map { reportKey($0) == reportKey(detail) ? detail : $0 }
+                } else {
+                    reports.insert(detail, at: 0)
+                }
+                reportDetails[objectId] = detail
+                detailLoadingIds.remove(objectId)
+                nextSkip = Int32(reports.count)
+                loading = false
+            } catch {
+                self.error = error.localizedDescription
+                detailLoadingIds.remove(objectId)
+                loading = false
+            }
+        }
+    }
+
     func delete(report: ReportSummary) {
         let key = reportKey(report)
         guard report.canDelete, !deletingReportKeys.contains(key) else { return }
@@ -395,6 +557,7 @@ final class ProfileViewModel: ObservableObject {
                 state.lastName = session.lastName
                 state.phone = session.phone
                 state.email = session.email
+                state.testify = session.testify
             }
         }
     }
@@ -403,12 +566,14 @@ final class ProfileViewModel: ObservableObject {
         firstName: String? = nil,
         lastName: String? = nil,
         phone: String? = nil,
-        email: String? = nil
+        email: String? = nil,
+        testify: Bool? = nil
     ) {
         if let firstName { state.firstName = firstName }
         if let lastName { state.lastName = lastName }
         if let phone { state.phone = phone }
         if let email { state.email = email }
+        if let testify { state.testify = testify }
     }
 
     func toggleEditing() {
@@ -431,7 +596,8 @@ final class ProfileViewModel: ObservableObject {
                     email: state.email,
                     phone: state.phone,
                     firstName: state.firstName,
-                    lastName: state.lastName
+                    lastName: state.lastName,
+                    testify: state.testify
                 )
                 state.loading = false
                 state.editing = false
@@ -466,6 +632,38 @@ final class ThemeViewModel: ObservableObject {
 @MainActor
 final class ComposerViewModel: ObservableObject {
     @Published private(set) var state = ComposerState()
+    @Published private(set) var submittedReportObjectId: String?
+    private var remoteConfigObserver: NSObjectProtocol?
+    private let maxSubmissionMediaCount = 3
+    private let maxSubmissionVideoCount = 1
+    private let maxSubmissionMediaMessage = "You can attach up to 3 photos or videos."
+    private let maxSubmissionVideoMessage = "You can attach no more than 1 video."
+    private let duplicateSubmissionMediaMessage = "That photo or video is already attached."
+
+    var remainingMediaSlots: Int {
+        max(0, maxSubmissionMediaCount - mediaItems.count)
+    }
+
+    init() {
+        remoteConfigObserver = NotificationCenter.default.addObserver(
+            forName: .reportedRemoteConfigUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshRemoteConfigValues()
+        }
+    }
+
+    deinit {
+        if let remoteConfigObserver {
+            NotificationCenter.default.removeObserver(remoteConfigObserver)
+        }
+    }
+
+    func refreshRemoteConfigValues() {
+        state.complaintCategories = Array(Catalogs.shared.complaintCategories)
+        state.showComplaintImages = RemoteConfigOverrides.shared.showComplaintImages
+    }
 
     func loadDraft() {
         guard !state.draftLoaded else { return }
@@ -477,8 +675,8 @@ final class ComposerViewModel: ObservableObject {
                     state.plateRegion = draft.plateRegion.isEmpty ? "NY" : draft.plateRegion
                     state.address = draft.address
                     state.addressQuery = draft.address
-                    state.description = draft.description
-                    state.notes = draft.notes
+                    state.description = Self.cleanDraftText(draft.description_)
+                    state.notes = Self.cleanDraftText(draft.notes)
                     state.occurredAtIso = draft.occurredAtIso
                     state.selectedComplaintIds = draft.complaintIds
                     state.selectedComplaintId = draft.selectedComplaintId ?? draft.complaintIds.first
@@ -487,19 +685,41 @@ final class ComposerViewModel: ObservableObject {
                         Self.restoreSubmissionMedia(from: $0)
                     }
                     .compactMap { $0 }
-                    state.latitude = draft.latitude?.doubleValue
-                    state.longitude = draft.longitude?.doubleValue
+                    let draftLatitude = draft.latitude?.doubleValue
+                    let draftLongitude = draft.longitude?.doubleValue
+                    if Self.isUsableCoordinate(latitude: draftLatitude, longitude: draftLongitude) {
+                        state.latitude = draftLatitude
+                        state.longitude = draftLongitude
+                    } else {
+                        state.latitude = nil
+                        state.longitude = nil
+                    }
                     state.plateCandidates = draft.plateCandidates.map {
-                        ComposerState.PlateCandidate(
+                        let bounds: CGRect?
+                        if let left = $0.boundsLeft?.doubleValue,
+                           let top = $0.boundsTop?.doubleValue,
+                           let right = $0.boundsRight?.doubleValue,
+                           let bottom = $0.boundsBottom?.doubleValue {
+                            bounds = CGRect(x: left, y: top, width: right - left, height: bottom - top)
+                        } else {
+                            bounds = nil
+                        }
+                        let videoFrameTimeSeconds = $0.videoFrameTimeMs.map { Double(truncating: $0) / 1000.0 }
+                        let videoFramePreviewURL = Self.restoreURL(from: $0.videoFramePreviewUri)
+                        return ComposerState.PlateCandidate(
                             plate: $0.plate,
                             confidence: Double($0.confidence),
+                            rawPlateText: $0.rawPlateText,
+                            wasPlateCorrected: $0.wasPlateCorrected,
                             state: $0.state,
                             stateConfidence: $0.stateConfidence?.doubleValue,
                             plateType: $0.plateType,
                             plateTypeLabel: $0.plateTypeLabel,
-                            bounds: nil,
-                            videoFramePreview: nil,
-                            videoFrameTimeSeconds: nil
+                            bounds: bounds,
+                            plateCropPreview: nil,
+                            videoFramePreview: videoFramePreviewURL.flatMap { UIImage(contentsOfFile: $0.path) },
+                            videoFramePreviewURL: videoFramePreviewURL,
+                            videoFrameTimeSeconds: videoFrameTimeSeconds
                         )
                     }
                     state.selectedPlateCandidate = draft.selectedPlateCandidate
@@ -513,6 +733,12 @@ final class ComposerViewModel: ObservableObject {
                 state.error = error.localizedDescription
             }
         }
+    }
+
+    func reloadDraft() {
+        state = ComposerState()
+        refreshRemoteConfigValues()
+        loadDraft()
     }
 
     func onComplaintTileChosen(_ complaintId: String) {
@@ -530,6 +756,10 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func onPrimaryMediaChosen(_ media: ComposerState.SubmissionMedia, complaintId: String) {
+        if let mediaError = mediaLimitError(for: media, replacingPrimary: true), state.primaryMedia?.fileURL != media.fileURL {
+            state.validationErrors.media = mediaError
+            return
+        }
         state.selectedComplaintId = complaintId
         state.selectedComplaintIds = [complaintId]
         state.primaryMedia = media
@@ -541,12 +771,22 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func onUploadMediaChosen(_ media: ComposerState.SubmissionMedia) {
+        if let mediaError = mediaLimitError(for: media, replacingPrimary: true) {
+            state.validationErrors.media = mediaError
+            return
+        }
         state.pendingMediaSelection = media
         state.complaintSheetOpen = true
     }
 
     func confirmPendingComplaint(_ complaintId: String) {
         guard let pending = state.pendingMediaSelection else { return }
+        if let mediaError = mediaLimitError(for: pending, replacingPrimary: true) {
+            state.pendingMediaSelection = nil
+            state.complaintSheetOpen = false
+            state.validationErrors.media = mediaError
+            return
+        }
         state.selectedComplaintId = complaintId
         state.selectedComplaintIds = [complaintId]
         state.primaryMedia = pending
@@ -559,9 +799,37 @@ final class ComposerViewModel: ObservableObject {
         persistDraft()
     }
 
-    func addExtraMedia(_ media: ComposerState.SubmissionMedia) {
+    @discardableResult
+    func addExtraMedia(_ media: ComposerState.SubmissionMedia) -> Bool {
+        if let mediaError = mediaLimitError(for: media, replacingPrimary: false) {
+            state.validationErrors.media = mediaError
+            return false
+        }
         state.extraMedia.append(media)
         state.validationErrors.media = nil
+        persistDraft()
+        return true
+    }
+
+    func markMediaLimitReached() {
+        state.validationErrors.media = maxSubmissionMediaMessage
+    }
+
+    func removeMedia(_ media: ComposerState.SubmissionMedia) {
+        if state.primaryMedia?.fileURL == media.fileURL {
+            let nextPrimary = state.extraMedia.first
+            state.primaryMedia = nextPrimary
+            state.extraMedia = nextPrimary == nil ? [] : Array(state.extraMedia.dropFirst())
+            state.plateCandidates = []
+            state.selectedPlateCandidate = nil
+            state.plate = ""
+            state.detectionResultMessage = nil
+            if nextPrimary == nil && state.selectedComplaintId == nil {
+                state.stage = .pickMedia
+            }
+        } else {
+            state.extraMedia.removeAll { $0.fileURL == media.fileURL }
+        }
         persistDraft()
     }
 
@@ -571,6 +839,18 @@ final class ComposerViewModel: ObservableObject {
         state.detectionMessage = process ? "Detecting plates" : nil
         state.detectionResultMessage = process ? nil : "Video plate detection skipped."
         state.detectionProgress = process ? 0.05 : 0
+        state.detectionFramePreview = nil
+        state.detectionFrameTimeSeconds = 0
+        state.detectionVideoDurationSeconds = 0
+        state.detectionFrameCandidates = []
+    }
+
+    func cancelVideoProcessing() {
+        state.awaitingVideoProcessingDecision = false
+        state.detectingPlates = false
+        state.detectionMessage = nil
+        state.detectionResultMessage = nil
+        state.detectionProgress = 0
         state.detectionFramePreview = nil
         state.detectionFrameTimeSeconds = 0
         state.detectionVideoDurationSeconds = 0
@@ -607,7 +887,7 @@ final class ComposerViewModel: ObservableObject {
         let detectedState = candidates.first { $0.plate == inferredPlate }?.state ?? candidates.first?.state
         state.detectingPlates = false
         state.detectionMessage = nil
-        state.detectionResultMessage = candidates.isEmpty ? "Scan complete. No license plates were detected." : nil
+        state.detectionResultMessage = nil
         state.detectionProgress = 0
         state.detectionFramePreview = nil
         state.detectionFrameTimeSeconds = 0
@@ -639,9 +919,11 @@ final class ComposerViewModel: ObservableObject {
 
     func updateAddressQuery(_ value: String) {
         state.addressQuery = value
+        state.address = value
         if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             state.validationErrors.address = nil
         }
+        persistDraft()
     }
 
     func setAddressSuggestions(_ suggestions: [ComposerState.AddressSuggestion], loading: Bool = false) {
@@ -666,14 +948,18 @@ final class ComposerViewModel: ObservableObject {
 
     func applyDetectedMetadata(
         occurredAtIso: String? = nil,
+        photoOccurredAtIso: String? = nil,
         latitude: Double? = nil,
         longitude: Double? = nil,
         inferredState: String? = nil,
         inferredAddress: String? = nil
     ) {
         if let occurredAtIso { state.occurredAtIso = occurredAtIso }
-        if let latitude { state.latitude = latitude }
-        if let longitude { state.longitude = longitude }
+        if let photoOccurredAtIso { state.photoOccurredAtIso = photoOccurredAtIso }
+        if Self.isUsableCoordinate(latitude: latitude, longitude: longitude) {
+            state.latitude = latitude
+            state.longitude = longitude
+        }
         if let inferredState { state.plateRegion = inferredState }
         if let inferredAddress {
             state.address = inferredAddress
@@ -693,7 +979,14 @@ final class ComposerViewModel: ObservableObject {
         notes: String? = nil,
         occurredAtIso: String? = nil
     ) {
-        if let plate { state.plate = plate }
+        if let plate {
+            let normalizedPlate = Self.normalizedPlateInput(plate)
+            if normalizedPlate != state.plate {
+                state.keptPlateCorrectionRaw = nil
+            }
+            state.plate = normalizedPlate
+            state.plateCorrectionPrompt = nil
+        }
         if let plateRegion { state.plateRegion = plateRegion.uppercased() }
         if let address {
             state.address = address
@@ -709,6 +1002,30 @@ final class ComposerViewModel: ObservableObject {
         persistDraft()
     }
 
+    func acceptPlateCorrection() {
+        guard let prompt = state.plateCorrectionPrompt else { return }
+        state.plate = prompt.suggestedPlate
+        state.plateRegion = prompt.state
+        state.plateCorrectionPrompt = nil
+        state.keptPlateCorrectionRaw = nil
+        state.validationErrors.plate = nil
+        state.validationErrors.plateRegion = nil
+        persistDraft()
+    }
+
+    func keepPlateCorrection() {
+        guard let prompt = state.plateCorrectionPrompt else { return }
+        state.plateCorrectionPrompt = nil
+        state.keptPlateCorrectionRaw = prompt.rawPlate
+        state.validationErrors.plate = nil
+        state.validationErrors.plateRegion = nil
+    }
+
+    func dismissPlateCorrection() {
+        state.plateCorrectionPrompt = nil
+        state.validationErrors.plate = "Review the plate format before submitting."
+    }
+
     func toggleComplaint(_ complaintId: String) {
         if state.selectedComplaintIds.contains(complaintId) {
             state.selectedComplaintIds.removeAll { $0 == complaintId }
@@ -718,28 +1035,49 @@ final class ComposerViewModel: ObservableObject {
         persistDraft()
     }
 
+    func persistCurrentDraft() {
+        persistDraft()
+    }
+
+    func clearDraft() {
+        let draftMediaURLs = currentDraftMediaURLs()
+        Task {
+            try? await SharedBridge.shared.container.clearDraftUseCase.execute()
+        }
+        PersistentMediaStore.deleteStoredMedia(draftMediaURLs)
+        state = ComposerState(draftLoaded: true)
+    }
+
     private func persistDraft() {
         let draft = ReportDraft(
             plate: state.plate,
             plateRegion: state.plateRegion,
-            address: state.address,
-            description: state.description,
-            notes: state.notes,
+            address: state.addressQuery.isEmpty ? state.address : state.addressQuery,
+            description: Self.cleanDraftText(state.description),
+            notes: Self.cleanDraftText(state.notes),
             complaintIds: state.selectedComplaintId.map { [$0] } ?? state.selectedComplaintIds,
             occurredAtIso: state.occurredAtIso,
             selectedComplaintId: state.selectedComplaintId,
             stage: state.stage == .verify ? "VERIFY" : "PICK_MEDIA",
             primaryMedia: state.primaryMedia.map { media in
-                DraftMedia(
-                    uri: media.fileURL.absoluteString,
+                let fileURL = PersistentMediaStore.persistableURL(
+                    for: media.fileURL,
+                    displayName: media.displayName
+                )
+                return DraftMedia(
+                    uri: fileURL.absoluteString,
                     displayName: media.displayName,
                     mimeType: "",
                     isVideo: media.isVideo
                 )
             },
             extraMedia: state.extraMedia.map {
-                DraftMedia(
-                    uri: $0.fileURL.absoluteString,
+                let fileURL = PersistentMediaStore.persistableURL(
+                    for: $0.fileURL,
+                    displayName: $0.displayName
+                )
+                return DraftMedia(
+                    uri: fileURL.absoluteString,
                     displayName: $0.displayName,
                     mimeType: "",
                     isVideo: $0.isVideo
@@ -748,24 +1086,29 @@ final class ComposerViewModel: ObservableObject {
             latitude: state.latitude.map { KotlinDouble(double: $0) },
             longitude: state.longitude.map { KotlinDouble(double: $0) },
             plateCandidates: state.plateCandidates.map {
-                DraftPlateCandidate(
+                let videoFramePreviewURL = Self.persistedVideoFramePreviewURL(for: $0)
+                return DraftPlateCandidate(
                     plate: $0.plate,
                     confidence: Float($0.confidence),
+                    rawPlateText: $0.rawPlateText,
+                    wasPlateCorrected: $0.wasPlateCorrected,
                     state: $0.state,
                     stateConfidence: $0.stateConfidence.map { KotlinFloat(float: Float($0)) },
                     plateType: $0.plateType,
                     plateTypeLabel: $0.plateTypeLabel,
                     focalPointX: nil,
                     focalPointY: nil,
-                    boundsLeft: nil,
-                    boundsTop: nil,
-                    boundsRight: nil,
-                    boundsBottom: nil,
+                    boundsLeft: $0.bounds.map { KotlinFloat(float: Float($0.minX)) },
+                    boundsTop: $0.bounds.map { KotlinFloat(float: Float($0.minY)) },
+                    boundsRight: $0.bounds.map { KotlinFloat(float: Float($0.maxX)) },
+                    boundsBottom: $0.bounds.map { KotlinFloat(float: Float($0.maxY)) },
                     rotationDegrees: 0,
                     cornerPoints: [],
+                    sourceImageWidth: nil,
+                    sourceImageHeight: nil,
                     thumbnailUri: nil,
-                    videoFramePreviewUri: nil,
-                    videoFrameTimeMs: nil
+                    videoFramePreviewUri: videoFramePreviewURL?.absoluteString,
+                    videoFrameTimeMs: $0.videoFrameTimeSeconds.map { KotlinLong(longLong: Int64($0 * 1000)) }
                 )
             },
             selectedPlateCandidate: state.selectedPlateCandidate
@@ -776,57 +1119,474 @@ final class ComposerViewModel: ObservableObject {
     }
 
     private static func restoreSubmissionMedia(from media: DraftMedia) -> ComposerState.SubmissionMedia? {
-        let url = URL(string: media.uri) ?? URL(fileURLWithPath: media.uri)
+        guard let restoredURL = restoreURL(from: media.uri) else {
+            return nil
+        }
         return ComposerState.SubmissionMedia(
-            fileURL: url,
+            fileURL: restoredURL,
             displayName: media.displayName,
             isVideo: media.isVideo
         )
     }
 
-    func submit() {
-        state.error = nil
-        let validationErrors = validateSubmission()
-        if validationErrors.hasErrors {
-            state.loading = false
-            state.validationErrors = validationErrors
-            state.stage = .verify
-            return
+    private static func restoreURL(from value: String?) -> URL? {
+        guard let value, !value.isEmpty else { return nil }
+        let url = URL(string: value) ?? URL(fileURLWithPath: value)
+        return PersistentMediaStore.restoredURL(from: url)
+    }
+
+    private static func persistedVideoFramePreviewURL(for candidate: ComposerState.PlateCandidate) -> URL? {
+        if let url = candidate.videoFramePreviewURL,
+           FileManager.default.fileExists(atPath: url.path) {
+            return url
         }
+        guard let data = candidate.videoFramePreview?.jpegData(compressionQuality: 0.82) else {
+            return nil
+        }
+        let timeMs = Int((candidate.videoFrameTimeSeconds ?? 0) * 1000)
+        let name = "video-frame-\(candidate.plate)-\(timeMs)"
+        return try? PersistentMediaStore.saveReplacing(data: data, preferredName: name, fileExtension: "jpg")
+    }
+
+    private static func cleanDraftText(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("ReportDraft(") || trimmed.contains("primaryMedia=DraftMedia(") {
+            return ""
+        }
+        return value
+    }
+
+    private static func isUsableCoordinate(latitude: Double?, longitude: Double?) -> Bool {
+        guard let latitude, let longitude else { return false }
+        guard latitude.isFinite, longitude.isFinite else { return false }
+        guard abs(latitude) <= 90, abs(longitude) <= 180 else { return false }
+        return abs(latitude) > 0.000001 || abs(longitude) > 0.000001
+    }
+
+    func submit() {
+        print("ReportedSubmit: submit requested; validating")
+        guard prepareSubmit() else { return }
         state.loading = true
+        state.submitProgress = 0
+        state.submitMessage = "Preparing report"
         state.validationErrors = ComposerState.ValidationErrors()
+        let submittedMedia = [state.primaryMedia].compactMap { $0 } + state.extraMedia
+        let submittedMediaURLs = submittedMedia.map(\.fileURL) + state.plateCandidates.compactMap(Self.persistedVideoFramePreviewURL)
+        print("ReportedSubmit: validated report; media=\(submittedMedia.count) plate=\(state.plate)/\(state.plateRegion) complaintIds=\(state.selectedComplaintIds)")
         Task {
             do {
+                await MainActor.run {
+                    state.submitProgress = 0.02
+                    state.submitMessage = "Uploading media"
+                }
+                let mediaFiles = try await ParseMediaUploader.uploadAll(submittedMedia) { progress in
+                    await MainActor.run {
+                        self.state.submitProgress = min(max(progress.overallFraction * 0.82, 0), 0.82)
+                        self.state.submitMessage = "\(progress.message) (\(Int(progress.fileFraction * 100))%)"
+                    }
+                }
+                print("ReportedSubmit: media upload complete; parseFiles=\(mediaFiles.count)")
                 let command = SubmitReportCommand(
                     plate: state.plate,
                     plateRegion: state.plateRegion,
                     description: state.description,
                     notes: state.notes,
-                    address: state.address,
+                    address: state.addressQuery.isEmpty ? state.address : state.addressQuery,
                     complaintIds: state.selectedComplaintIds,
                     timeOfIncidentIso: state.occurredAtIso.isEmpty ? nil : state.occurredAtIso,
                     latitude: state.latitude.map { KotlinDouble(double: $0) },
                     longitude: state.longitude.map { KotlinDouble(double: $0) },
-                    mediaUrls: []
+                    mediaUrls: [],
+                    mediaFiles: mediaFiles
                 )
-                try await SharedBridge.shared.container.submitReportUseCase.execute(command: command)
+                await MainActor.run {
+                    state.submitProgress = 0.88
+                    state.submitMessage = "Submitting report"
+                }
+                let submittedObjectId = try await SharedBridge.shared.container.submitReportUseCase.execute(command: command)
+                print("ReportedSubmit: Parse submission complete; cleaning local media")
+                await MainActor.run {
+                    state.submitProgress = 0.96
+                    state.submitMessage = "Cleaning up"
+                }
                 try? await SharedBridge.shared.container.clearDraftUseCase.execute()
+                PersistentMediaStore.deleteStoredMedia(submittedMediaURLs)
+                print("ReportedSubmit: submit flow finished successfully")
                 state = ComposerState()
+                submittedReportObjectId = submittedObjectId
             } catch {
+                print("ReportedSubmit: submit flow failed \(error)")
                 state.loading = false
+                state.submitProgress = nil
+                state.submitMessage = nil
                 state.error = error.localizedDescription
             }
         }
     }
 
+    func consumeSubmittedReport() {
+        submittedReportObjectId = nil
+    }
+
+    private func currentDraftMediaURLs() -> [URL] {
+        let mediaURLs = [state.primaryMedia].compactMap { $0?.fileURL } + state.extraMedia.map(\.fileURL)
+        let framePreviewURLs = state.plateCandidates.compactMap(Self.persistedVideoFramePreviewURL)
+        return mediaURLs + framePreviewURLs
+    }
+
+    func prepareSubmit() -> Bool {
+        state.error = nil
+        if let suggestion = PlatePatternClassifier.shared.suggestedCorrection(rawPlate: state.plate),
+           state.keptPlateCorrectionRaw != state.plate {
+            state.loading = false
+            state.plateCorrectionPrompt = ComposerState.PlateCorrectionPrompt(
+                rawPlate: state.plate,
+                suggestedPlate: suggestion.normalizedPlate,
+                state: suggestion.state,
+                label: suggestion.label
+            )
+            state.validationErrors.plate = nil
+            state.validationErrors.plateRegion = nil
+            return false
+        }
+        let validationErrors = validateSubmission()
+        if validationErrors.hasErrors {
+            state.loading = false
+            state.validationErrors = validationErrors
+            state.stage = .verify
+            return false
+        }
+        state.validationErrors = ComposerState.ValidationErrors()
+        return true
+    }
+
     private func validateSubmission() -> ComposerState.ValidationErrors {
         ComposerState.ValidationErrors(
-            media: state.primaryMedia == nil ? "Add at least one photo or video." : nil,
+            media: {
+                if state.primaryMedia == nil {
+                    return "Add at least one photo or video."
+                }
+                if mediaItems.count > maxSubmissionMediaCount {
+                    return maxSubmissionMediaMessage
+                }
+                if mediaItems.filter(\.isVideo).count > maxSubmissionVideoCount {
+                    return maxSubmissionVideoMessage
+                }
+                return nil
+            }(),
             complaint: state.selectedComplaintId == nil ? "Choose a complaint type." : nil,
-            plate: state.plate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter the license plate." : nil,
+            plate: {
+                if state.plate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return "Enter the license plate."
+                }
+                if state.plate.count > 8 {
+                    return "License plate must be 8 characters or fewer."
+                }
+                return nil
+            }(),
             plateRegion: state.plateRegion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose a state." : nil,
             address: state.addressQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && state.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter or choose an address." : nil,
             occurredAt: state.occurredAtIso.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose when this happened." : nil
         )
+    }
+
+    private static func normalizedPlateInput(_ value: String) -> String {
+        let normalized = value
+            .uppercased()
+            .filter { $0.isLetter || $0.isNumber }
+        return String(normalized.prefix(8))
+    }
+
+    private var mediaItems: [ComposerState.SubmissionMedia] {
+        var items: [ComposerState.SubmissionMedia] = []
+        if let primaryMedia = state.primaryMedia {
+            items.append(primaryMedia)
+        }
+        items.append(contentsOf: state.extraMedia)
+        return items
+    }
+
+    private func mediaLimitError(
+        for media: ComposerState.SubmissionMedia,
+        replacingPrimary: Bool
+    ) -> String? {
+        let existingMedia = replacingPrimary ? state.extraMedia : mediaItems
+        if existingMedia.contains(where: { $0.fileURL == media.fileURL }) {
+            return duplicateSubmissionMediaMessage
+        }
+        if existingMedia.count + 1 > maxSubmissionMediaCount {
+            return maxSubmissionMediaMessage
+        }
+        if media.isVideo && existingMedia.filter(\.isVideo).count >= maxSubmissionVideoCount {
+            return maxSubmissionVideoMessage
+        }
+        return nil
+    }
+}
+
+enum ParseMediaUploader {
+    struct UploadProgress {
+        let completedBytes: Int64
+        let totalBytes: Int64
+        let currentFileIndex: Int
+        let totalFiles: Int
+        let message: String
+
+        var fileFraction: Double {
+            guard totalBytes > 0 else { return 0 }
+            return min(max(Double(completedBytes) / Double(totalBytes), 0), 1)
+        }
+
+        var overallFraction: Double {
+            let count = max(totalFiles, 1)
+            return min(max((Double(currentFileIndex) + fileFraction) / Double(count), 0), 1)
+        }
+    }
+
+    static func uploadAll(
+        _ media: [ComposerState.SubmissionMedia],
+        onProgress: @escaping (UploadProgress) async -> Void = { _ in }
+    ) async throws -> [SubmitReportMediaFile] {
+        print("ReportedSubmit: media upload batch starting; count=\(media.count)")
+        var uploaded: [SubmitReportMediaFile] = []
+        for (index, item) in media.enumerated() {
+            if let file = try await upload(item, index: index, totalFiles: media.count, onProgress: onProgress) {
+                uploaded.append(file)
+            }
+        }
+        print("ReportedSubmit: media upload batch finished; uploaded=\(uploaded.count)/\(media.count)")
+        return uploaded
+    }
+
+    private static func upload(
+        _ media: ComposerState.SubmissionMedia,
+        index: Int,
+        totalFiles: Int,
+        onProgress: @escaping (UploadProgress) async -> Void
+    ) async throws -> SubmitReportMediaFile? {
+        guard let url = try await uploadUrl(media, index: index, totalFiles: totalFiles, onProgress: onProgress) else { return nil }
+        return SubmitReportMediaFile(url: url, isVideo: media.isVideo)
+    }
+
+    private static func uploadUrl(
+        _ media: ComposerState.SubmissionMedia,
+        index: Int,
+        totalFiles: Int,
+        onProgress: @escaping (UploadProgress) async -> Void
+    ) async throws -> String? {
+        let payload = try await makePayload(for: media)
+        let filename = sanitizeFilename(payload.filename)
+        let encodedName = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? filename
+        guard let uploadURL = URL(string: "\(parseBaseUrl())/files/\(encodedName)") else {
+            throw NSError(
+                domain: "Reported.ParseMediaUploader",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid Parse upload URL."]
+            )
+        }
+
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue(parseApplicationId(), forHTTPHeaderField: "X-Parse-Application-Id")
+        request.setValue(parseJavascriptKey(), forHTTPHeaderField: "X-Parse-JavaScript-Key")
+        request.setValue(payload.mimeType, forHTTPHeaderField: "Content-Type")
+
+        print("ReportedSubmit: uploading media \(index + 1)/\(totalFiles) name=\(filename) type=\(payload.mimeType) bytes=\(payload.data.count) compressed=\(payload.compressed)")
+        let (responseData, response) = try await upload(
+            request: request,
+            data: payload.data,
+            index: index,
+            totalFiles: totalFiles,
+            onProgress: onProgress
+        )
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(
+                domain: "Reported.ParseMediaUploader",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Parse media upload returned an invalid response."]
+            )
+        }
+        print("ReportedSubmit: media upload response \(httpResponse.statusCode); name=\(filename)")
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: responseData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "Reported.ParseMediaUploader",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Media upload failed: \(httpResponse.statusCode) \(body)"]
+            )
+        }
+        let json = try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        return json?["url"] as? String
+    }
+
+    private static func upload(
+        request: URLRequest,
+        data: Data,
+        index: Int,
+        totalFiles: Int,
+        onProgress: @escaping (UploadProgress) async -> Void
+    ) async throws -> (Data, URLResponse) {
+        let delegate = UploadProgressDelegate { sent, total in
+            Task {
+                await onProgress(
+                    UploadProgress(
+                        completedBytes: sent,
+                        totalBytes: total > 0 ? total : Int64(data.count),
+                        currentFileIndex: index,
+                        totalFiles: totalFiles,
+                        message: "Uploading media \(index + 1) of \(totalFiles)"
+                    )
+                )
+            }
+        }
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = session.uploadTask(with: request, from: data) { responseData, response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let responseData, let response else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "Reported.ParseMediaUploader",
+                            code: 3,
+                            userInfo: [NSLocalizedDescriptionKey: "Parse media upload returned no response."]
+                        )
+                    )
+                    return
+                }
+                continuation.resume(returning: (responseData, response))
+            }
+            task.resume()
+        }
+    }
+
+    private static func makePayload(for media: ComposerState.SubmissionMedia) async throws -> UploadPayload {
+        let original = try await Task.detached(priority: .utility) {
+            try Data(contentsOf: media.fileURL)
+        }.value
+        let rawName = media.displayName.isEmpty ? defaultFilename(for: media) : media.displayName
+        guard !media.isVideo else {
+            return UploadPayload(
+                data: original,
+                filename: rawName,
+                mimeType: mimeType(for: media),
+                compressed: false
+            )
+        }
+        return makeJpegPayload(original: original, rawName: rawName) ?? UploadPayload(
+            data: original,
+            filename: rawName,
+            mimeType: mimeType(for: media),
+            compressed: false
+        )
+    }
+
+    private static func makeJpegPayload(
+        original: Data,
+        rawName: String
+    ) -> UploadPayload? {
+        guard
+            let source = CGImageSourceCreateWithData(original as CFData, nil),
+            let image = UIImage(data: original)?.cgImage
+        else {
+            return nil
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output as CFMutableData,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+        var properties = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]) ?? [:]
+        properties[kCGImageDestinationLossyCompressionQuality] = 0.84
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        let baseName = rawName.replacingOccurrences(
+            of: "\\.[^.]+$",
+            with: "",
+            options: .regularExpression
+        )
+        print("ReportedSubmit: JPEG image prepared; original=\(original.count) jpeg=\(output.length)")
+        return UploadPayload(
+            data: output as Data,
+            filename: "\(baseName).jpg",
+            mimeType: "image/jpeg",
+            compressed: true
+        )
+    }
+
+    private static func defaultFilename(for media: ComposerState.SubmissionMedia) -> String {
+        let lastPath = media.fileURL.lastPathComponent
+        if !lastPath.isEmpty { return lastPath }
+        return media.isVideo ? "video.mov" : "photo.jpg"
+    }
+
+    private static func sanitizeFilename(_ value: String) -> String {
+        let fallback = value.isEmpty ? "media" : value
+        return fallback.replacingOccurrences(
+            of: "[^A-Za-z0-9._-]",
+            with: "_",
+            options: .regularExpression
+        )
+    }
+
+    private static func mimeType(for media: ComposerState.SubmissionMedia) -> String {
+        if let type = UTType(filenameExtension: media.fileURL.pathExtension),
+           let mimeType = type.preferredMIMEType {
+            return mimeType
+        }
+        return media.isVideo ? "video/quicktime" : "image/jpeg"
+    }
+
+    private static func parseBaseUrl() -> String {
+        let fallback = ProcessInfo.processInfo.environment["REPORTED_PARSE_SERVER_URL"] ?? "https://parseapi.back4app.com"
+        let raw = RemoteConfigOverrides.shared.parseServerUrl(fallback: fallback)
+        let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if trimmed.hasSuffix("/parse") || trimmed.contains("parseapi.back4app.com") {
+            return trimmed
+        }
+        return "\(trimmed)/parse"
+    }
+
+    private static func parseApplicationId() -> String {
+        ProcessInfo.processInfo.environment["REPORTED_PARSE_APPLICATION_ID"] ?? "jkAZF8ojV4vOGnhSBjdwiMWBKpWML5tM4SWGKgOV"
+    }
+
+    private static func parseJavascriptKey() -> String {
+        ProcessInfo.processInfo.environment["REPORTED_PARSE_JAVASCRIPT_KEY"] ?? "LeBKOerWTXGBGRLE0yvg2bXa5RRv4e8PuC6INEFA"
+    }
+
+    private struct UploadPayload {
+        let data: Data
+        let filename: String
+        let mimeType: String
+        let compressed: Bool
+    }
+
+    private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate {
+        private let onProgress: (Int64, Int64) -> Void
+
+        init(onProgress: @escaping (Int64, Int64) -> Void) {
+            self.onProgress = onProgress
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            didSendBodyData bytesSent: Int64,
+            totalBytesSent: Int64,
+            totalBytesExpectedToSend: Int64
+        ) {
+            onProgress(totalBytesSent, totalBytesExpectedToSend)
+        }
     }
 }

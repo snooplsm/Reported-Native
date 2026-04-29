@@ -77,6 +77,8 @@ data class DraftMedia(
 data class DraftPlateCandidate(
     val plate: String,
     val confidence: Float,
+    val rawPlateText: String? = null,
+    val wasPlateCorrected: Boolean = false,
     val state: String? = null,
     val stateConfidence: Float? = null,
     val plateType: String? = null,
@@ -89,6 +91,8 @@ data class DraftPlateCandidate(
     val boundsBottom: Float? = null,
     val rotationDegrees: Float = 0f,
     val cornerPoints: List<Float> = emptyList(),
+    val sourceImageWidth: Int? = null,
+    val sourceImageHeight: Int? = null,
     val thumbnailUri: String? = null,
     val videoFramePreviewUri: String? = null,
     val videoFrameTimeMs: Long? = null
@@ -123,5 +127,11 @@ data class SubmitReportCommand(
     val timeOfIncidentIso: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val mediaUrls: List<String> = emptyList()
+    val mediaUrls: List<String> = emptyList(),
+    val mediaFiles: List<SubmitReportMediaFile> = emptyList()
+)
+
+data class SubmitReportMediaFile(
+    val url: String,
+    val isVideo: Boolean = false
 )

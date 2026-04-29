@@ -3,7 +3,9 @@ package com.reported.nativeandroid.screens
 import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.providers.NNAPIFlags
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -16,6 +18,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.util.Log
+import androidx.exifinterface.media.ExifInterface
+import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.app.PlateCandidate
 import com.reported.nativeandroid.app.SubmissionMedia
 import com.reported.shared.model.PlatePatternClassifier
@@ -29,6 +34,9 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.util.Collections
+import java.util.EnumSet
+import java.util.WeakHashMap
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -50,6 +58,7 @@ private const val PLATE_SEGMENTATION_ASSET = "models/reported-plate-seg.onnx"
 private const val VEHICLE_SEGMENTATION_ASSET = "models/yolov8n-seg.onnx"
 private const val VEHICLE_SEGMENTATION_NMS_ASSET = "models/nms-yolov8.onnx"
 private const val DETECTOR_SIZE = 640
+private const val COMPLAINT_DETECTOR_SIZE = 512
 private const val VEHICLE_SEGMENTATION_SIZE = 640
 private const val VEHICLE_SEGMENTATION_CLASSES = 80
 private const val VEHICLE_SEGMENTATION_ROW_SIZE = 116
@@ -65,6 +74,8 @@ private const val COMPLAINT_BLOCKED_CROSSWALK = "blocked_crosswalk"
 private const val COMPLAINT_CLASS_BLOCKED_BIKE_LANE = 0
 private const val COMPLAINT_CLASS_BLOCKED_CROSSWALK = 1
 private const val COMPLAINT_DETECTION_THRESHOLD = 0.9f
+private const val MEDIA_SCANNER_LOG_TAG = "ReportedMediaScanner"
+private const val PLATE_DETECTION_LOG_TAG = "ReportedPlateDetection"
 private const val PLATE_STATE_SIZE = 160
 private const val PLATE_SEGMENTATION_SIZE = 160
 private const val OCR_WIDTH = 140
@@ -79,6 +90,8 @@ private const val MAX_DESKEW_DEGREES = 20
 private const val EDGE_THRESHOLD = 32
 private const val PLATE_AXIS_PADDING = 0.45f
 private const val PLATE_CROSS_AXIS_PADDING = 0.65f
+private const val PLATE_LIKE_MIN_ASPECT_RATIO = 2.0f
+private const val PLATE_LIKE_MAX_ASPECT_RATIO = 6.5f
 private const val ROTATED_MATCH_DISTANCE_MULTIPLIER = 2.5f
 private const val VIDEO_FRAME_STRIDE = 3
 private const val VIDEO_DETECTION_BATCH_SIZE = 3
@@ -166,6 +179,11 @@ private data class PlateStateClassification(
     val label: String
 )
 
+private data class ComplaintRegion(
+    val label: Int,
+    val detection: Detection
+)
+
 internal data class VideoFrameScanProgress(
     val processedFrames: Int,
     val totalFrames: Int,
@@ -175,6 +193,11 @@ internal data class VideoFrameScanProgress(
     val framePreviewUri: String? = null,
     val frameCandidates: List<PlateCandidate> = emptyList(),
     val allCandidates: List<PlateCandidate> = emptyList()
+)
+
+internal data class LiveFrameDetectionResult(
+    val candidates: List<PlateCandidate>,
+    val complaintId: String?
 )
 
 internal object NativeAlprEngine {
@@ -187,36 +210,79 @@ internal object NativeAlprEngine {
     private var plateSegmentationSession: OrtSession? = null
     private var vehicleSegmentationSession: OrtSession? = null
     private var vehicleSegmentationNmsSession: OrtSession? = null
+    private val sessionLabels = Collections.synchronizedMap(WeakHashMap<OrtSession, String>())
+    private val profiledSessions = Collections.synchronizedSet(Collections.newSetFromMap(WeakHashMap<OrtSession, Boolean>()))
 
-    suspend fun detectLicensePlates(context: Context, media: SubmissionMedia): List<PlateCandidate> =
+    suspend fun detectLicensePlates(
+        context: Context,
+        media: SubmissionMedia,
+        expectedComplaintHint: String? = null
+    ): List<PlateCandidate> =
         withContext(Dispatchers.IO) {
+            Log.d(
+                PLATE_DETECTION_LOG_TAG,
+                "New report ALPR requested: uri=${media.uri}, sourceUri=${media.sourceUri}, mime=${media.mimeType}, isVideo=${media.isVideo}, hint=$expectedComplaintHint"
+            )
             if (media.isVideo) {
+                Log.d(PLATE_DETECTION_LOG_TAG, "Skipping image ALPR because selected media is video")
                 return@withContext emptyList()
             }
 
-            val bitmap = decodeBitmap(context, Uri.parse(media.uri)) ?: return@withContext emptyList()
-            val sessions = getSessions(context.applicationContext)
-            detectLicensePlatesInBitmap(context, bitmap, sessions)
+            val bitmap = decodeBitmap(context, Uri.parse(media.uri))
+            if (bitmap == null) {
+                Log.d(PLATE_DETECTION_LOG_TAG, "Image decode failed for uri=${media.uri}")
+                return@withContext emptyList()
+            }
+            Log.d(PLATE_DETECTION_LOG_TAG, "Decoded bitmap for ALPR: ${bitmap.width}x${bitmap.height}")
+            val sessions = getSessionsOrNull(context.applicationContext)
+            if (sessions == null) {
+                Log.d(PLATE_DETECTION_LOG_TAG, "ALPR session load failed or unavailable")
+                return@withContext emptyList()
+            }
+            detectLicensePlatesInBitmap(context, bitmap, sessions, expectedComplaintHint).also { candidates ->
+                Log.d(
+                    PLATE_DETECTION_LOG_TAG,
+                    "New report ALPR finished: candidates=${candidates.size} ${candidates.toCandidateLogSummary()}"
+                )
+            }
         }
 
     suspend fun inferComplaintId(context: Context, media: SubmissionMedia): String? =
         withContext(Dispatchers.IO) {
             if (media.isVideo) return@withContext null
             val bitmap = decodeBitmap(context, Uri.parse(media.uri)) ?: return@withContext null
-            val sessions = getSessions(context.applicationContext)
+            val sessions = getSessionsOrNull(context.applicationContext) ?: return@withContext null
             detectComplaint(bitmap, sessions.complaint)
         }
+
+    suspend fun detectLiveFrame(
+        context: Context,
+        bitmap: Bitmap,
+        expectedComplaintHint: String? = null
+    ): LiveFrameDetectionResult = withContext(Dispatchers.IO) {
+        val sessions = getSessionsOrNull(context.applicationContext)
+            ?: return@withContext LiveFrameDetectionResult(emptyList(), null)
+        val candidates = detectLicensePlatesInBitmap(context, bitmap, sessions, expectedComplaintHint)
+        val complaintId = if (candidates.isNotEmpty()) {
+            detectComplaint(bitmap, sessions.complaint)
+        } else {
+            null
+        }
+        LiveFrameDetectionResult(candidates, complaintId)
+    }
 
     suspend fun detectLicensePlatesInVideo(
         context: Context,
         media: SubmissionMedia,
+        startTimeMs: Long = 0L,
+        expectedComplaintHint: String? = null,
         onProgress: suspend (VideoFrameScanProgress) -> Unit
     ): List<PlateCandidate> = withContext(Dispatchers.IO) {
         if (!media.isVideo) {
-            return@withContext detectLicensePlates(context, media)
+            return@withContext detectLicensePlates(context, media, expectedComplaintHint)
         }
 
-        val sessions = getSessions(context.applicationContext)
+        val sessions = getSessionsOrNull(context.applicationContext) ?: return@withContext emptyList()
         val retriever = MediaMetadataRetriever()
         val bestCandidatesByPlate = linkedMapOf<String, PlateCandidate>()
         try {
@@ -249,7 +315,17 @@ internal object NativeAlprEngine {
 
             val recentProcessedFramesHadPlate = ArrayDeque<Boolean>(VIDEO_DRY_PROCESSED_FRAME_COUNT)
             var lastSuccessfulFallbackRotationDegrees: Float? = null
-            var index = 0
+            val startFrameIndex = if (startTimeMs > 0L && durationUs > 0L) {
+                val requestedFrame = if (frameCount != null) {
+                    ((startTimeMs * 1_000L).toDouble() / durationUs.toDouble() * totalFrames.toDouble()).roundToInt()
+                } else {
+                    ((startTimeMs * 1_000L).toDouble() / frameIntervalUs.toDouble()).roundToInt()
+                }
+                (requestedFrame / VIDEO_FRAME_STRIDE * VIDEO_FRAME_STRIDE).coerceIn(0, totalFrames - 1)
+            } else {
+                0
+            }
+            var index = startFrameIndex
             while (index < totalFrames) {
                 currentCoroutineContext().ensureActive()
                 val samples = mutableListOf<VideoFrameSample>()
@@ -289,6 +365,12 @@ internal object NativeAlprEngine {
                             lastSuccessfulFallbackRotationDegrees = rotatedDetection.degrees
                         }
                     }
+                    frameCandidates = rankCandidatesForComplaint(
+                        candidates = frameCandidates,
+                        bitmap = sample.bitmap,
+                        sessions = sessions,
+                        expectedComplaintHint = expectedComplaintHint
+                    )
                     val framePreviewUri = saveVideoFramePreview(
                         context = context,
                         frameIndex = sample.frameIndex,
@@ -338,19 +420,48 @@ internal object NativeAlprEngine {
         }
     }
 
-    private fun detectLicensePlatesInBitmap(context: Context, bitmap: Bitmap, sessions: AlprSessions): List<PlateCandidate> {
+    private fun detectLicensePlatesInBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        sessions: AlprSessions,
+        expectedComplaintHint: String? = null
+    ): List<PlateCandidate> {
         val detections = detect(bitmap, sessions.detector)
+        Log.d(
+            PLATE_DETECTION_LOG_TAG,
+            "Detector returned ${detections.size} raw detection(s) for ${bitmap.width}x${bitmap.height}: ${detections.toDetectionLogSummary()}"
+        )
         if (detections.isEmpty()) {
+            Log.d(PLATE_DETECTION_LOG_TAG, "ALPR stopped: detector returned no boxes above threshold=$DETECTION_THRESHOLD")
             return emptyList()
         }
 
         val works = detections.take(MAX_CANDIDATES).mapNotNull { detection ->
-            val plateCrop = refinedPlateCrop(bitmap, detection, sessions) ?: return@mapNotNull null
+            val plateCrop = refinedPlateCrop(bitmap, detection, sessions) ?: run {
+                Log.d(PLATE_DETECTION_LOG_TAG, "Dropping detection because crop/refinement failed: ${detection.toLogString()}")
+                return@mapNotNull null
+            }
+            Log.d(
+                PLATE_DETECTION_LOG_TAG,
+                "Prepared plate crop: source=${detection.toLogString()}, refined=${plateCrop.detection.toLogString()}, rotation=${plateCrop.rotationDegrees}, crop=${plateCrop.bitmap.width}x${plateCrop.bitmap.height}"
+            )
             PlateCropWork(bitmap = bitmap, sourceDetection = detection, crop = plateCrop)
+        }
+        if (works.isEmpty()) {
+            Log.d(PLATE_DETECTION_LOG_TAG, "ALPR stopped: all detector boxes failed crop/refinement")
+            return emptyList()
         }
         val ocrTexts = runOcrBatched(works.map { it.crop.bitmap }, sessions.ocr)
         val plateStates = classifyPlateStatesBatched(works.map { it.crop.bitmap }, sessions.plateState)
-        return works.mapIndexedNotNull { index, work ->
+        Log.d(
+            PLATE_DETECTION_LOG_TAG,
+            "OCR/state classifier results: " + works.indices.joinToString(prefix = "[", postfix = "]") { index ->
+                val ocr = ocrTexts.getOrNull(index).orEmpty()
+                val state = plateStates.getOrNull(index)
+                "#$index rawOcr='$ocr' state=${state?.label}/${state?.state} stateConfidence=${state?.confidence}"
+            }
+        )
+        val candidates = works.mapIndexedNotNull { index, work ->
             buildPlateCandidate(
                 context = context,
                 bitmap = work.bitmap,
@@ -360,6 +471,12 @@ internal object NativeAlprEngine {
                 plateState = plateStates.getOrNull(index)
             )
         }.distinctBy { it.plate }.sortedByDescending { it.confidence }
+        Log.d(PLATE_DETECTION_LOG_TAG, "Built ${candidates.size} candidate(s): ${candidates.toCandidateLogSummary()}")
+        return rankCandidatesForComplaint(candidates, bitmap, sessions, expectedComplaintHint).also { ranked ->
+            if (expectedComplaintHint != null && ranked != candidates) {
+                Log.d(PLATE_DETECTION_LOG_TAG, "Complaint-ranked candidates for hint=$expectedComplaintHint: ${ranked.toCandidateLogSummary()}")
+            }
+        }
     }
 
     private fun detectLicensePlatesInBitmapsBatched(
@@ -406,18 +523,32 @@ internal object NativeAlprEngine {
         plateState: PlateStateClassification?
     ): PlateCandidate? {
         val normalized = normalizePlateText(plateText)
-        if (normalized.isBlank()) return null
+        if (normalized.isBlank()) {
+            Log.d(
+                PLATE_DETECTION_LOG_TAG,
+                "Rejecting detection after OCR normalization: rawOcr='$plateText', source=${detection.toLogString()}, refined=${plateCrop.detection.toLogString()}"
+            )
+            return null
+        }
         val patternMatch = PlatePatternClassifier.classify(normalized)
-        val detectedState = patternMatch?.state ?: if (normalized.startsWith('T') && normalized.endsWith('C')) {
+        val correctedPlate = patternMatch?.normalizedPlate ?: normalized
+        val wasPlateCorrected = correctedPlate != normalized
+        val detectedState = patternMatch?.state ?: if (correctedPlate.startsWith('T') && correctedPlate.endsWith('C')) {
             "NY"
         } else {
             plateState?.state
         }
         val stateConfidence = patternMatch?.confidence ?: plateState?.confidence
         val refinedDetection = plateCrop.detection
+        Log.d(
+            PLATE_DETECTION_LOG_TAG,
+            "Accepting candidate: rawOcr='$plateText', normalized=$normalized, corrected=$correctedPlate, detectorScore=${detection.score}, refinedScore=${refinedDetection.score}, state=${detectedState}, stateConfidence=$stateConfidence, pattern=${patternMatch?.type}, cropRotation=${plateCrop.rotationDegrees}"
+        )
         return PlateCandidate(
-            plate = normalized,
+            plate = correctedPlate,
             confidence = min(1f, max(detection.score, refinedDetection.score)),
+            rawPlateText = normalized.takeIf { wasPlateCorrected },
+            wasPlateCorrected = wasPlateCorrected,
             state = detectedState,
             stateConfidence = stateConfidence,
             plateType = patternMatch?.type?.name,
@@ -433,6 +564,8 @@ internal object NativeAlprEngine {
                 width = bitmap.width,
                 height = bitmap.height
             ),
+            sourceImageWidth = bitmap.width,
+            sourceImageHeight = bitmap.height,
             thumbnailUri = savePlateThumbnail(context, normalized, plateCrop.thumbnailBitmap)
         )
     }
@@ -528,7 +661,9 @@ internal object NativeAlprEngine {
             boundsTop = (top / sourceHeight).coerceIn(0f, 1f),
             boundsRight = (right / sourceWidth).coerceIn(0f, 1f),
             boundsBottom = (bottom / sourceHeight).coerceIn(0f, 1f),
-            cornerPoints = points.toList().toNormalizedCornerPoints(sourceWidth, sourceHeight)
+            cornerPoints = points.toList().toNormalizedCornerPoints(sourceWidth, sourceHeight),
+            sourceImageWidth = sourceWidth,
+            sourceImageHeight = sourceHeight
         )
     }
 
@@ -544,7 +679,7 @@ internal object NativeAlprEngine {
     }
 
     private fun clearVideoFramePreviews(context: Context) {
-        File(context.cacheDir, "alpr-video-frames")
+        videoFramePreviewDirectory(context)
             .takeIf { it.exists() }
             ?.listFiles()
             ?.forEach { it.delete() }
@@ -556,7 +691,7 @@ internal object NativeAlprEngine {
         bitmap: Bitmap,
         candidates: List<PlateCandidate>
     ): String? = runCatching {
-        val directory = File(context.cacheDir, "alpr-video-frames").apply { mkdirs() }
+        val directory = videoFramePreviewDirectory(context).apply { mkdirs() }
         val maxWidth = 720f
         val scale = min(1f, maxWidth / bitmap.width.toFloat())
         val width = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
@@ -626,29 +761,37 @@ internal object NativeAlprEngine {
         Uri.fromFile(file).toString()
     }.getOrNull()
 
+    private fun videoFramePreviewDirectory(context: Context): File =
+        File(File(context.filesDir, "submission-media"), "alpr-video-frames")
+
     private suspend fun getSessions(context: Context): AlprSessions = sessionMutex.withLock {
-        val detector = detectorSession ?: ortEnvironment.createSession(
-            context.assets.open(DETECTOR_ASSET).readBytes(),
-            OrtSession.SessionOptions()
+        val detector = detectorSession ?: createOrtSessionWithNnapiFallback(
+            context = context,
+            asset = DETECTOR_ASSET,
+            label = "plate detector"
         ).also { detectorSession = it }
-        val ocr = ocrSession ?: ortEnvironment.createSession(
-            context.assets.open(OCR_ASSET).readBytes(),
-            OrtSession.SessionOptions()
+        val ocr = ocrSession ?: createOrtSessionWithNnapiFallback(
+            context = context,
+            asset = OCR_ASSET,
+            label = "plate OCR"
         ).also { ocrSession = it }
-        val plateState = plateStateSession ?: ortEnvironment.createSession(
-            context.assets.open(PLATE_STATE_ASSET).readBytes(),
-            OrtSession.SessionOptions()
+        val plateState = plateStateSession ?: createOrtSessionWithNnapiFallback(
+            context = context,
+            asset = PLATE_STATE_ASSET,
+            label = "plate state classifier"
         ).also { plateStateSession = it }
         val complaint = complaintSession ?: runCatching {
-            ortEnvironment.createSession(
-                context.assets.open(COMPLAINT_ASSET).readBytes(),
-                OrtSession.SessionOptions()
+            createOrtSessionWithNnapiFallback(
+                context = context,
+                asset = COMPLAINT_ASSET,
+                label = "complaint detector"
             )
         }.getOrNull()?.also { complaintSession = it }
         val plateSegmentation = plateSegmentationSession ?: runCatching {
-            ortEnvironment.createSession(
-                context.assets.open(PLATE_SEGMENTATION_ASSET).readBytes(),
-                OrtSession.SessionOptions()
+            createOrtSessionWithNnapiFallback(
+                context = context,
+                asset = PLATE_SEGMENTATION_ASSET,
+                label = "plate segmentation"
             )
         }.getOrNull()?.also { plateSegmentationSession = it }
         AlprSessions(
@@ -661,6 +804,95 @@ internal object NativeAlprEngine {
             vehicleSegmentationNms = null
         )
     }
+
+    private fun createOrtSessionWithNnapiFallback(
+        context: Context,
+        asset: String,
+        label: String
+    ): OrtSession {
+        val modelBytes = context.assets.open(asset).use { it.readBytes() }
+        val nnapiOptions = OrtSession.SessionOptions()
+        return try {
+            configureDebugOrtProfiling(context, nnapiOptions, label, "nnapi")
+            nnapiOptions.addNnapi(EnumSet.of(NNAPIFlags.CPU_DISABLED))
+            ortEnvironment.createSession(modelBytes, nnapiOptions).also {
+                sessionLabels[it] = "$label requested NNAPI"
+                Log.i(PLATE_DETECTION_LOG_TAG, "Loaded $label with NNAPI requested: $asset")
+            }
+        } catch (error: OrtException) {
+            Log.w(
+                PLATE_DETECTION_LOG_TAG,
+                "NNAPI hardware provider failed for $label; falling back to ORT CPU: $asset",
+                error
+            )
+            val cpuOptions = OrtSession.SessionOptions().also {
+                configureDebugOrtProfiling(context, it, label, "cpu")
+            }
+            ortEnvironment.createSession(modelBytes, cpuOptions).also {
+                sessionLabels[it] = "$label ORT CPU fallback"
+                Log.i(PLATE_DETECTION_LOG_TAG, "Loaded $label with ORT CPU provider: $asset")
+            }
+        } catch (error: RuntimeException) {
+            Log.w(
+                PLATE_DETECTION_LOG_TAG,
+                "NNAPI hardware provider failed for $label; falling back to ORT CPU: $asset",
+                error
+            )
+            val cpuOptions = OrtSession.SessionOptions().also {
+                configureDebugOrtProfiling(context, it, label, "cpu")
+            }
+            ortEnvironment.createSession(modelBytes, cpuOptions).also {
+                sessionLabels[it] = "$label ORT CPU fallback"
+                Log.i(PLATE_DETECTION_LOG_TAG, "Loaded $label with ORT CPU provider: $asset")
+            }
+        }
+    }
+
+    private fun configureDebugOrtProfiling(
+        context: Context,
+        options: OrtSession.SessionOptions,
+        label: String,
+        providerHint: String
+    ) {
+        if (!BuildConfig.DEBUG) return
+        runCatching {
+            val safeLabel = label.replace(Regex("[^A-Za-z0-9_-]+"), "-")
+            val prefix = File(context.cacheDir, "ort-profile-$safeLabel-$providerHint").absolutePath
+            options.enableProfiling(prefix)
+        }.onFailure { error ->
+            Log.w(PLATE_DETECTION_LOG_TAG, "Unable to enable ORT profiling for $label", error)
+        }
+    }
+
+    private fun OrtSession.logOrtProfileOnce() {
+        if (!BuildConfig.DEBUG || !profiledSessions.add(this)) return
+        val label = sessionLabels[this] ?: "unknown session"
+        runCatching {
+            val profilePath = endProfiling()
+            val profileFile = File(profilePath)
+            val providerCounts = if (profileFile.exists()) {
+                Regex("\"provider\"\\s*:\\s*\"([^\"]+)\"")
+                    .findAll(profileFile.readText())
+                    .map { it.groupValues[1] }
+                    .groupingBy { it }
+                    .eachCount()
+            } else {
+                emptyMap()
+            }
+            Log.i(
+                PLATE_DETECTION_LOG_TAG,
+                "ORT profile for $label providers=$providerCounts path=$profilePath"
+            )
+        }.onFailure { error ->
+            Log.w(PLATE_DETECTION_LOG_TAG, "Unable to read ORT profile for $label", error)
+        }
+    }
+
+    private suspend fun getSessionsOrNull(context: Context): AlprSessions? =
+        runCatching { getSessions(context) }.getOrElse { error ->
+            Log.e(MEDIA_SCANNER_LOG_TAG, "ALPR models unavailable", error)
+            null
+        }
 
     private fun mergeDetections(
         directDetections: List<Detection>,
@@ -809,42 +1041,134 @@ internal object NativeAlprEngine {
                     } else {
                         Detection(x1, y1, x2, y2, score)
                     }
-                }.sortedByDescending { it.score }
+                }.sortedByDescending { it.score }.also {
+                    session.logOrtProfileOnce()
+                }
             }
         }
     }
 
     private fun detectComplaint(bitmap: Bitmap, session: OrtSession?): String? {
-        session ?: return null
-        val inputName = session.inputNames.first()
-        val letterboxed = letterbox(bitmap, DETECTOR_SIZE)
-        val inputBuffer = bitmapToFloatBuffer(letterboxed.bitmap)
-        OnnxTensor.createTensor(
-            ortEnvironment,
-            inputBuffer,
-            longArrayOf(1, 3, DETECTOR_SIZE.toLong(), DETECTOR_SIZE.toLong())
-        ).use { inputTensor ->
-            session.run(mapOf(inputName to inputTensor)).use { results ->
-                val raw = (results[0].value as? Array<FloatArray>) ?: return null
-                val best = raw.mapNotNull { row ->
-                    if (row.size < 7) return@mapNotNull null
-                    val label = row[5].roundToInt()
-                    val score = row[6]
-                    if (
-                        score < COMPLAINT_DETECTION_THRESHOLD ||
-                        (label != COMPLAINT_CLASS_BLOCKED_BIKE_LANE && label != COMPLAINT_CLASS_BLOCKED_CROSSWALK)
-                    ) {
-                        null
-                    } else {
-                        label to score
+        session ?: run {
+            Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference skipped: complaint model session is unavailable")
+            return null
+        }
+        return runCatching {
+            Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference started")
+            val inputName = session.inputNames.first()
+            val letterboxed = letterbox(bitmap, COMPLAINT_DETECTOR_SIZE)
+            val inputBuffer = bitmapToFloatBuffer(letterboxed.bitmap)
+            OnnxTensor.createTensor(
+                ortEnvironment,
+                inputBuffer,
+                longArrayOf(1, 3, COMPLAINT_DETECTOR_SIZE.toLong(), COMPLAINT_DETECTOR_SIZE.toLong())
+            ).use { inputTensor ->
+                session.run(mapOf(inputName to inputTensor)).use { results ->
+                    val raw = flattenFloats(results[0].value)
+                    if (raw.isEmpty()) {
+                        Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference failed: unexpected output tensor")
+                        return null
                     }
-                }.maxByOrNull { it.second } ?: return null
-                return when (best.first) {
-                    COMPLAINT_CLASS_BLOCKED_BIKE_LANE -> COMPLAINT_BLOCKED_BIKE_LANE
-                    COMPLAINT_CLASS_BLOCKED_CROSSWALK -> COMPLAINT_BLOCKED_CROSSWALK
-                    else -> null
+                    val rowSize = inferComplaintRowSize(raw.size)
+                    if (rowSize < 6) {
+                        Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference failed: unexpected flat output size=${raw.size}")
+                        return null
+                    }
+                    val rowCount = raw.size / rowSize
+                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint model returned $rowCount row(s), rowSize=$rowSize, flatSize=${raw.size}")
+                    val scoredRows = (0 until rowCount).mapNotNull { rowIndex ->
+                        val offset = rowIndex * rowSize
+                        decodeComplaintScore(raw, offset, rowSize)
+                    }
+                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint top scores: ${scoredRows.toComplaintLogSummary()}")
+                    val best = scoredRows
+                        .filter { (label, score) ->
+                            score >= COMPLAINT_DETECTION_THRESHOLD &&
+                                (label == COMPLAINT_CLASS_BLOCKED_BIKE_LANE || label == COMPLAINT_CLASS_BLOCKED_CROSSWALK)
+                        }
+                        .maxByOrNull { it.second } ?: run {
+                        Log.d(
+                            MEDIA_SCANNER_LOG_TAG,
+                            "Complaint inference returned no accepted label at threshold=$COMPLAINT_DETECTION_THRESHOLD"
+                        )
+                        return null
+                    }
+                    val complaint = when (best.first) {
+                        COMPLAINT_CLASS_BLOCKED_BIKE_LANE -> COMPLAINT_BLOCKED_BIKE_LANE
+                        COMPLAINT_CLASS_BLOCKED_CROSSWALK -> COMPLAINT_BLOCKED_CROSSWALK
+                        else -> null
+                    }
+                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference accepted: label=${best.first} score=${best.second} complaint=$complaint")
+                    complaint.also {
+                        session.logOrtProfileOnce()
+                    }
                 }
             }
+        }.getOrElse { error ->
+            Log.e(MEDIA_SCANNER_LOG_TAG, "Complaint inference failed with exception", error)
+            null
+        }
+    }
+
+    private fun rankCandidatesForComplaint(
+        candidates: List<PlateCandidate>,
+        bitmap: Bitmap,
+        sessions: AlprSessions,
+        expectedComplaintHint: String?
+    ): List<PlateCandidate> {
+        if (candidates.size <= 1) return candidates
+        val expectedLabel = expectedComplaintHint.expectedComplaintClass() ?: return candidates
+        val regions = detectComplaintRegions(bitmap, sessions.complaint, expectedLabel)
+        if (regions.isEmpty()) return candidates
+        return candidates.sortedWith(
+            compareByDescending<PlateCandidate> { it.complaintLocationScore(regions.map { region -> region.detection }, bitmap) }
+                .thenByDescending { it.confidence }
+                .thenByDescending { it.centerBiasedScore() }
+        )
+    }
+
+    private fun detectComplaintRegions(
+        bitmap: Bitmap,
+        session: OrtSession?,
+        expectedLabel: Int
+    ): List<ComplaintRegion> {
+        session ?: return emptyList()
+        return runCatching {
+            val inputName = session.inputNames.first()
+            val letterboxed = letterbox(bitmap, COMPLAINT_DETECTOR_SIZE)
+            val inputBuffer = bitmapToFloatBuffer(letterboxed.bitmap)
+            OnnxTensor.createTensor(
+                ortEnvironment,
+                inputBuffer,
+                longArrayOf(1, 3, COMPLAINT_DETECTOR_SIZE.toLong(), COMPLAINT_DETECTOR_SIZE.toLong())
+            ).use { inputTensor ->
+                session.run(mapOf(inputName to inputTensor)).use { results ->
+                    val raw = flattenFloats(results[0].value)
+                    if (raw.isEmpty()) return emptyList()
+                    val rowSize = inferComplaintRowSize(raw.size)
+                    if (rowSize < 6) return emptyList()
+                    val rowCount = raw.size / rowSize
+                    (0 until rowCount).mapNotNull { rowIndex ->
+                        val offset = rowIndex * rowSize
+                        val (label, score) = decodeComplaintScore(raw, offset, rowSize) ?: return@mapNotNull null
+                        if (label != expectedLabel || score < COMPLAINT_DETECTION_THRESHOLD) return@mapNotNull null
+                        val coordinateOffset = if (rowSize >= 7) 1 else 0
+                        val x1 = ((raw[offset + coordinateOffset] - letterboxed.padX) / letterboxed.scale)
+                            .coerceIn(0f, bitmap.width.toFloat())
+                        val y1 = ((raw[offset + coordinateOffset + 1] - letterboxed.padY) / letterboxed.scale)
+                            .coerceIn(0f, bitmap.height.toFloat())
+                        val x2 = ((raw[offset + coordinateOffset + 2] - letterboxed.padX) / letterboxed.scale)
+                            .coerceIn(0f, bitmap.width.toFloat())
+                        val y2 = ((raw[offset + coordinateOffset + 3] - letterboxed.padY) / letterboxed.scale)
+                            .coerceIn(0f, bitmap.height.toFloat())
+                        if ((x2 - x1) < 8f || (y2 - y1) < 8f) return@mapNotNull null
+                        ComplaintRegion(label, Detection(x1, y1, x2, y2, score))
+                    }
+                }
+            }
+        }.getOrElse { error ->
+            Log.w(MEDIA_SCANNER_LOG_TAG, "Complaint region inference failed", error)
+            emptyList()
         }
     }
 
@@ -879,13 +1203,49 @@ internal object NativeAlprEngine {
                             grouped[batchIndex] += Detection(x1, y1, x2, y2, score)
                         }
                     }
-                    grouped.map { detections -> detections.sortedByDescending { it.score } }
+                    grouped.map { detections -> detections.sortedByDescending { it.score } }.also {
+                        session.logOrtProfileOnce()
+                    }
                 }
             }
         }.getOrElse {
             bitmaps.map { detect(it, session) }
         }
     }
+
+    private fun List<Pair<Int, Float>>.toComplaintLogSummary(): String =
+        sortedByDescending { it.second }
+            .take(6)
+            .joinToString(prefix = "[", postfix = "]") { (label, score) ->
+                "${label.toComplaintLabel()}=$score"
+            }
+
+    private fun Int.toComplaintLabel(): String =
+        when (this) {
+            COMPLAINT_CLASS_BLOCKED_BIKE_LANE -> "blocked_bike_lane"
+            COMPLAINT_CLASS_BLOCKED_CROSSWALK -> "blocked_crosswalk"
+            else -> "label_$this"
+            }
+
+    private fun inferComplaintRowSize(flatSize: Int): Int =
+        when {
+            flatSize % 7 == 0 -> 7
+            flatSize % 6 == 0 -> 6
+            flatSize % 5 == 0 -> 5
+            else -> flatSize
+        }
+
+    private fun decodeComplaintScore(raw: FloatArray, offset: Int, rowSize: Int): Pair<Int, Float>? =
+        when {
+            rowSize >= 7 -> raw[offset + 5].roundToInt() to raw[offset + 6]
+            rowSize == 6 -> raw[offset + 4].roundToInt() to raw[offset + 5]
+            rowSize == 5 -> raw[offset + 4].roundToInt() to raw[offset + 3]
+            rowSize >= 2 -> {
+                val bestLabel = (0 until rowSize).maxByOrNull { raw[offset + it] } ?: return null
+                bestLabel to raw[offset + bestLabel]
+            }
+            else -> null
+        }
 
     private fun runOcr(bitmap: Bitmap, session: OrtSession): String {
         val inputName = session.inputNames.first()
@@ -901,7 +1261,9 @@ internal object NativeAlprEngine {
         ).use { inputTensor ->
             session.run(mapOf(inputName to inputTensor)).use { results ->
                 val raw = (results[0].value as? Array<FloatArray>)?.firstOrNull() ?: return ""
-                return decodeOcrRow(raw)
+                return decodeOcrRow(raw).also {
+                    session.logOrtProfileOnce()
+                }
             }
         }
     }
@@ -924,7 +1286,9 @@ internal object NativeAlprEngine {
                 session.run(mapOf(inputName to inputTensor)).use { results ->
                     val raw = (results[0].value as? Array<FloatArray>) ?: return@use emptyList()
                     if (raw.size < bitmaps.size) return@use emptyList()
-                    raw.take(bitmaps.size).map(::decodeOcrRow)
+                    raw.take(bitmaps.size).map(::decodeOcrRow).also {
+                        session.logOrtProfileOnce()
+                    }
                 }
             }.takeIf { it.size == bitmaps.size } ?: bitmaps.map { runOcr(it, session) }
         }.getOrElse {
@@ -984,7 +1348,9 @@ internal object NativeAlprEngine {
                     state = label.takeUnless { it == "00" }?.substringBefore("_"),
                     confidence = confidence,
                     label = label
-                )
+                ).also {
+                    session.logOrtProfileOnce()
+                }
             }
         }
     }
@@ -1012,6 +1378,8 @@ internal object NativeAlprEngine {
                         val start = index * rowSize
                         val end = min(raw.size, start + rowSize)
                         decodePlateStateClassification(raw.copyOfRange(start, end))
+                    }.also {
+                        session.logOrtProfileOnce()
                     }
                 }
             }.takeIf { it.size == bitmaps.size } ?: bitmaps.map { classifyPlateState(it, session) }
@@ -1036,11 +1404,62 @@ internal object NativeAlprEngine {
         )
     }
 
-    private fun decodeBitmap(context: Context, uri: Uri): Bitmap? =
-        when (uri.scheme) {
+    private fun decodeBitmap(context: Context, uri: Uri): Bitmap? {
+        val decoded = when (uri.scheme) {
             "file" -> uri.path?.let(::File)?.takeIf { it.exists() }?.inputStream()?.use(BitmapFactory::decodeStream)
             else -> context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
         }
+        decoded ?: return null
+        val orientation = readExifOrientation(context, uri)
+        val oriented = decoded.applyExifOrientation(orientation)
+        Log.d(
+            PLATE_DETECTION_LOG_TAG,
+            "Bitmap EXIF orientation applied: uri=$uri, orientation=${orientation.toExifOrientationName()}, input=${decoded.width}x${decoded.height}, output=${oriented.width}x${oriented.height}"
+        )
+        return oriented
+    }
+
+    private fun readExifOrientation(context: Context, uri: Uri): Int =
+        runCatching {
+            when (uri.scheme) {
+                "file" -> uri.path
+                    ?.let(::File)
+                    ?.takeIf { it.exists() }
+                    ?.inputStream()
+                    ?.use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
+                else -> context.contentResolver.openInputStream(uri)
+                    ?.use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        }.getOrElse { error ->
+            Log.d(PLATE_DETECTION_LOG_TAG, "Unable to read bitmap EXIF orientation for uri=$uri", error)
+            ExifInterface.ORIENTATION_NORMAL
+        }
+
+    private fun Bitmap.applyExifOrientation(orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            else -> return this
+        }
+        return runCatching {
+            Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+        }.getOrElse { error ->
+            Log.d(PLATE_DETECTION_LOG_TAG, "Failed to apply EXIF orientation=${orientation.toExifOrientationName()}", error)
+            this
+        }
+    }
 
     private fun decodeMediaPreviewBitmap(context: Context, media: SubmissionMedia): Bitmap? {
         val uri = Uri.parse(media.uri)
@@ -1193,6 +1612,19 @@ internal object NativeAlprEngine {
 
     private fun refinedPlateCrop(bitmap: Bitmap, detection: Detection, sessions: AlprSessions): PlateCrop? {
         val initialPlateCrop = crop(bitmap, detection) ?: return null
+        if (detection.hasPlateLikeAspectRatio()) {
+            Log.d(
+                PLATE_DETECTION_LOG_TAG,
+                "Skipping deskew for plate-like detector box: ${detection.toLogString()}, crop=${initialPlateCrop.width}x${initialPlateCrop.height}"
+            )
+            return PlateCrop(
+                bitmap = initialPlateCrop,
+                thumbnailBitmap = initialPlateCrop,
+                detection = detection,
+                rotationDegrees = 0f,
+                cornerPoints = detection.cornerPoints()
+            )
+        }
         val expandedDetection = expandedPlateDetection(bitmap, detection)
         val expandedCrop = crop(bitmap, expandedDetection) ?: return PlateCrop(
             bitmap = initialPlateCrop,
@@ -1231,17 +1663,34 @@ internal object NativeAlprEngine {
             cornerPoints = detection.cornerPoints()
         )
 
-        val plateBitmap = crop(rotatedMatch.rotatedImage.bitmap, rotatedMatch.detection) ?: return null
-        val imageCornerPoints = rotatedMatch.detection.toOriginalImageCornerPoints(
+        val rotatedExpandedDetection = expandedPlateDetection(rotatedMatch.rotatedImage.bitmap, rotatedMatch.detection)
+        val rotatedExpandedCrop = crop(rotatedMatch.rotatedImage.bitmap, rotatedExpandedDetection)
+        val segmentedRotatedCrop = rotatedExpandedCrop?.let {
+            segmentPlateCrop(
+                source = rotatedMatch.rotatedImage.bitmap,
+                expandedDetection = rotatedExpandedDetection,
+                expandedCrop = it,
+                session = sessions.plateSegmentation
+            )
+        }
+        val ocrDetection = segmentedRotatedCrop?.detection ?: rotatedMatch.detection
+        val plateBitmap = crop(rotatedMatch.rotatedImage.bitmap, ocrDetection)
+            ?: crop(rotatedMatch.rotatedImage.bitmap, rotatedMatch.detection)
+            ?: return null
+        val imageCornerPoints = ocrDetection.toOriginalImageCornerPoints(
             rotatedImage = rotatedMatch.rotatedImage,
             originalDetection = detection
         )
         val displayDetection = detection
         val displayThumbnail = crop(bitmap, displayDetection) ?: initialPlateCrop
+        Log.d(
+            PLATE_DETECTION_LOG_TAG,
+            "Rotated OCR crop: original=${detection.toLogString()}, rotatedMatch=${rotatedMatch.detection.toLogString()}, ocr=${ocrDetection.toLogString()}, usedSegmentation=${segmentedRotatedCrop != null}, plateBitmap=${plateBitmap.width}x${plateBitmap.height}"
+        )
         return PlateCrop(
             bitmap = plateBitmap,
             thumbnailBitmap = displayThumbnail,
-            detection = displayDetection.copy(score = rotatedMatch.detection.score),
+            detection = displayDetection.copy(score = ocrDetection.score),
             rotationDegrees = -rotatedMatch.appliedRotationDegrees,
             cornerPoints = imageCornerPoints
         )
@@ -1586,18 +2035,7 @@ internal object NativeAlprEngine {
     }
 
     private fun normalizePlateText(raw: String): String {
-        val cleaned = raw.replace("_", "").filter { it.isLetterOrDigit() }.uppercase()
-        if (cleaned.length == 7 && cleaned.startsWith('T') && cleaned.endsWith('C')) {
-            return cleaned
-                .replace('I', '1')
-                .replace('L', '1')
-                .replace('Z', '2')
-                .replace('G', '6')
-                .replace('B', '8')
-                .replace('A', '4')
-                .replace('O', '0')
-        }
-        return cleaned
+        return raw.replace("_", "").filter { it.isLetterOrDigit() }.uppercase()
     }
 
     private fun flattenFloats(value: Any?): FloatArray =
@@ -1630,6 +2068,39 @@ private fun Detection.centerDistanceSquared(bitmap: Bitmap): Float {
     return dx * dx + dy * dy
 }
 
+private fun Detection.toLogString(): String =
+    "box=[${x1.roundToInt()},${y1.roundToInt()},${x2.roundToInt()},${y2.roundToInt()}] score=$score size=${(x2 - x1).roundToInt()}x${(y2 - y1).roundToInt()}"
+
+private fun Detection.hasPlateLikeAspectRatio(): Boolean {
+    val width = x2 - x1
+    val height = y2 - y1
+    if (width <= 0f || height <= 0f) return false
+    val aspectRatio = width / height
+    return aspectRatio in PLATE_LIKE_MIN_ASPECT_RATIO..PLATE_LIKE_MAX_ASPECT_RATIO
+}
+
+private fun List<Detection>.toDetectionLogSummary(): String =
+    take(12).joinToString(prefix = "[", postfix = "]") { it.toLogString() }
+
+private fun List<PlateCandidate>.toCandidateLogSummary(): String =
+    take(12).joinToString(prefix = "[", postfix = "]") { candidate ->
+        "${candidate.plate}/${candidate.state ?: "?"} confidence=${candidate.confidence} stateConfidence=${candidate.stateConfidence} type=${candidate.plateType ?: "-"} bounds=${candidate.boundsLeft},${candidate.boundsTop},${candidate.boundsRight},${candidate.boundsBottom} rotation=${candidate.rotationDegrees}"
+    }
+
+private fun Int.toExifOrientationName(): String =
+    when (this) {
+        ExifInterface.ORIENTATION_NORMAL -> "NORMAL"
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> "FLIP_HORIZONTAL"
+        ExifInterface.ORIENTATION_ROTATE_180 -> "ROTATE_180"
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> "FLIP_VERTICAL"
+        ExifInterface.ORIENTATION_TRANSPOSE -> "TRANSPOSE"
+        ExifInterface.ORIENTATION_ROTATE_90 -> "ROTATE_90"
+        ExifInterface.ORIENTATION_TRANSVERSE -> "TRANSVERSE"
+        ExifInterface.ORIENTATION_ROTATE_270 -> "ROTATE_270"
+        ExifInterface.ORIENTATION_UNDEFINED -> "UNDEFINED"
+        else -> "UNKNOWN_$this"
+    }
+
 private fun Detection.iouWith(other: Detection): Float {
     val left = max(x1, other.x1)
     val top = max(y1, other.y1)
@@ -1659,4 +2130,56 @@ private fun PlateCandidate.centerBiasedScore(): Float {
     ).toFloat()
     val centerScore = (1f - (distanceFromCenter / 0.70710677f)).coerceIn(0f, 1f)
     return confidence * 0.72f + centerScore * 0.28f
+}
+
+private fun PlateCandidate.complaintLocationScore(regions: List<Detection>, bitmap: Bitmap): Float {
+    if (regions.isEmpty()) return 0f
+    val centerX = (focalPointX ?: return 0f) * bitmap.width
+    val centerY = (focalPointY ?: return 0f) * bitmap.height
+    return regions.maxOf { region ->
+        val inside = centerInside(region, centerX, centerY)
+        val regionCenterX = (region.x1 + region.x2) / 2f
+        val regionCenterY = (region.y1 + region.y2) / 2f
+        val dx = (centerX - regionCenterX) / bitmap.width.coerceAtLeast(1)
+        val dy = (centerY - regionCenterY) / bitmap.height.coerceAtLeast(1)
+        val proximity = (1f - (sqrt(dx * dx + dy * dy) / 0.70710677f)).coerceIn(0f, 1f)
+        val overlap = normalizedOverlapWith(region, bitmap)
+        (if (inside) 2f else 0f) + proximity + overlap
+    }
+}
+
+private fun PlateCandidate.centerInside(detection: Detection, centerX: Float, centerY: Float): Boolean {
+    val paddingX = (detection.x2 - detection.x1) * 0.04f
+    val paddingY = (detection.y2 - detection.y1) * 0.04f
+    return centerX in (detection.x1 - paddingX)..(detection.x2 + paddingX) &&
+        centerY in (detection.y1 - paddingY)..(detection.y2 + paddingY)
+}
+
+private fun PlateCandidate.normalizedOverlapWith(detection: Detection, bitmap: Bitmap): Float {
+    val left = (boundsLeft ?: return 0f) * bitmap.width
+    val top = (boundsTop ?: return 0f) * bitmap.height
+    val right = (boundsRight ?: return 0f) * bitmap.width
+    val bottom = (boundsBottom ?: return 0f) * bitmap.height
+    val intersectionLeft = max(left, detection.x1)
+    val intersectionTop = max(top, detection.y1)
+    val intersectionRight = min(right, detection.x2)
+    val intersectionBottom = min(bottom, detection.y2)
+    val intersection = max(0f, intersectionRight - intersectionLeft) * max(0f, intersectionBottom - intersectionTop)
+    val plateArea = max(1f, (right - left) * (bottom - top))
+    return (intersection / plateArea).coerceIn(0f, 1f)
+}
+
+private fun PlateCandidate.centerInside(detection: Detection, bitmap: Bitmap): Boolean {
+    val centerX = (focalPointX ?: return false) * bitmap.width
+    val centerY = (focalPointY ?: return false) * bitmap.height
+    return centerInside(detection, centerX, centerY)
+}
+
+private fun String?.expectedComplaintClass(): Int? {
+    val normalized = this?.lowercase().orEmpty()
+    return when {
+        "bike" in normalized && "lane" in normalized -> COMPLAINT_CLASS_BLOCKED_BIKE_LANE
+        "crosswalk" in normalized -> COMPLAINT_CLASS_BLOCKED_CROSSWALK
+        else -> null
+    }
 }

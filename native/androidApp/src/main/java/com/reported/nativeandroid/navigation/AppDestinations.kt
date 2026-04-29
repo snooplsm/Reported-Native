@@ -8,6 +8,9 @@ sealed class AuthDestination(val route: String) {
 
 sealed class TabDestination(val route: String, val label: String) {
     data object Report : TabDestination("report", "New Report")
+    data object Batch : TabDestination("batch", "Batch")
+    data object Live : TabDestination("live", "Live")
     data object Reports : TabDestination("reports", "My Reports")
     data object Profile : TabDestination("profile", "Profile")
+    data object Settings : TabDestination("settings", "Settings")
 }
