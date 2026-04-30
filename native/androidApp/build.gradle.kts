@@ -1,5 +1,6 @@
 import org.gradle.api.GradleException
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -35,8 +36,32 @@ fun readOptionalConfigValue(name: String): String? =
         ?: providers.gradleProperty(name).orNull
         ?: readLocalProperty(name)
 
+fun readGoogleServicesWebClientId(): String? {
+    val googleServicesFile = project.file("google-services.json")
+    if (!googleServicesFile.exists()) return null
+
+    val root = JsonSlurper().parse(googleServicesFile) as? Map<*, *> ?: return null
+    val clients = root["client"] as? List<*> ?: return null
+    return clients
+        .asSequence()
+        .mapNotNull { it as? Map<*, *> }
+        .flatMap { client ->
+            ((client["oauth_client"] as? List<*>) ?: emptyList<Any?>()).asSequence()
+        }
+        .mapNotNull { it as? Map<*, *> }
+        .firstOrNull { oauthClient ->
+            (oauthClient["client_type"] as? Number)?.toInt() == 3
+        }
+        ?.get("client_id") as? String
+}
+
 val googleMapsApiKey = readConfigValue("REPORTED_ANDROID_GOOGLE_MAPS_API_KEY")
-val googleServerClientId = readConfigValue("REPORTED_GOOGLE_SERVER_CLIENT_ID", "728528457365-gvkq2phpioo23umg6q0ivtp1aeagdt09.apps.googleusercontent.com")
+val googleServicesWebClientId = readGoogleServicesWebClientId()
+    ?: "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com"
+val configuredGoogleServerClientId = readOptionalConfigValue("REPORTED_GOOGLE_SERVER_CLIENT_ID")
+val googleServerClientId = configuredGoogleServerClientId
+    ?.takeIf { it.substringBefore("-") == googleServicesWebClientId.substringBefore("-") }
+    ?: googleServicesWebClientId
 val appleClientId = readConfigValue("REPORTED_APPLE_CLIENT_ID")
 val appleRedirectUri = readConfigValue("REPORTED_APPLE_REDIRECT_URI", "reported://oauth/apple")
 val parseServerUrl = readConfigValue("REPORTED_PARSE_SERVER_URL", "https://parseapi.back4app.com")

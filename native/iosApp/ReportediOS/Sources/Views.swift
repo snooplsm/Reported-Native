@@ -150,9 +150,7 @@ struct AuthFlowView: View {
                     } onRegister: {
                         path.append(.register)
                     } onBack: {
-                        if !path.isEmpty {
-                            path.removeLast()
-                        }
+                        handleAuthBack()
                     } onDismiss: {
                         onDismiss?()
                     }
@@ -163,9 +161,7 @@ struct AuthFlowView: View {
                     } onLogin: {
                         path.append(.login)
                     } onBack: {
-                        if !path.isEmpty {
-                            path.removeLast()
-                        }
+                        handleAuthBack()
                     } onDismiss: {
                         onDismiss?()
                     }
@@ -174,6 +170,14 @@ struct AuthFlowView: View {
                 }
             }
             .navigationBarBackButtonHidden(true)
+        }
+    }
+
+    private func handleAuthBack() {
+        if path.count <= 1, let onDismiss {
+            onDismiss()
+        } else if !path.isEmpty {
+            path.removeLast()
         }
     }
 }
@@ -271,12 +275,15 @@ struct MainShellView: View {
     @State private var isNavigationOpen = false
     @State private var reportHasDraftContent = false
     @State private var reportClearRequest = 0
+    @State private var reportSubmitBarVisible = false
     @State private var submittedSnackbarObjectId: String?
     @State private var pendingOpenReportObjectId: String?
     @GestureState private var navigationDragTranslation: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
+            let isLandscape = proxy.size.width > proxy.size.height
+            let reportOwnsToolbar = selection == .report && isLandscape
             let baseOffset = isNavigationOpen ? drawerWidth : 0
             let currentOffset = min(max(baseOffset + navigationDragTranslation, 0), drawerWidth)
 
@@ -287,22 +294,29 @@ struct MainShellView: View {
                 .frame(width: drawerWidth)
 
                 VStack(spacing: 0) {
-                    MainShellToolbar(
-                        title: selection.title,
-                        showClear: selection == .report && reportHasDraftContent,
-                        onMenuTapped: { toggleNavigation() },
-                        onClear: { reportClearRequest += 1 }
-                    )
+                    if !reportOwnsToolbar {
+                        MainShellToolbar(
+                            title: selection.title,
+                            showClear: selection == .report && reportHasDraftContent,
+                            onMenuTapped: { toggleNavigation() },
+                            onClear: { reportClearRequest += 1 }
+                        )
+                    }
                     Group {
                         switch selection {
                         case .report:
                             ComposerScreen(
                                 isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
                                 onRequireLogin: onRequireLogin,
+                                showEmbeddedLandscapeToolbar: reportOwnsToolbar,
+                                shellHasDraftContent: reportHasDraftContent,
+                                onMenuTapped: { toggleNavigation() },
+                                onClearTapped: { reportClearRequest += 1 },
                                 sharedMediaImportId: $sharedMediaImportId,
                                 clearRequest: $reportClearRequest,
                                 detectedDraftOpenRequest: $detectedDraftOpenRequest,
                                 onDraftContentChanged: { reportHasDraftContent = $0 },
+                                onSubmitBarVisibilityChanged: { reportSubmitBarVisible = $0 },
                                 onReportSubmitted: { objectId in
                                     submittedSnackbarObjectId = objectId
                                 }
@@ -347,7 +361,23 @@ struct MainShellView: View {
                     }
             )
             .clipped()
+            .background(alignment: .leading) {
+                if currentOffset > 0 {
+                    Color(.secondarySystemBackground)
+                        .opacity(0.7)
+                        .frame(width: drawerWidth)
+                        .offset(x: currentOffset - drawerWidth)
+                        .ignoresSafeArea(.container, edges: [.top, .bottom])
+                }
+            }
             .background(Color(.systemBackground))
+            .background(alignment: .bottom) {
+                if selection == .report && reportSubmitBarVisible {
+                    Color.reportedOrange
+                        .frame(height: max(proxy.safeAreaInsets.bottom, 1))
+                        .ignoresSafeArea(.container, edges: .bottom)
+                }
+            }
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .overlay(alignment: .bottom) {
                 if let objectId = submittedSnackbarObjectId {
@@ -376,6 +406,7 @@ struct MainShellView: View {
                 }
             }
         }
+        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         .onAppear {
             logScreenView(selection.title)
         }
@@ -449,6 +480,7 @@ private extension MainShellDestination {
 private struct MainShellToolbar: View {
     let title: String
     var showClear = false
+    var compact = false
     let onMenuTapped: () -> Void
     let onClear: () -> Void
 
@@ -456,8 +488,8 @@ private struct MainShellToolbar: View {
         HStack {
             Button(action: onMenuTapped) {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 28, weight: .semibold))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: compact ? 22 : 24, weight: .semibold))
+                    .frame(width: compact ? 38 : 44, height: compact ? 38 : 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -466,7 +498,7 @@ private struct MainShellToolbar: View {
             Spacer()
 
             Text(title)
-                .font(.system(size: 28, weight: .regular))
+                .font(.system(size: compact ? 20 : 24, weight: .regular))
                 .lineLimit(1)
 
             Spacer()
@@ -475,14 +507,14 @@ private struct MainShellToolbar: View {
                 Button("Clear", action: onClear)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Color.reportedOrange)
-                    .frame(width: 58, height: 44, alignment: .trailing)
+                    .frame(width: compact ? 44 : 58, height: compact ? 38 : 44, alignment: .trailing)
             } else {
                 Color.clear
-                    .frame(width: 58, height: 44)
+                    .frame(width: compact ? 44 : 58, height: compact ? 38 : 44)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, compact ? 8 : 20)
+        .padding(.vertical, compact ? 6 : 12)
         .background(Color(.systemBackground))
     }
 }
@@ -494,12 +526,13 @@ struct LeftGliderNavView: View {
     var body: some View {
         let destinations = MainShellDestination.allCases
         let selectedIndex = destinations.firstIndex(of: selection) ?? 0
+        let topPadding: CGFloat = 16
 
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 18)
                 .fill(Color.reportedOrange.opacity(0.12))
                 .frame(width: 92, height: 72)
-                .offset(y: CGFloat(selectedIndex) * 84 + 16)
+                .offset(y: CGFloat(selectedIndex) * 84 + topPadding)
                 .animation(.spring(response: 0.28, dampingFraction: 0.84), value: selection)
 
             VStack(spacing: 12) {
@@ -520,11 +553,11 @@ struct LeftGliderNavView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, topPadding)
         }
         .frame(width: 116)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(.secondarySystemBackground).opacity(0.7))
+        .background(Color.clear)
     }
 }
 
@@ -687,10 +720,15 @@ struct ComposerScreen: View {
     @StateObject private var viewModel = ComposerViewModel()
     let isAuthorized: Bool
     let onRequireLogin: () -> Void
+    let showEmbeddedLandscapeToolbar: Bool
+    let shellHasDraftContent: Bool
+    let onMenuTapped: () -> Void
+    let onClearTapped: () -> Void
     @Binding var sharedMediaImportId: String?
     @Binding var clearRequest: Int
     @Binding var detectedDraftOpenRequest: UUID?
     let onDraftContentChanged: (Bool) -> Void
+    let onSubmitBarVisibilityChanged: (Bool) -> Void
     let onReportSubmitted: (String) -> Void
     @State private var singlePickerPresented = false
     @State private var multiPickerPresented = false
@@ -720,9 +758,15 @@ struct ComposerScreen: View {
     @State private var reportTutorialChecked = false
     @State private var tutorialScannerEnabled = true
     @State private var tutorialNotificationsEnabled = true
+    @State private var isLandscapeComposer = false
+    @State private var composerBottomSafeArea: CGFloat = 0
     private let previewScrollId = "composer-primary-media-preview"
 
     private let complaintColumns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    private func landscapeMediaColumnWidth(for width: CGFloat) -> CGFloat {
+        min(max(236, width * 0.31), 276)
+    }
+
     private var complaintOptions: [ComplaintOption] {
         complaintOptionsFor(viewModel.state.complaintCategories)
     }
@@ -783,12 +827,13 @@ struct ComposerScreen: View {
         view = AnyView(view.sheet(isPresented: $showPlateRegionSheet) {
             PlateRegionSheet(
                 selectedValue: viewModel.state.plateRegion,
+                showAllStates: $showAllPlateRegions,
                 onSelected: { value in
                     viewModel.update(plateRegion: value)
                     showPlateRegionSheet = false
                 }
             )
-            .presentationDetents([.height(420)])
+            .presentationDetents([.height(showAllPlateRegions ? 300 : 176)])
             .presentationDragIndicator(.hidden)
         })
         view = AnyView(view.sheet(isPresented: $showAddressMapSheet) {
@@ -822,26 +867,19 @@ struct ComposerScreen: View {
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled()
         })
-        view = AnyView(view.safeAreaInset(edge: .bottom) {
-            if viewModel.state.stage == .verify && !isDetectionSheetVisible {
-                VStack(spacing: 8) {
-                    PrimaryButton(title: viewModel.state.loading ? "Submitting..." : "Submit Report") {
-                        submitReport()
-                    }
-                    if viewModel.state.loading {
-                        ProgressView(value: viewModel.state.submitProgress ?? 0)
-                            .progressViewStyle(.linear)
-                        Text(viewModel.state.submitMessage ?? "Submitting report")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 8)
-                .background(.ultraThinMaterial)
+        view = AnyView(view.overlay(alignment: .bottom) {
+            if showsBottomSubmitBar {
+                submitBottomBar()
             }
+        })
+        view = AnyView(view.onAppear {
+            onSubmitBarVisibilityChanged(showsBottomSubmitBar)
+        })
+        view = AnyView(view.onDisappear {
+            onSubmitBarVisibilityChanged(false)
+        })
+        view = AnyView(view.onChange(of: showsBottomSubmitBar) { _, isVisible in
+            onSubmitBarVisibilityChanged(isVisible)
         })
         view = AnyView(view.overlay { detectionProgressModal })
         view = AnyView(view.alert("Clear report?", isPresented: $showDiscardConfirmation) {
@@ -1010,35 +1048,87 @@ struct ComposerScreen: View {
 
     private var isDetectionSheetVisible: Bool {
         viewModel.state.detectingPlates &&
+        viewModel.state.primaryMedia?.isVideo == true &&
         !viewModel.state.awaitingVideoProcessingDecision &&
         !detectionProgressMinimized
     }
 
+    private var showsBottomSubmitBar: Bool {
+        viewModel.state.stage == .verify && !isDetectionSheetVisible && !isLandscapeComposer
+    }
+
     private var composerContent: some View {
-        ScrollViewReader { proxy in
-            let verticalPadding: CGFloat = viewModel.state.stage == .verify ? 0 : 16
-            let content = ScrollView {
-                Group {
-                    switch viewModel.state.stage {
-                    case .pickMedia:
-                        pickMediaContent
-                    case .verify:
-                        verifyContent
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
+            ScrollViewReader { proxy in
+                let verticalPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 20 : 0) : 16
+                let horizontalPadding: CGFloat = isLandscape ? 8 : 16
+                let leadingPadding = horizontalPadding
+                let trailingPadding = horizontalPadding + (isLandscape ? horizontalUnsafeAreaWidth : 0)
+                let landscapeLeftColumnWidth = landscapeMediaColumnWidth(for: geometry.size.width)
+                let landscapeColumnSpacing: CGFloat = 14
+                let bottomPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 24 + geometry.safeAreaInsets.bottom : 96 + geometry.safeAreaInsets.bottom) : 8
+                let content = ScrollView {
+                    Group {
+                        switch viewModel.state.stage {
+                        case .pickMedia:
+                            if isLandscape && showEmbeddedLandscapeToolbar {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    embeddedLandscapeToolbar
+                                    pickMediaContent
+                                }
+                            } else {
+                                pickMediaContent
+                            }
+                        case .verify:
+                            verifyContent(isLandscape: isLandscape, availableSize: geometry.size)
+                        }
+                    }
+                    .padding(.leading, leadingPadding)
+                    .padding(.trailing, trailingPadding)
+                    .padding(.vertical, verticalPadding)
+                    .padding(.bottom, bottomPadding)
+                }
+                ZStack(alignment: .bottom) {
+                    content
+                        .task {
+                            viewModel.loadDraft()
+                        }
+                        .onAppear {
+                            isLandscapeComposer = isLandscape
+                            composerBottomSafeArea = geometry.safeAreaInsets.bottom
+                        }
+                        .onChange(of: geometry.size) { _, newSize in
+                            isLandscapeComposer = newSize.width > newSize.height
+                        }
+                        .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
+                            composerBottomSafeArea = newValue
+                        }
+                        .onChange(of: viewModel.state.primaryMedia?.fileURL.path) { _, newValue in
+                            guard viewModel.state.stage == .verify, newValue != nil, !isLandscape else { return }
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                proxy.scrollTo(previewScrollId, anchor: .top)
+                            }
+                        }
+                    if viewModel.state.stage == .verify && isLandscape && !isDetectionSheetVisible {
+                        HStack(alignment: .bottom, spacing: landscapeColumnSpacing) {
+                            Color.clear
+                                .frame(width: landscapeLeftColumnWidth)
+                            landscapeFabRow
+                                .frame(maxWidth: .infinity)
+                        }
+                        .frame(
+                            width: max(0, geometry.size.width - leadingPadding - trailingPadding),
+                            height: geometry.size.height,
+                            alignment: .bottom
+                        )
+                        .padding(.leading, leadingPadding)
+                        .padding(.trailing, trailingPadding)
+                        .padding(.bottom, max(geometry.safeAreaInsets.bottom, 18))
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, verticalPadding)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
             }
-            content
-                .task {
-                    viewModel.loadDraft()
-                }
-                .onChange(of: viewModel.state.primaryMedia?.fileURL.path) { _, newValue in
-                    guard viewModel.state.stage == .verify, newValue != nil else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(previewScrollId, anchor: .top)
-                    }
-                }
         }
     }
 
@@ -1413,51 +1503,217 @@ struct ComposerScreen: View {
     }
 
     @ViewBuilder
-    private var verifyContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            let selectedCandidate = viewModel.state.plateCandidates.first { $0.plate == viewModel.state.selectedPlateCandidate }
-                ?? viewModel.state.plateCandidates.first
-            if let error = viewModel.state.error {
-                MessageView(text: error)
-            }
-            if let media = viewModel.state.primaryMedia {
-                PrimarySubmissionPreview(
-                    media: media,
-                    selectedCandidate: selectedCandidate,
-                    candidates: viewModel.state.plateCandidates,
-                    selectedPlate: viewModel.state.selectedPlateCandidate,
-                    onCandidateTapped: { candidate, image in
-                        pendingPlatePreviewImage = image
-                        pendingPlateCandidate = candidate
-                    },
-                    onCandidateConfirmedFromFullScreen: { candidate in
-                        viewModel.choosePlateCandidate(candidate)
-                    },
-                    onRemove: { viewModel.removeMedia(media) }
-                )
-                    .id(previewScrollId)
-            }
-            SecondaryButton(title: viewModel.state.primaryMedia == nil ? "Add photo or video" : "Add more photos or videos") {
-                pendingComplaintId = viewModel.state.selectedComplaintId
-                if viewModel.state.primaryMedia != nil {
-                    if viewModel.remainingMediaSlots > 0 {
-                        multiPickerPresented = true
-                    } else {
-                        viewModel.markMediaLimitReached()
+    private func verifyContent(isLandscape: Bool, availableSize: CGSize) -> some View {
+        let selectedCandidate = viewModel.state.plateCandidates.first { $0.plate == viewModel.state.selectedPlateCandidate }
+            ?? viewModel.state.plateCandidates.first
+        if isLandscape {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if showEmbeddedLandscapeToolbar {
+                        embeddedLandscapeToolbar
                     }
-                } else {
-                    singlePickerPresented = true
+                    if let error = viewModel.state.error {
+                        MessageView(text: error)
+                    }
+                    mediaPanel(selectedCandidate: selectedCandidate, expandPreview: true)
+                    landscapeMediaActions
                 }
+                .frame(width: landscapeMediaColumnWidth(for: availableSize.width))
+                VStack(alignment: .leading, spacing: 10) {
+                    verifyFormContent(isLandscape: true)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            if viewModel.state.validationErrors.media != nil {
-                ValidationMessage(text: viewModel.state.validationErrors.media)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                if let error = viewModel.state.error {
+                    MessageView(text: error)
+                }
+                mediaPanel(selectedCandidate: selectedCandidate, expandPreview: false)
+                addMoreMediaButton
+                if viewModel.state.validationErrors.media != nil {
+                    ValidationMessage(text: viewModel.state.validationErrors.media)
+                }
+                verifyFormContent(isLandscape: false)
             }
-            verifyFormContent
         }
     }
 
     @ViewBuilder
-    private var verifyFormContent: some View {
+    private func mediaPanel(selectedCandidate: ComposerState.PlateCandidate?, expandPreview: Bool) -> some View {
+        if let media = viewModel.state.primaryMedia {
+            PrimarySubmissionPreview(
+                media: media,
+                selectedCandidate: selectedCandidate,
+                candidates: viewModel.state.plateCandidates,
+                selectedPlate: viewModel.state.selectedPlateCandidate,
+                onCandidateTapped: { candidate, image in
+                    pendingPlatePreviewImage = image
+                    pendingPlateCandidate = candidate
+                },
+                onCandidateConfirmedFromFullScreen: { candidate in
+                    viewModel.choosePlateCandidate(candidate)
+                },
+                onRemove: { viewModel.removeMedia(media) }
+            )
+            .frame(maxHeight: expandPreview ? .infinity : nil)
+            .id(previewScrollId)
+        }
+    }
+
+    private var landscapeMediaActions: some View {
+        VStack(spacing: 10) {
+            addMoreMediaButton
+            if viewModel.state.validationErrors.media != nil {
+                ValidationMessage(text: viewModel.state.validationErrors.media)
+            }
+        }
+    }
+
+    private var embeddedLandscapeToolbar: some View {
+        ZStack {
+            Text("New Report")
+                .font(.system(size: 20, weight: .regular))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            HStack {
+                Button(action: onMenuTapped) {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+    }
+
+    private var landscapeFabRow: some View {
+        HStack {
+            Button(action: onClearTapped) {
+                Label("Clear", systemImage: "xmark")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 18)
+                    .frame(height: 52)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.reportedOrange)
+            .background(Color(.systemBackground))
+            .clipShape(Capsule())
+            .shadow(color: Color.black.opacity(0.16), radius: 10, x: 0, y: 4)
+            .opacity(shellHasDraftContent ? 1 : 0)
+            .disabled(!shellHasDraftContent)
+
+            Spacer()
+
+            Button(action: submitReport) {
+                Label(viewModel.state.loading ? "Submitting" : "Submit", systemImage: "paperplane.fill")
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 18)
+                    .frame(height: 52)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .background(Color.reportedOrange)
+            .clipShape(Capsule())
+            .shadow(color: Color.black.opacity(0.16), radius: 10, x: 0, y: 4)
+            .disabled(viewModel.state.loading)
+        }
+    }
+
+    private var addMoreMediaButton: some View {
+        SecondaryButton(title: viewModel.state.primaryMedia == nil ? "Add photo or video" : "Add more photos or videos") {
+            pendingComplaintId = viewModel.state.selectedComplaintId
+            if viewModel.state.primaryMedia != nil {
+                if viewModel.remainingMediaSlots > 0 {
+                    multiPickerPresented = true
+                } else {
+                    viewModel.markMediaLimitReached()
+                }
+            } else {
+                singlePickerPresented = true
+            }
+        }
+    }
+
+    private var submitInlineButton: some View {
+        VStack(spacing: 8) {
+            submitButton(height: 56)
+            submitProgressContent
+        }
+    }
+
+    private func submitBottomBar() -> some View {
+        VStack(spacing: 0) {
+            if viewModel.state.loading {
+                submitProgressContent
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemBackground))
+            }
+            submitButton(height: 64)
+            Color.reportedOrange
+                .frame(height: bottomUnsafeAreaHeight)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color.reportedOrange)
+        .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private var bottomUnsafeAreaHeight: CGFloat {
+        let windowBottom = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets
+            .bottom ?? 0
+        return max(composerBottomSafeArea, windowBottom, 0)
+    }
+
+    private var horizontalUnsafeAreaWidth: CGFloat {
+        let insets = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets ?? .zero
+        return max(insets.left, insets.right, 0)
+    }
+
+    private func submitButton(height: CGFloat) -> some View {
+        Button(action: submitReport) {
+            Text(viewModel.state.loading ? "Submitting..." : "Submit Report")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+        }
+        .buttonStyle(.plain)
+        .background(Color.reportedOrange)
+        .disabled(viewModel.state.loading)
+    }
+
+    @ViewBuilder
+    private var submitProgressContent: some View {
+        if viewModel.state.loading {
+            VStack(spacing: 6) {
+                ProgressView(value: viewModel.state.submitProgress ?? 0)
+                    .progressViewStyle(.linear)
+                Text(viewModel.state.submitMessage ?? "Submitting report")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func verifyFormContent(isLandscape: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
             ComplaintPickerField(
                 value: complaintOptions.first(where: { $0.id == viewModel.state.selectedComplaintId })?.title ?? "Select complaint",
@@ -1465,14 +1721,14 @@ struct ComposerScreen: View {
             ) {
                 showComplaintChooser = true
             }
-            .frame(minWidth: 130, maxWidth: 156)
+            .frame(minWidth: isLandscape ? 160 : 130, maxWidth: isLandscape ? .infinity : 156)
             PlateInputField(
                 text: Binding(get: { viewModel.state.plate }, set: { viewModel.update(plate: String($0.prefix(8))) }),
                 isError: viewModel.state.validationErrors.plate != nil,
                 showCandidateButton: !viewModel.state.plateCandidates.isEmpty,
                 onShowCandidates: { showPlateCandidatesChooser = true }
             )
-            .frame(width: 134)
+            .frame(width: isLandscape ? 150 : 134)
             PickerField(
                 title: "State",
                 value: viewModel.state.plateRegion,
@@ -1480,30 +1736,24 @@ struct ComposerScreen: View {
                 showsChevron: false,
                 alignment: .center
             ) {
+                showAllPlateRegions = false
                 showPlateRegionSheet = true
             }
-            .frame(width: 62)
+            .frame(width: isLandscape ? 76 : 62)
         }
         FieldErrorGroup([
             viewModel.state.validationErrors.complaint,
             viewModel.state.validationErrors.plate,
             viewModel.state.validationErrors.plateRegion
         ])
-        InputField(
-            title: "Address",
-            text: Binding(
-                get: { viewModel.state.addressQuery },
-                set: { viewModel.updateAddressQuery($0) }
-            ),
-            isError: viewModel.state.validationErrors.address != nil,
-            onClear: {
-                viewModel.updateAddressQuery("")
-            },
-            trailingIconSystemName: "map",
-            onTrailingIcon: {
-                showAddressMapSheet = true
+        if isLandscape {
+            HStack(alignment: .top, spacing: 12) {
+                addressField
+                occurredAtField
             }
-        )
+        } else {
+            addressField
+        }
         if viewModel.state.lookupInFlight {
             HStack(spacing: 8) {
                 ProgressView()
@@ -1529,12 +1779,8 @@ struct ComposerScreen: View {
             }
             .buttonStyle(.plain)
         }
-        PickerField(
-            title: "Occurred At",
-            value: viewModel.state.occurredAtIso.reportDateTimeDisplay,
-            isError: viewModel.state.validationErrors.occurredAt != nil
-        ) {
-            showOccurredAtPicker = true
+        if !isLandscape {
+            occurredAtField
         }
         if !viewModel.state.extraMedia.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1545,10 +1791,47 @@ struct ComposerScreen: View {
                 }
             }
         }
-        InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.update(description: $0) }))
-            .onChange(of: viewModel.state.description) { _, _ in viewModel.persistCurrentDraft() }
-        InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.update(notes: $0) }))
-            .onChange(of: viewModel.state.notes) { _, _ in viewModel.persistCurrentDraft() }
+        if isLandscape {
+            HStack(alignment: .top, spacing: 12) {
+                InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.update(description: $0) }), fieldMinHeight: 104)
+                    .onChange(of: viewModel.state.description) { _, _ in viewModel.persistCurrentDraft() }
+                InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.update(notes: $0) }), fieldMinHeight: 104)
+                    .onChange(of: viewModel.state.notes) { _, _ in viewModel.persistCurrentDraft() }
+            }
+        } else {
+            InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.update(description: $0) }))
+                .onChange(of: viewModel.state.description) { _, _ in viewModel.persistCurrentDraft() }
+            InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.update(notes: $0) }))
+                .onChange(of: viewModel.state.notes) { _, _ in viewModel.persistCurrentDraft() }
+        }
+    }
+
+    private var addressField: some View {
+        InputField(
+            title: "Address",
+            text: Binding(
+                get: { viewModel.state.addressQuery },
+                set: { viewModel.updateAddressQuery($0) }
+            ),
+            isError: viewModel.state.validationErrors.address != nil,
+            onClear: {
+                viewModel.updateAddressQuery("")
+            },
+            trailingIconSystemName: "map",
+            onTrailingIcon: {
+                showAddressMapSheet = true
+            }
+        )
+    }
+
+    private var occurredAtField: some View {
+        PickerField(
+            title: "Occurred At",
+            value: viewModel.state.occurredAtIso.reportDateTimeDisplay,
+            isError: viewModel.state.validationErrors.occurredAt != nil
+        ) {
+            showOccurredAtPicker = true
+        }
     }
 
     private func submitReport() {
@@ -3183,44 +3466,64 @@ struct ProfileScreen: View {
     let onLogout: () -> Void
 
     var body: some View {
-        Group {
-            if !isAuthorized {
-                ScrollView {
-                    ScreenCard(title: "Profile") {
-                        MessageView(text: "Sign in to edit your profile and manage your account.")
-                        PrimaryButton(title: "Login", action: onRequireLogin)
-                    }
-                    .padding()
-                }
-            } else {
-                ScrollView {
-                    ScreenCard(title: "Profile") {
-                        if let error = viewModel.state.error { MessageView(text: error) }
-                        InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }), disabled: !viewModel.state.editing)
-                        InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }), disabled: !viewModel.state.editing)
-                        InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }), disabled: !viewModel.state.editing)
-                        InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
-                        Toggle("I'm willing to testify by phone if needed.", isOn: Binding(
-                            get: { viewModel.state.testify },
-                            set: { viewModel.update(testify: $0) }
-                        ))
-                        .disabled(!viewModel.state.editing)
-                        if viewModel.state.editing {
-                            PrimaryButton(title: viewModel.state.loading ? "Saving..." : "Save") { viewModel.save() }
-                        } else {
-                            PrimaryButton(title: "Edit Profile") { viewModel.toggleEditing() }
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
+            Group {
+                if !isAuthorized {
+                    ScrollView {
+                        ScreenCard {
+                            MessageView(text: "Sign in to edit your profile and manage your account.")
+                            PrimaryButton(title: "Login", action: onRequireLogin)
                         }
-                        Button("Logout", action: onLogout)
-                            .foregroundStyle(Color.reportedOrange)
+                        .padding(isLandscape ? 12 : 16)
                     }
-                    .padding()
+                } else {
+                    ScrollView {
+                        ScreenCard {
+                            if let error = viewModel.state.error { MessageView(text: error) }
+                            profileFields(isLandscape: isLandscape)
+                            Toggle("I'm willing to testify by phone if needed.", isOn: Binding(
+                                get: { viewModel.state.testify },
+                                set: { viewModel.update(testify: $0) }
+                            ))
+                            .disabled(!viewModel.state.editing)
+                            if viewModel.state.editing {
+                                PrimaryButton(title: viewModel.state.loading ? "Saving..." : "Save") { viewModel.save() }
+                            } else {
+                                PrimaryButton(title: "Edit Profile") { viewModel.toggleEditing() }
+                            }
+                            Button("Logout", action: onLogout)
+                                .foregroundStyle(Color.reportedOrange)
+                        }
+                        .padding(isLandscape ? 12 : 16)
+                    }
                 }
             }
+            .background(Color(.systemBackground))
         }
         .task {
             if isAuthorized {
                 viewModel.load()
             }
+        }
+    }
+
+    @ViewBuilder
+    private func profileFields(isLandscape: Bool) -> some View {
+        if isLandscape {
+            HStack(alignment: .top, spacing: 12) {
+                InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }), disabled: !viewModel.state.editing)
+                InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }), disabled: !viewModel.state.editing)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }), disabled: !viewModel.state.editing)
+                InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
+            }
+        } else {
+            InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }), disabled: !viewModel.state.editing)
+            InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }), disabled: !viewModel.state.editing)
+            InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }), disabled: !viewModel.state.editing)
+            InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
         }
     }
 }
@@ -3235,76 +3538,40 @@ struct SettingsScreen: View {
     let onThemeModeSelected: (AppThemeMode) -> Void
 
     var body: some View {
-        ScrollView {
-            ScreenCard(title: "Settings") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Appearance")
-                        .font(.headline)
-                    HStack(spacing: 8) {
-                        ThemeChip(title: "System", isSelected: viewModel.state.themeMode == .system) {
-                            setTheme(.system)
-                        }
-                        ThemeChip(title: "Light", isSelected: viewModel.state.themeMode == .light) {
-                            setTheme(.light)
-                        }
-                        ThemeChip(title: "Dark", isSelected: viewModel.state.themeMode == .dark) {
-                            setTheme(.dark)
-                        }
-                    }
-                }
-                if mediaScannerFeatureEnabled || offlineProcessingFeatureEnabled {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Media")
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
+            ScrollView {
+                ScreenCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Appearance")
                             .font(.headline)
-                        if offlineProcessingFeatureEnabled {
-                            SettingsToggleRow(
-                                title: "Allow offline photo processing",
-                                description: "Use on-device computer vision for media you choose or share with Reported.",
-                                isOn: Binding(
-                                    get: { offlineProcessingEnabled },
-                                    set: { isOn in
-                                        IOSMediaScannerSettings.isOfflineProcessingEnabled = isOn
-                                        offlineProcessingEnabled = IOSMediaScannerSettings.isOfflineProcessingEnabled
-                                    }
-                                )
-                            )
-                        }
-                        if mediaScannerFeatureEnabled {
-                            SettingsToggleRow(
-                                title: "Media scanner",
-                                description: "Background photo library scanning is feature flagged and defaults off.",
-                                isOn: Binding(
-                                    get: { mediaScannerEnabled },
-                                    set: { isOn in
-                                        setMediaScannerEnabled(isOn)
-                                    }
-                                )
-                            )
-                            SettingsToggleRow(
-                                title: "Scanner notifications",
-                                description: "Show a notification when Reported finds a likely report candidate.",
-                                isOn: Binding(
-                                    get: { notificationsEnabled },
-                                    set: { isOn in
-                                        IOSMediaScannerSettings.notificationsEnabled = isOn
-                                        notificationsEnabled = isOn
-                                    }
-                                )
-                            )
+                        HStack(spacing: 8) {
+                            ThemeChip(title: "System", isSelected: viewModel.state.themeMode == .system) {
+                                setTheme(.system)
+                            }
+                            ThemeChip(title: "Light", isSelected: viewModel.state.themeMode == .light) {
+                                setTheme(.light)
+                            }
+                            ThemeChip(title: "Dark", isSelected: viewModel.state.themeMode == .dark) {
+                                setTheme(.dark)
+                            }
                         }
                     }
+                    if mediaScannerFeatureEnabled || offlineProcessingFeatureEnabled {
+                        mediaSettingsContent(isLandscape: isLandscape)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sources")
+                            .font(.headline)
+                        Text("Reported is not a government app. Reports are prepared from your submitted media and sent through the configured reporting service.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Sources")
-                        .font(.headline)
-                    Text("Reported is not a government app. Reports are prepared from your submitted media and sent through the configured reporting service.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                .padding(isLandscape ? 12 : 16)
             }
-            .padding()
+            .background(Color(.systemBackground))
         }
-        .background(Color(.systemBackground))
         .task {
             viewModel.load()
             refreshMediaFlags()
@@ -3312,6 +3579,76 @@ struct SettingsScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .reportedRemoteConfigUpdated)) { _ in
             refreshMediaFlags()
         }
+    }
+
+    @ViewBuilder
+    private func mediaSettingsContent(isLandscape: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Media")
+                .font(.headline)
+            if isLandscape {
+                HStack(alignment: .top, spacing: 12) {
+                    if offlineProcessingFeatureEnabled {
+                        offlineProcessingToggle
+                    }
+                    if mediaScannerFeatureEnabled {
+                        scannerNotificationsToggle
+                    }
+                }
+                if mediaScannerFeatureEnabled {
+                    mediaScannerToggle
+                }
+            } else {
+                if offlineProcessingFeatureEnabled {
+                    offlineProcessingToggle
+                }
+                if mediaScannerFeatureEnabled {
+                    mediaScannerToggle
+                    scannerNotificationsToggle
+                }
+            }
+        }
+    }
+
+    private var offlineProcessingToggle: some View {
+        SettingsToggleRow(
+            title: "Allow offline photo processing",
+            description: "Use on-device computer vision for media you choose or share with Reported.",
+            isOn: Binding(
+                get: { offlineProcessingEnabled },
+                set: { isOn in
+                    IOSMediaScannerSettings.isOfflineProcessingEnabled = isOn
+                    offlineProcessingEnabled = IOSMediaScannerSettings.isOfflineProcessingEnabled
+                }
+            )
+        )
+    }
+
+    private var mediaScannerToggle: some View {
+        SettingsToggleRow(
+            title: "Media scanner",
+            description: "Background photo library scanning is feature flagged and defaults off.",
+            isOn: Binding(
+                get: { mediaScannerEnabled },
+                set: { isOn in
+                    setMediaScannerEnabled(isOn)
+                }
+            )
+        )
+    }
+
+    private var scannerNotificationsToggle: some View {
+        SettingsToggleRow(
+            title: "Scanner notifications",
+            description: "Show a notification when Reported finds a likely report candidate.",
+            isOn: Binding(
+                get: { notificationsEnabled },
+                set: { isOn in
+                    IOSMediaScannerSettings.notificationsEnabled = isOn
+                    notificationsEnabled = isOn
+                }
+            )
+        )
     }
 
     private func setTheme(_ mode: AppThemeMode) {
@@ -3820,6 +4157,7 @@ struct InputField: View {
     @Binding var text: String
     var disabled = false
     var isError = false
+    var fieldMinHeight: CGFloat? = nil
     var keyboardType: UIKeyboardType = .default
     var textContentType: UITextContentType? = nil
     var textInputAutocapitalization: TextInputAutocapitalization? = nil
@@ -3833,6 +4171,9 @@ struct InputField: View {
             Text(title)
                 .font(.headline)
                 .foregroundStyle(isError ? Color.red : Color.reportedOrange)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .allowsTightening(true)
             HStack(spacing: 8) {
                 TextField(title, text: $text, axis: .vertical)
                     .disabled(disabled)
@@ -3860,6 +4201,7 @@ struct InputField: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
+            .frame(minHeight: fieldMinHeight, alignment: .topLeading)
             .background(isError ? Color.reportedFieldErrorBackground : Color(.systemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -4035,11 +4377,11 @@ private extension UIImage {
 
 private struct PlateRegionSheet: View {
     let selectedValue: String
+    @Binding var showAllStates: Bool
     let onSelected: (String) -> Void
-    @State private var showAllStates = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Choose State")
                 .font(.title2.bold())
             ScrollView {
@@ -4068,7 +4410,9 @@ private struct PlateRegionSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
     }
 }
 

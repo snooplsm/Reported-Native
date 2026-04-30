@@ -1,0 +1,37 @@
+_metadata:
+  major_version: 2
+  minor_version: 1
+
+display_information:
+  name: Slack to Discord Backup
+  description: Mirrors Slack channel messages into Discord for backup.
+  long_description: Mirrors public Slack channel messages, invited private Slack channel messages, edits, deletions, and files into Discord channels using a self-hosted Events API receiver and Discord webhooks. Use this for workspace backup visibility, especially on Slack Free workspaces where older history becomes hidden or deleted.
+  background_color: "#5865F2"
+
+features:
+  bot_user:
+    display_name: Slack Backup
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - channels:read
+      - channels:history
+      - channels:join
+      - groups:read
+      - groups:history
+      - users:read
+      - files:read
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+  incoming_webhooks:
+    incoming_webhooks_enabled: false
+  event_subscriptions:
+    request_url: https://YOUR-PUBLIC-DOMAIN.example/slack/events
+    bot_events:
+      - message.channels
+      - message.groups
