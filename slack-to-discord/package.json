@@ -1,0 +1,20 @@
+{
+  "name": "slack-to-discord",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mirror Slack channel messages to Discord webhooks in real time.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "sync:channels": "node src/sync-channels.js",
+    "doctor": "node src/doctor.js",
+    "backfill": "node src/backfill.js",
+    "poll": "node src/poll.js",
+    "state:rebuild": "node src/rebuild-state-from-discord.js",
+    "prune:deleted": "node src/prune-deleted.js",
+    "test": "node --test"
+  }
+}

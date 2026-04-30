@@ -1,0 +1,150 @@
+{
+  "project_info": {
+    "project_number": "131272311428",
+    "project_id": "reported-219c6",
+    "storage_bucket": "reported-219c6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131272311428:android:128d2d50cd9cce621538d1",
+        "android_client_info": {
+          "package_name": "cab.reported.nyc"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "131272311428-g3jp286jmqifi8o16feuvuccoc4k07p1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "cab.reported.nyc",
+            "certificate_hash": "8c983b9c9fd27ec2a63c1ed1a5a3a9790492d0b3"
+          }
+        },
+        {
+          "client_id": "131272311428-lrmj6jq6oga1n8017am7hot4tr9btpkm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "cab.reported.nyc",
+            "certificate_hash": "e86c90626417784ac1b8daaa4d55a6da7c8a1770"
+          }
+        },
+        {
+          "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX3wMovynI_VOaIklKkcl1K0io_J2uy6k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "131272311428-giv5ve13djitkgd5cogmhnm8pdv9sgjn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "cab.reported.nyc"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131272311428:android:b31ca76b45f5e3341538d1",
+        "android_client_info": {
+          "package_name": "us.happytap.plate"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "131272311428-g8ujt9ni6lvdljrjqh2fidfmt1l10gfc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "us.happytap.plate",
+            "certificate_hash": "cc51a96ce405aa3ad67e0f5563aecbacd2847ac5"
+          }
+        },
+        {
+          "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX3wMovynI_VOaIklKkcl1K0io_J2uy6k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "131272311428-giv5ve13djitkgd5cogmhnm8pdv9sgjn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "cab.reported.nyc"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131272311428:android:1008e88d86b255cb1538d1",
+        "android_client_info": {
+          "package_name": "us.wmwm.reported"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "131272311428-3mct7d0p080bglmqu1m84rae8rdalq6n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "us.wmwm.reported",
+            "certificate_hash": "39d534a54655a9f4a99748a7d1298764639a622b"
+          }
+        },
+        {
+          "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX3wMovynI_VOaIklKkcl1K0io_J2uy6k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "131272311428-b58gmcm6ucc0v0acooeic2c748bb6odh.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "131272311428-giv5ve13djitkgd5cogmhnm8pdv9sgjn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "cab.reported.nyc"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

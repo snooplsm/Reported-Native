@@ -7,15 +7,15 @@ interface IAuthContext {
     authorized: boolean,
     userObj: any,
     login: (userObj: object) => Promise<boolean>,
-    logout: () => void,
+    logout: () => Promise<boolean>,
 }
 
 const AuthContextDefaults = {
     loading: true,
     authorized: false,
     userObj: null,
-    login: () => null,
-    logout: () => null,
+    login: () => Promise.resolve(false),
+    logout: () => Promise.resolve(false),
 }
 
 type AuthProviderProps = {
