@@ -42,6 +42,26 @@ data class PlateCandidate(
     val videoFrameTimeMs: Long? = null
 )
 
+data class VehicleDescription(
+    val imageDescription: String,
+    val color: String? = null,
+    val make: String? = null,
+    val model: String? = null
+) {
+    val hasStructuredFields: Boolean
+        get() = color != null || make != null || model != null
+
+    fun formattedForNotes(): String {
+        val vehicleSummary = listOfNotNull(color, make, model)
+            .joinToString(" ")
+            .ifBlank { null }
+        return listOfNotNull(
+            vehicleSummary?.let { "Vehicle: $it" },
+            "Image description: $imageDescription"
+        ).joinToString("\n")
+    }
+}
+
 data class AddressSuggestion(
     val label: String,
     val latitude: Double,
@@ -68,7 +88,8 @@ data class LoginUiState(
     val email: String = "",
     val password: String = "",
     val loading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val passwordResetMessage: String? = null
 )
 
 data class RegisterUiState(
@@ -103,6 +124,21 @@ enum class ReportsMode {
     LIST
 }
 
+sealed interface ReportsAction {
+    data object ListChosen : ReportsAction
+    data object SearchChosen : ReportsAction
+    data object SearchPressed : ReportsAction
+    data object NextPageRequested : ReportsAction
+    data class DetailRequested(val reportObjectId: String) : ReportsAction
+    data class ReportOpened(val reportObjectId: String) : ReportsAction
+    data class ReportDeleted(val report: ReportSummary) : ReportsAction
+    data class SearchFieldsChanged(
+        val license: String? = null,
+        val startDate: String? = null,
+        val endDate: String? = null
+    ) : ReportsAction
+}
+
 data class ProfileUiState(
     val loading: Boolean = false,
     val firstName: String = "",
@@ -118,6 +154,60 @@ data class ProfileUiState(
 data class ThemeUiState(
     val mode: AppThemeMode = AppThemeMode.SYSTEM
 )
+
+sealed interface SessionAction {
+    data object Load : SessionAction
+    data object Authenticated : SessionAction
+    data object ContinueAsGuest : SessionAction
+    data object Logout : SessionAction
+    data class SocialSignInCompleted(val profile: SocialAuthProfile) : SessionAction
+}
+
+sealed interface LoginAction {
+    data class EmailChanged(val value: String) : LoginAction
+    data class PasswordChanged(val value: String) : LoginAction
+    data class LoginPressed(val onSuccess: () -> Unit) : LoginAction
+    data object ForgotPasswordPressed : LoginAction
+    data object PasswordResetMessageDismissed : LoginAction
+    data class SocialSignInFailed(val provider: String, val message: String?) : LoginAction
+    data object SocialSignInCancelled : LoginAction
+    data class SocialSignInCompleted(val profile: SocialAuthProfile, val onSuccess: () -> Unit) : LoginAction
+}
+
+sealed interface RegisterAction {
+    data class FieldsChanged(
+        val firstName: String? = null,
+        val lastName: String? = null,
+        val phone: String? = null,
+        val email: String? = null,
+        val password: String? = null,
+        val testify: Boolean? = null
+    ) : RegisterAction
+
+    data class RegisterPressed(val onSuccess: () -> Unit) : RegisterAction
+    data class SocialSignInFailed(val provider: String, val message: String?) : RegisterAction
+    data object SocialSignInCancelled : RegisterAction
+    data class SocialSignInCompleted(val profile: SocialAuthProfile, val onSuccess: () -> Unit) : RegisterAction
+}
+
+sealed interface ProfileAction {
+    data object Load : ProfileAction
+    data object ToggleEditing : ProfileAction
+    data class SavePressed(val onSaved: () -> Unit = {}) : ProfileAction
+    data class ThemeModeChanged(val mode: AppThemeMode) : ProfileAction
+    data class FieldsChanged(
+        val firstName: String? = null,
+        val lastName: String? = null,
+        val phone: String? = null,
+        val email: String? = null,
+        val testify: Boolean? = null
+    ) : ProfileAction
+}
+
+sealed interface ThemeAction {
+    data object Load : ThemeAction
+    data class ModeChanged(val mode: AppThemeMode) : ThemeAction
+}
 
 data class ComposerValidationErrors(
     val media: String? = null,
@@ -157,6 +247,7 @@ data class ComposerUiState(
     val detectionFrameCandidates: List<PlateCandidate> = emptyList(),
     val plateCandidates: List<PlateCandidate> = emptyList(),
     val selectedPlateCandidate: String? = null,
+    val vehicleDescription: VehicleDescription? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val addressQuery: String = "",
@@ -222,6 +313,7 @@ sealed interface ComposerAction {
         val inferredPlate: String? = null,
         val inferredState: String? = null
     ) : ComposerAction
+    data class VehicleDescriptionApplied(val vehicleDescription: VehicleDescription) : ComposerAction
     data class PlateCandidateChosen(val candidate: PlateCandidate) : ComposerAction
 
     data class AddressQueryChanged(val value: String) : ComposerAction

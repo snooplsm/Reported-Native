@@ -1,5 +1,6 @@
 import FirebaseAnalytics
 import FirebaseCore
+import FirebaseCrashlytics
 import SwiftUI
 
 @main
@@ -8,6 +9,7 @@ struct ReportediOSApp: App {
 
     init() {
         FirebaseApp.configure()
+        Crashlytics.crashlytics().setCustomValue(Bundle.main.bundleIdentifier ?? "unknown", forKey: "bundle_id")
         Analytics.logEvent(AnalyticsEventAppOpen, parameters: nil)
         IOSMediaScanner.shared.start()
     }

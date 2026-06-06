@@ -56,7 +56,8 @@ data class ReportFilter(
 data class ComplaintCategory(
     val id: String,
     val name: String,
-    val audience: String
+    val audience: String,
+    val key: String = name
 )
 
 data class ReportStatus(
@@ -114,7 +115,11 @@ data class ReportDraft(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val plateCandidates: List<DraftPlateCandidate> = emptyList(),
-    val selectedPlateCandidate: String? = null
+    val selectedPlateCandidate: String? = null,
+    val vehicleImageDescription: String? = null,
+    val vehicleColor: String? = null,
+    val vehicleMake: String? = null,
+    val vehicleModel: String? = null
 )
 
 data class SubmitReportCommand(
@@ -127,6 +132,10 @@ data class SubmitReportCommand(
     val timeOfIncidentIso: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val vehicleImageDescription: String? = null,
+    val vehicleColor: String? = null,
+    val vehicleMake: String? = null,
+    val vehicleModel: String? = null,
     val mediaUrls: List<String> = emptyList(),
     val mediaFiles: List<SubmitReportMediaFile> = emptyList()
 )

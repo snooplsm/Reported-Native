@@ -2,6 +2,7 @@ package com.reported.nativeandroid.media
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.reported.nativeandroid.di.AppGraph
@@ -53,13 +54,16 @@ class SubmitDetectedInfractionWorker(
             DetectedInfractionNotifications.cancel(applicationContext, candidateId)
             Result.success()
         }.getOrElse { error ->
+            Log.e(TAG, "Detected infraction submit failed", error)
             AppGraph.shared.saveDraftUseCase.execute(candidate.toDraft())
             DetectedInfractionNotifications.showNeedsEdit(
                 applicationContext,
                 candidateId,
-                error.message ?: "Open Reported to review this detected report."
+                "Open Reported to review this detected report."
             )
             Result.success()
         }
     }
 }
+
+private const val TAG = "ReportedMediaScanner"

@@ -112,6 +112,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -428,6 +429,13 @@ fun ReportComposerScreen(
                         inferredPlate = topCandidate?.plate,
                         inferredState = reverseGeocodeSuggestion?.region
                     ))
+                    scope.launch {
+                        VehicleImageDescriptionEngine.describeVehicle(context, media)?.let { vehicleDescription ->
+                            if (vm.state.value.primaryMedia?.uri == media.uri) {
+                                vm.onAction(ComposerAction.VehicleDescriptionApplied(vehicleDescription))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -572,11 +580,11 @@ fun ReportComposerScreen(
     }
 
     LaunchedEffect(state.addressQuery) {
+        addressSearchJob?.cancel()
         if (state.stage != SubmissionStage.VERIFY || state.addressQuery.isBlank() || state.addressQuery == state.address) {
             vm.onAction(ComposerAction.AddressSuggestionsChanged(emptyList()))
             return@LaunchedEffect
         }
-        addressSearchJob?.cancel()
         addressSearchJob = scope.launch {
             vm.onAction(ComposerAction.AddressLookupLoadingChanged(true))
             delay(250)
@@ -1752,6 +1760,19 @@ private data class ComplaintOption(
     val lottieAssetPath: String? = null
 )
 
+private fun ComplaintOption.isRanRedLightOrStopSign(): Boolean {
+    val normalizedTitle = title.lowercase(Locale.US)
+    return lottieAssetPath?.contains("ranredlight", ignoreCase = true) == true ||
+        normalizedTitle.contains("red light") ||
+        normalizedTitle.contains("stop sign")
+}
+
+private fun complaintTileTitleSize(title: String) = when {
+    title.length >= 26 -> 11.sp
+    title.length >= 20 -> 12.sp
+    else -> 16.sp
+}
+
 private fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOption> =
     listOf(
         complaintOptionFor(
@@ -1803,23 +1824,16 @@ private fun complaintOptionFor(
     lottieAssetPath: String? = null
 ): ComplaintOption {
     val category = categories.firstOrNull { category ->
-        val name = category.name.lowercase(Locale.US)
-        keywords.any { name.contains(it) }
+        val searchableText = "${category.name} ${category.key}".lowercase(Locale.US)
+        keywords.any { searchableText.contains(it) }
     }
     return ComplaintOption(
         id = category?.id ?: fallbackId,
-        title = category?.name?.toDisplayComplaintTitle() ?: fallbackTitle,
+        title = category?.name ?: fallbackTitle,
         imageUri = imageUri,
         lottieAssetPath = lottieAssetPath
     )
 }
-
-private fun String.toDisplayComplaintTitle(): String =
-    when (trim().lowercase(Locale.US)) {
-        "blocked the bike lane", "blocked the biek lane" -> "Blocked bike lane"
-        "blocked the crosswalk" -> "Blocked crosswalk"
-        else -> this
-    }
 
 private fun selectedComplaintDetectionHint(
     state: ComposerUiState,
@@ -2259,18 +2273,25 @@ private fun ComplaintTile(
                 )
                 Text(
                     option.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = complaintTileTitleSize(option.title)
+                    ),
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    maxLines = 2
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             } else {
                 Text(
                     option.title,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = complaintTileTitleSize(option.title)
+                    ),
                     fontWeight = FontWeight.SemiBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -2286,7 +2307,8 @@ private fun ComplaintTileArt(
 ) {
     val context = LocalContext.current
     val shape = RoundedCornerShape(12.dp)
-    val artBackground = if (option.id == "ran_red_light") {
+    val isRanRedLightOrStopSign = option.isRanRedLightOrStopSign()
+    val artBackground = if (isRanRedLightOrStopSign) {
         Color.Black
     } else {
         MaterialTheme.colorScheme.surfaceVariant
@@ -2294,7 +2316,7 @@ private fun ComplaintTileArt(
     val artModifier = modifier
         .background(artBackground, shape)
         .clip(shape)
-    val lottieAlignment = if (option.id == "ran_red_light") Alignment.BottomCenter else Alignment.Center
+    val lottieContentScale = if (isRanRedLightOrStopSign) ContentScale.Fit else ContentScale.Crop
     if (option.lottieAssetPath != null) {
         val composition by rememberLottieComposition(LottieCompositionSpec.Asset(option.lottieAssetPath))
         val progress by animateLottieCompositionAsState(
@@ -2319,8 +2341,8 @@ private fun ComplaintTileArt(
                 composition = composition,
                 progress = { if (animate) progress else 0f },
                 modifier = artModifier,
-                contentScale = ContentScale.Crop,
-                alignment = lottieAlignment
+                contentScale = lottieContentScale,
+                alignment = Alignment.Center
             )
             return
         }

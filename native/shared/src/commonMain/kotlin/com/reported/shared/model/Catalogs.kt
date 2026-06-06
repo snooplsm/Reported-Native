@@ -8,18 +8,18 @@ object Catalogs {
         get() = RemoteConfigOverrides.reportStatuses ?: defaultReportStatuses
 
     val defaultComplaintCategories: List<ComplaintCategory> = listOf(
-        ComplaintCategory("Z8vjWz8uYr", "Blocked bike lane", "cyclist, walker, pedestrian, passenger"),
-        ComplaintCategory("GzRxlMN1vl", "Blocked crosswalk", "cyclist, walker, pedestrian, passenger"),
-        ComplaintCategory("wm7Yim3Pc5", "Honked horn (no emergency)", "cyclist, walker, pedestrian"),
-        ComplaintCategory("tpMiIrIuCe", "Failed to yield", "cyclist, walker, pedestrian"),
+        ComplaintCategory("Z8vjWz8uYr", "Blocked bike lane", "cyclist, walker, pedestrian, passenger", "Blocked the bike lane"),
+        ComplaintCategory("GzRxlMN1vl", "Blocked crosswalk", "cyclist, walker, pedestrian, passenger", "Blocked the crosswalk"),
         ComplaintCategory("X0dD3EB1Ym", "Drove aggressively", "cyclist, walker, pedestrian, passenger"),
+        ComplaintCategory("WstZSmJr4t", "Drove recklessly", "passenger", "Drove recklessly"),
+        ComplaintCategory("tpMiIrIuCe", "Failed to yield", "cyclist, walker, pedestrian"),
+        ComplaintCategory("wm7Yim3Pc5", "Honked horn (no emergency)", "cyclist, walker, pedestrian"),
+        ComplaintCategory("0iEd9qaziB", "Parked illegally", "cyclist, walker, pedestrian, passenger", "Parked illegally"),
+        ComplaintCategory("DauBz1MDhJ", "Ran a red light or stop sign", "cyclist, walker, pedestrian, passenger", "Ran a red light or stop sign"),
         ComplaintCategory("XSIsLAVA2f", "Used phone while driving", "cyclist, walker, pedestrian, passenger"),
         ComplaintCategory("lVwiCXEK7G", "Was on a cell phone", "passenger"),
-        ComplaintCategory("WstZSmJr4t", "Drove recklessly", "passenger"),
-        ComplaintCategory("0iEd9qaziB", "Parked illegally", "cyclist, walker, pedestrian, passenger"),
-        ComplaintCategory("DauBz1MDhJ", "Ran a red light or stop sign", "cyclist, walker, pedestrian, passenger"),
         ComplaintCategory("dJwrDRrD47", "Was speeding", "cyclist, walker, pedestrian, passenger")
-    ).sortedBy { it.name }
+    )
 
     val protectedReportStatuses: List<ReportStatus> = listOf(
         ReportStatus(0, "PENDING", "Pending"),

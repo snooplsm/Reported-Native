@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,6 +60,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
@@ -221,6 +227,77 @@ fun ReportedField(
     autoFitText: Boolean = false,
     minHeight: Dp = ReportedFieldMinHeight
 ) {
+    ReportedTextInputField(
+        label = label,
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        enabled = enabled,
+        isError = isError,
+        onClear = onClear,
+        trailingContent = trailingContent,
+        trailingWidth = trailingWidth,
+        autoFitText = autoFitText,
+        minHeight = minHeight
+    )
+}
+
+@Composable
+fun ReportedPasswordField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    minHeight: Dp = ReportedFieldMinHeight
+) {
+    var passwordVisible by remember { mutableStateOf(false) }
+    ReportedTextInputField(
+        label = label,
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        enabled = enabled,
+        isError = isError,
+        minHeight = minHeight,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (passwordVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingWidth = 48.dp,
+        trailingContent = {
+            IconButton(
+                onClick = { passwordVisible = !passwordVisible },
+                enabled = enabled
+            ) {
+                Icon(
+                    imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun ReportedTextInputField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    onClear: (() -> Unit)? = null,
+    trailingContent: @Composable (() -> Unit)? = null,
+    trailingWidth: Dp = 40.dp,
+    autoFitText: Boolean = false,
+    minHeight: Dp = ReportedFieldMinHeight,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None
+) {
     val bodyStyle = MaterialTheme.typography.bodyLarge
     val inputTextColor = if (enabled) {
         MaterialTheme.colorScheme.onSurface
@@ -256,6 +333,8 @@ fun ReportedField(
             enabled = enabled,
             modifier = fieldModifier,
             singleLine = true,
+            keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = textSize,
                 color = inputTextColor

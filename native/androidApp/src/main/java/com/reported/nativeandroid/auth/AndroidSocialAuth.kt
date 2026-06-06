@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -38,10 +39,8 @@ suspend fun signInWithGoogle(activity: Activity): SocialAuthProfile {
         if (error.isCredentialCancellation()) {
             throw SocialAuthCancelledException(error)
         }
-        throw IllegalStateException(
-            "Google sign-in failed (${error.type}): ${error.message ?: "check OAuth client ID, package name, and SHA-1 fingerprint."}",
-            error
-        )
+        Log.e("ReportedAuth", "Google credential request failed type=${error.type}", error)
+        throw IllegalStateException("Google sign-in failed.", error)
     }
     val credential = result.credential
     if (credential !is CustomCredential ||

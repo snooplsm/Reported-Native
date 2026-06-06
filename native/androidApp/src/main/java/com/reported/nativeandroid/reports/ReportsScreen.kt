@@ -23,6 +23,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.reported.nativeandroid.app.ReportsMode
+import com.reported.nativeandroid.app.ReportsAction
 import com.reported.nativeandroid.app.ReportsViewModel
 import com.reported.nativeandroid.screens.LoginRequiredScreen
 import com.reported.nativeandroid.screens.MessageCard
@@ -66,7 +67,7 @@ fun ReportsScreen(
     LaunchedEffect(openReportObjectId) {
         val objectId = openReportObjectId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         expandedReports = expandedReports + objectId
-        vm.openReport(objectId)
+        vm.onAction(ReportsAction.ReportOpened(objectId))
         onOpenedReport()
     }
 
@@ -76,7 +77,7 @@ fun ReportsScreen(
             .collect { lastVisibleIndex ->
                 val totalItems = listState.layoutInfo.totalItemsCount
                 if (totalItems > 0 && lastVisibleIndex >= totalItems - 4) {
-                    vm.loadNextPage()
+                    vm.onAction(ReportsAction.NextPageRequested)
                 }
             }
     }
@@ -96,7 +97,7 @@ fun ReportsScreen(
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            vm.deleteReport(report)
+                            vm.onAction(ReportsAction.ReportDeleted(report))
                             pendingDeleteReport = null
                         }
                     ) {
@@ -146,12 +147,12 @@ fun ReportsScreen(
                     ) {
                         SecondaryButton(
                             "Search",
-                            onClick = vm::chooseSearch,
+                            onClick = { vm.onAction(ReportsAction.SearchChosen) },
                             modifier = Modifier.weight(1f)
                         )
                         PrimaryButton(
                             "List",
-                            onClick = vm::chooseList,
+                            onClick = { vm.onAction(ReportsAction.ListChosen) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -164,23 +165,23 @@ fun ReportsScreen(
                         ReportedField(
                             label = "License plate",
                             value = state.licenseQuery,
-                            onValueChange = { vm.updateSearch(license = it) }
+                            onValueChange = { vm.onAction(ReportsAction.SearchFieldsChanged(license = it)) }
                         )
                         OccurredAtField(
                             label = "Start Date",
                             isoValue = state.startDate,
-                            onValueSelected = { vm.updateSearch(startDate = it) },
-                            onClear = { vm.updateSearch(startDate = "") }
+                            onValueSelected = { vm.onAction(ReportsAction.SearchFieldsChanged(startDate = it)) },
+                            onClear = { vm.onAction(ReportsAction.SearchFieldsChanged(startDate = "")) }
                         )
                         OccurredAtField(
                             label = "End Date",
                             isoValue = state.endDate,
-                            onValueSelected = { vm.updateSearch(endDate = it) },
-                            onClear = { vm.updateSearch(endDate = "") }
+                            onValueSelected = { vm.onAction(ReportsAction.SearchFieldsChanged(endDate = it)) },
+                            onClear = { vm.onAction(ReportsAction.SearchFieldsChanged(endDate = "")) }
                         )
                         PrimaryButton(
                             "Search reports",
-                            onClick = vm::search,
+                            onClick = { vm.onAction(ReportsAction.SearchPressed) },
                             enabled = !state.loading
                         )
                     }
@@ -224,9 +225,9 @@ fun ReportsScreen(
                 OutlinedCard(
                     modifier = Modifier.clickable {
                             expandedReports = if (expanded) {
-                                expandedReports - reportKey
-                            } else {
-                                if (report.objectId.isNotBlank()) vm.loadDetail(report.objectId)
+                            expandedReports - reportKey
+                        } else {
+                                if (report.objectId.isNotBlank()) vm.onAction(ReportsAction.DetailRequested(report.objectId))
                                 expandedReports + reportKey
                             }
                         },

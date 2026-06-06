@@ -3,6 +3,7 @@ package com.reported.nativeandroid.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.util.Log
+import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.di.AppGraph
 import com.reported.nativeandroid.media.LocalSubmissionMediaCleaner
 import com.reported.nativeandroid.media.ParseMediaUploader
@@ -24,10 +25,21 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class SessionViewModel : ViewModel() {
     private val _state = MutableStateFlow(SessionUiState())
     val state: StateFlow<SessionUiState> = _state.asStateFlow()
+
+    fun onAction(action: SessionAction) {
+        when (action) {
+            SessionAction.Load -> load()
+            SessionAction.Authenticated -> onAuthenticated()
+            SessionAction.ContinueAsGuest -> continueAsGuest()
+            SessionAction.Logout -> logout()
+            is SessionAction.SocialSignInCompleted -> completeSocialSignIn(action.profile)
+        }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -59,6 +71,7 @@ class SessionViewModel : ViewModel() {
         viewModelScope.launch {
             AppGraph.shared.logoutUseCase.execute()
             AppGraph.shared.saveGuestModeUseCase.execute(false)
+            ReportedAnalytics.logLogout()
             _state.value = SessionUiState(loading = false, session = null, isGuest = false)
         }
     }
@@ -78,6 +91,7 @@ class SessionViewModel : ViewModel() {
                 )
             }.onSuccess {
                 AppGraph.shared.saveGuestModeUseCase.execute(false)
+                ReportedAnalytics.logLogin(profile.provider)
                 load()
             }.onFailure { error ->
                 _state.update { current -> current.copy(loading = false, session = null, isGuest = current.isGuest) }
@@ -90,6 +104,19 @@ class LoginViewModel : ViewModel() {
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state.asStateFlow()
 
+    fun onAction(action: LoginAction) {
+        when (action) {
+            is LoginAction.EmailChanged -> onEmailChanged(action.value)
+            is LoginAction.PasswordChanged -> onPasswordChanged(action.value)
+            is LoginAction.LoginPressed -> login(action.onSuccess)
+            LoginAction.ForgotPasswordPressed -> forgotPassword()
+            LoginAction.PasswordResetMessageDismissed -> dismissPasswordResetMessage()
+            is LoginAction.SocialSignInFailed -> onSocialSignInFailed(action.provider, action.message)
+            LoginAction.SocialSignInCancelled -> onSocialSignInCancelled()
+            is LoginAction.SocialSignInCompleted -> completeSocialSignIn(action.profile, action.onSuccess)
+        }
+    }
+
     fun onEmailChanged(value: String) = _state.update { it.copy(email = value) }
     fun onPasswordChanged(value: String) = _state.update { it.copy(password = value) }
 
@@ -100,9 +127,16 @@ class LoginViewModel : ViewModel() {
                 AppGraph.shared.loginUseCase.execute(_state.value.email, _state.value.password)
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, error = null) }
+                ReportedAnalytics.logLogin("password")
                 onSuccess()
             }.onFailure { error ->
-                _state.update { current -> current.copy(loading = false, error = error.message ?: "Login failed") }
+                Log.e("ReportedAuth", "Login failed", error)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "There was an error signing in. Please try again."
+                    )
+                }
             }
         }
     }
@@ -115,8 +149,22 @@ class LoginViewModel : ViewModel() {
         }
         viewModelScope.launch {
             runCatching { AppGraph.shared.forgotPasswordUseCase.execute(email) }
-                .onFailure { _state.update { it.copy(error = "Couldn't send reset email") } }
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            error = null,
+                            passwordResetMessage = "We sent password reset instructions to $email."
+                        )
+                    }
+                }
+                .onFailure {
+                    _state.update { it.copy(error = "Couldn't send reset email") }
+                }
         }
+    }
+
+    fun dismissPasswordResetMessage() {
+        _state.update { it.copy(passwordResetMessage = null) }
     }
 
     fun continueWithGoogle() {
@@ -133,7 +181,10 @@ class LoginViewModel : ViewModel() {
 
     fun onSocialSignInFailed(provider: String, message: String?) {
         _state.update {
-            it.copy(loading = false, error = message ?: "$provider sign-in failed")
+            it.copy(
+                loading = false,
+                error = "There was an error signing in. Please try again."
+            )
         }
     }
 
@@ -157,9 +208,16 @@ class LoginViewModel : ViewModel() {
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, error = null) }
+                ReportedAnalytics.logLogin(profile.provider)
                 onSuccess()
             }.onFailure { error ->
-                _state.update { current -> current.copy(loading = false, error = error.message ?: "Sign-in failed") }
+                Log.e("ReportedAuth", "Social login failed", error)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "There was an error signing in. Please try again."
+                    )
+                }
             }
         }
     }
@@ -168,6 +226,23 @@ class LoginViewModel : ViewModel() {
 class RegisterViewModel : ViewModel() {
     private val _state = MutableStateFlow(RegisterUiState())
     val state: StateFlow<RegisterUiState> = _state.asStateFlow()
+
+    fun onAction(action: RegisterAction) {
+        when (action) {
+            is RegisterAction.FieldsChanged -> update(
+                firstName = action.firstName ?: _state.value.firstName,
+                lastName = action.lastName ?: _state.value.lastName,
+                phone = action.phone ?: _state.value.phone,
+                email = action.email ?: _state.value.email,
+                password = action.password ?: _state.value.password,
+                testify = action.testify ?: _state.value.testify
+            )
+            is RegisterAction.RegisterPressed -> register(action.onSuccess)
+            is RegisterAction.SocialSignInFailed -> onSocialSignInFailed(action.provider, action.message)
+            RegisterAction.SocialSignInCancelled -> onSocialSignInCancelled()
+            is RegisterAction.SocialSignInCompleted -> completeSocialSignIn(action.profile, action.onSuccess)
+        }
+    }
 
     fun update(
         firstName: String = _state.value.firstName,
@@ -201,9 +276,16 @@ class RegisterViewModel : ViewModel() {
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false) }
+                ReportedAnalytics.logLogin("password")
                 onSuccess()
             }.onFailure { error ->
-                _state.update { current -> current.copy(loading = false, error = error.message ?: "Registration failed") }
+                Log.e("ReportedAuth", "Registration failed", error)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "There was an error creating your account. Please try again."
+                    )
+                }
             }
         }
     }
@@ -222,7 +304,10 @@ class RegisterViewModel : ViewModel() {
 
     fun onSocialSignInFailed(provider: String, message: String?) {
         _state.update {
-            it.copy(loading = false, error = message ?: "$provider sign-in failed")
+            it.copy(
+                loading = false,
+                error = "There was an error signing in. Please try again."
+            )
         }
     }
 
@@ -248,9 +333,16 @@ class RegisterViewModel : ViewModel() {
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, error = null) }
+                ReportedAnalytics.logLogin(profile.provider)
                 onSuccess()
             }.onFailure { error ->
-                _state.update { current -> current.copy(loading = false, error = error.message ?: "Sign-in failed") }
+                Log.e("ReportedAuth", "Social registration failed", error)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "There was an error signing in. Please try again."
+                    )
+                }
             }
         }
     }
@@ -261,8 +353,26 @@ class ReportsViewModel : ViewModel() {
     val state: StateFlow<ReportsUiState> = _state.asStateFlow()
     private var activeFilter: ReportFilter? = null
 
+    fun onAction(action: ReportsAction) {
+        when (action) {
+            ReportsAction.ListChosen -> chooseList()
+            ReportsAction.SearchChosen -> chooseSearch()
+            ReportsAction.SearchPressed -> search()
+            ReportsAction.NextPageRequested -> loadNextPage()
+            is ReportsAction.DetailRequested -> loadDetail(action.reportObjectId)
+            is ReportsAction.ReportOpened -> openReport(action.reportObjectId)
+            is ReportsAction.ReportDeleted -> deleteReport(action.report)
+            is ReportsAction.SearchFieldsChanged -> updateSearch(
+                license = action.license,
+                startDate = action.startDate,
+                endDate = action.endDate
+            )
+        }
+    }
+
     fun chooseList() {
         activeFilter = null
+        ReportedAnalytics.logReportsList()
         _state.update {
             it.copy(
                 mode = ReportsMode.LIST,
@@ -306,6 +416,11 @@ class ReportsViewModel : ViewModel() {
             license = current.licenseQuery.trim(),
             startDateIso = current.startDate.trim(),
             endDateIso = current.endDate.trim()
+        )
+        ReportedAnalytics.logReportsSearch(
+            hasLicense = filter.license.isNotBlank(),
+            hasStartDate = filter.startDateIso.isNotBlank(),
+            hasEndDate = filter.endDateIso.isNotBlank()
         )
         activeFilter = filter
         load(filter = filter, append = false)
@@ -459,6 +574,22 @@ class ProfileViewModel : ViewModel() {
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
 
+    fun onAction(action: ProfileAction) {
+        when (action) {
+            ProfileAction.Load -> load()
+            ProfileAction.ToggleEditing -> toggleEditing()
+            is ProfileAction.SavePressed -> save(action.onSaved)
+            is ProfileAction.ThemeModeChanged -> setThemeMode(action.mode)
+            is ProfileAction.FieldsChanged -> update(
+                firstName = action.firstName ?: _state.value.firstName,
+                lastName = action.lastName ?: _state.value.lastName,
+                phone = action.phone ?: _state.value.phone,
+                email = action.email ?: _state.value.email,
+                testify = action.testify ?: _state.value.testify
+            )
+        }
+    }
+
     fun load() {
         viewModelScope.launch {
             val session = AppGraph.shared.loadSessionUseCase.execute()
@@ -529,6 +660,13 @@ class ProfileViewModel : ViewModel() {
 class ThemeViewModel : ViewModel() {
     private val _state = MutableStateFlow(ThemeUiState())
     val state: StateFlow<ThemeUiState> = _state.asStateFlow()
+
+    fun onAction(action: ThemeAction) {
+        when (action) {
+            ThemeAction.Load -> load()
+            is ThemeAction.ModeChanged -> update(action.mode)
+        }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -604,6 +742,7 @@ class ComposerViewModel : ViewModel() {
                 inferredPlate = action.inferredPlate,
                 inferredState = action.inferredState
             )
+            is ComposerAction.VehicleDescriptionApplied -> applyVehicleDescription(action.vehicleDescription)
             is ComposerAction.PlateCandidateChosen -> choosePlateCandidate(action.candidate)
             is ComposerAction.AddressQueryChanged -> updateAddressQuery(action.value)
             is ComposerAction.AddressSuggestionsChanged -> setAddressSuggestions(action.suggestions, action.loading)
@@ -657,6 +796,14 @@ class ComposerViewModel : ViewModel() {
                     longitude = draft?.longitude ?: current.longitude,
                     plateCandidates = draft?.plateCandidates?.map { it.toPlateCandidate() } ?: current.plateCandidates,
                     selectedPlateCandidate = draft?.selectedPlateCandidate ?: current.selectedPlateCandidate,
+                    vehicleDescription = draft?.vehicleImageDescription?.let { imageDescription ->
+                        VehicleDescription(
+                            imageDescription = imageDescription,
+                            color = draft.vehicleColor,
+                            make = draft.vehicleMake,
+                            model = draft.vehicleModel
+                        )
+                    } ?: current.vehicleDescription,
                     draftLoaded = true,
                     error = null
                 )
@@ -831,6 +978,7 @@ class ComposerViewModel : ViewModel() {
                         detectionProgress = 0f,
                         pendingVideoProcessingMedia = null,
                         awaitingVideoProcessingDecision = false,
+                        vehicleDescription = if (nextPrimary != null) current.vehicleDescription else null,
                         plate = if (nextPrimary != null) current.plate else "",
                         plateRegion = if (nextPrimary != null) current.plateRegion else "NY",
                         address = if (nextPrimary != null) current.address else "",
@@ -940,7 +1088,33 @@ class ComposerViewModel : ViewModel() {
         persistDraft()
     }
 
+    fun applyVehicleDescription(vehicleDescription: VehicleDescription) {
+        _state.update { current ->
+            current.copy(
+                vehicleDescription = vehicleDescription,
+                notes = if (current.notes.isBlank()) {
+                    vehicleDescription.formattedForNotes()
+                } else {
+                    current.notes
+                }
+            )
+        }
+        persistDraft()
+    }
+
     fun choosePlateCandidate(candidate: PlateCandidate) {
+        val current = _state.value
+        val selectedRank = current.plateCandidates.indexOfFirst { it.plate == candidate.plate }
+            .takeIf { it >= 0 }
+            ?.plus(1)
+            ?: 0
+        ReportedAnalytics.logAlprResultSelected(
+            plateRegion = candidate.state,
+            candidateCount = current.plateCandidates.size,
+            selectedRank = selectedRank,
+            confidence = candidate.confidence.toDouble(),
+            wasCorrected = candidate.wasPlateCorrected
+        )
         _state.update {
             it.copy(
                 selectedPlateCandidate = candidate.plate,
@@ -957,9 +1131,13 @@ class ComposerViewModel : ViewModel() {
 
     fun updateAddressQuery(value: String) {
         _state.update {
+            val trimmedValue = value.trim()
+            val matchesChosenAddress = value == it.address
             it.copy(
                 addressQuery = value,
-                address = value,
+                address = if (trimmedValue.isEmpty()) "" else it.address,
+                latitude = if (matchesChosenAddress) it.latitude else null,
+                longitude = if (matchesChosenAddress) it.longitude else null,
                 validationErrors = it.validationErrors.copy(address = null)
             )
         }
@@ -1116,7 +1294,11 @@ class ComposerViewModel : ViewModel() {
                     latitude = snapshot.latitude,
                     longitude = snapshot.longitude,
                     plateCandidates = snapshot.plateCandidates.map { it.toDraftPlateCandidate() },
-                    selectedPlateCandidate = snapshot.selectedPlateCandidate
+                    selectedPlateCandidate = snapshot.selectedPlateCandidate,
+                    vehicleImageDescription = snapshot.vehicleDescription?.imageDescription,
+                    vehicleColor = snapshot.vehicleDescription?.color,
+                    vehicleMake = snapshot.vehicleDescription?.make,
+                    vehicleModel = snapshot.vehicleDescription?.model
                 )
             )
         }
@@ -1175,11 +1357,15 @@ class ComposerViewModel : ViewModel() {
                         plateRegion = snapshot.plateRegion,
                         description = snapshot.description,
                         notes = snapshot.notes,
-                        address = snapshot.address,
+                        address = snapshot.addressQuery.ifBlank { snapshot.address },
                         complaintIds = snapshot.selectedComplaintIds,
                         timeOfIncidentIso = snapshot.occurredAtIso.ifBlank { null },
                         latitude = snapshot.latitude,
                         longitude = snapshot.longitude,
+                        vehicleImageDescription = snapshot.vehicleDescription?.imageDescription,
+                        vehicleColor = snapshot.vehicleDescription?.color,
+                        vehicleMake = snapshot.vehicleDescription?.make,
+                        vehicleModel = snapshot.vehicleDescription?.model,
                         mediaFiles = mediaFiles
                     )
                 )
@@ -1190,8 +1376,22 @@ class ComposerViewModel : ViewModel() {
                     media = submittedMedia,
                     plateCandidates = snapshot.plateCandidates
                 )
-                submittedObjectId
-            }.onSuccess {
+                SubmitAnalyticsPayload(
+                    objectId = submittedObjectId,
+                    county = inferCounty(snapshot.address),
+                    plateRegion = snapshot.plateRegion,
+                    complaintCount = snapshot.selectedComplaintIds.size,
+                    mediaCount = submittedMedia.size,
+                    hasVideo = submittedMedia.any { it.isVideo }
+                )
+            }.onSuccess { result ->
+                ReportedAnalytics.logSubmitReport(
+                    county = result.county,
+                    plateRegion = result.plateRegion,
+                    complaintCount = result.complaintCount,
+                    mediaCount = result.mediaCount,
+                    hasVideo = result.hasVideo
+                )
                 Log.d("ReportedSubmit", "Submit flow finished successfully")
                 AppGraph.shared.clearDraftUseCase.execute()
                 _state.value = ComposerUiState(
@@ -1199,7 +1399,7 @@ class ComposerViewModel : ViewModel() {
                     showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages,
                     infoMessage = "Report submitted."
                 )
-                _events.tryEmit(ComposerEvent.ReportSubmitted(it))
+                _events.tryEmit(ComposerEvent.ReportSubmitted(result.objectId))
             }.onFailure { error ->
                 Log.e("ReportedSubmit", "Submit flow failed", error)
                 _state.update { current ->
@@ -1207,7 +1407,7 @@ class ComposerViewModel : ViewModel() {
                         submitting = false,
                         submitProgress = null,
                         submitMessage = null,
-                        error = error.message ?: "Unable to submit report"
+                        error = "There was an error submitting your report. Please try again."
                     )
                 }
             }
@@ -1338,6 +1538,33 @@ private const val MaxSubmissionVideoCount = 1
 private const val MaxSubmissionMediaMessage = "You can attach up to 3 photos or videos."
 private const val MaxSubmissionVideoMessage = "You can attach no more than 1 video."
 private const val DuplicateSubmissionMediaMessage = "That photo or video is already attached."
+
+private data class SubmitAnalyticsPayload(
+    val objectId: String,
+    val county: String,
+    val plateRegion: String,
+    val complaintCount: Int,
+    val mediaCount: Int,
+    val hasVideo: Boolean
+)
+
+private fun inferCounty(address: String): String {
+    val normalized = address.lowercase(Locale.US)
+    return when {
+        normalized.contains("manhattan") ||
+            normalized.contains("new york, ny") ||
+            normalized.contains("new york ny") -> "New York County"
+        normalized.contains("brooklyn") ||
+            normalized.contains("kings county") -> "Kings County"
+        normalized.contains("queens") -> "Queens County"
+        normalized.contains("bronx") -> "Bronx County"
+        normalized.contains("staten island") ||
+            normalized.contains("richmond county") -> "Richmond County"
+        normalized.contains("philadelphia") ||
+            normalized.contains("philly") -> "Philadelphia County"
+        else -> "unknown"
+    }
+}
 
 private fun ComposerUiState.mediaItems(): List<SubmissionMedia> =
     listOfNotNull(primaryMedia) + extraMedia

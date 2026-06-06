@@ -8,6 +8,7 @@ plugins {
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 if (tasks.findByName("prepareKotlinBuildScriptModel") == null) {
@@ -86,8 +87,8 @@ android {
         applicationId = "cab.reported.nyc"
         minSdk = 25
         targetSdk = 36
-        versionCode = 92
-        versionName = "3.0.9"
+        versionCode = 95
+        versionName = "3.0.10"
         buildConfigField("String", "API_BASE_URL", quotedEnv("REPORTED_API_BASE_URL", "https://reported-stats.herokuapp.com/prod/"))
         buildConfigField("String", "PARSE_SERVER_URL", "\"$parseServerUrl\"")
         buildConfigField("String", "PARSE_APPLICATION_ID", "\"$parseApplicationId\"")
@@ -113,6 +114,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             if (hasReleaseSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
@@ -205,7 +211,10 @@ dependencies {
     implementation("com.google.maps.android:maps-compose:4.4.1")
     implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-config")
+    implementation("com.google.mlkit:genai-image-description:1.0.0-beta1")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-svg:2.7.0")
     implementation("com.airbnb.android:lottie-compose:6.6.1")

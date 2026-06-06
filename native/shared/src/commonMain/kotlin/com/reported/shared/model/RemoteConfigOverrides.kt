@@ -29,7 +29,9 @@ object RemoteConfigDefaults {
             Catalogs.defaultComplaintCategories.map {
                 RemoteComplaintCategoryDto(
                     objectId = it.id,
+                    key = it.key,
                     text = it.name,
+                    value = it.name,
                     audience = it.audience
                 )
             }
@@ -116,14 +118,15 @@ object RemoteConfigOverrides {
                 raw
             ).mapNotNull { dto ->
                 val id = (dto.objectId ?: dto.id)?.trim().orEmpty()
-                val text = (dto.text ?: dto.name)?.trim().orEmpty()
+                val text = (dto.text ?: dto.display ?: dto.value ?: dto.name)?.trim().orEmpty()
                 if (id.isBlank() || text.isBlank()) {
                     null
                 } else {
                     ComplaintCategory(
                         id = id,
                         name = text,
-                        audience = dto.audience?.trim().orEmpty()
+                        audience = dto.audience?.trim().orEmpty(),
+                        key = dto.key?.trim().takeUnless { it.isNullOrBlank() } ?: text
                     )
                 }
             }.takeIf { it.isNotEmpty() }
@@ -171,7 +174,10 @@ object RemoteConfigOverrides {
 private data class RemoteComplaintCategoryDto(
     val objectId: String? = null,
     val id: String? = null,
+    val key: String? = null,
     val text: String? = null,
+    val display: String? = null,
+    val value: String? = null,
     val name: String? = null,
     val audience: String? = null
 )

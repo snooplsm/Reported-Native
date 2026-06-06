@@ -4,6 +4,7 @@ import Foundation
 import OnnxRuntimeBindings
 import SharedCore
 import UIKit
+import Vision
 
 private let detectorModelName = "yolo-v9-t-640-license-plates-end2end"
 private let ocrModelName = "global_mobile_vit_v2_ocr"
@@ -394,10 +395,18 @@ final class NativeAlprEngine {
             return (image: image, detection: refinedDetection, crop: crop)
         }
         let ocrTexts = runOcrBatched(images: works.map(\.crop), session: ocr)
+        let backupOcrTexts = runBackupTextOcrBatched(
+            images: works.map(\.crop),
+            primaryTexts: ocrTexts,
+            force: true
+        )
         let classifications = classifyPlateStatesBatched(images: works.map(\.crop), session: plateState)
         var candidates: [ComposerState.PlateCandidate] = []
         for (index, work) in works.enumerated() {
-            let plate = normalizePlateText(ocrTexts[safe: index] ?? "")
+            let plate = normalizePlateText(selectPlateOcrText(
+                primaryText: ocrTexts[safe: index] ?? "",
+                backupText: backupOcrTexts[safe: index] ?? ""
+            ))
             guard !plate.isEmpty else { continue }
             let classification = classifications[safe: index] ?? nil
             let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
@@ -473,15 +482,24 @@ final class NativeAlprEngine {
         }
         let allWork = cropWorkByImage.flatMap { $0 }
         let ocrTexts = runOcrBatched(images: allWork.map(\.crop), session: ocr)
+        let backupOcrTexts = runBackupTextOcrBatched(
+            images: allWork.map(\.crop),
+            primaryTexts: ocrTexts,
+            force: false
+        )
         let classifications = classifyPlateStatesBatched(images: allWork.map(\.crop), session: plateState)
         var ocrIndex = 0
+        var backupOcrIndex = 0
         var classifierIndex = 0
         return cropWorkByImage.map { works in
             let image = works.first?.image
             var candidates: [ComposerState.PlateCandidate] = []
             for work in works {
-                let plate = normalizePlateText(ocrTexts[safe: ocrIndex] ?? "")
+                let primaryPlateText = ocrTexts[safe: ocrIndex] ?? ""
                 ocrIndex += 1
+                let backupPlateText = backupOcrTexts[safe: backupOcrIndex] ?? ""
+                backupOcrIndex += 1
+                let plate = normalizePlateText(selectPlateOcrText(primaryText: primaryPlateText, backupText: backupPlateText))
                 let classification = classifications[safe: classifierIndex] ?? nil
                 classifierIndex += 1
                 guard !plate.isEmpty else { continue }
@@ -929,6 +947,92 @@ final class NativeAlprEngine {
             let end = min(raw.count, start + rowSize)
             return decodeOcrRow(Array(raw[start..<end]))
         }
+    }
+
+    private func runBackupTextOcrBatched(images: [UIImage], primaryTexts: [String], force: Bool) -> [String] {
+        guard !images.isEmpty else { return [] }
+        return images.enumerated().map { index, image in
+            let primaryText = primaryTexts[safe: index] ?? ""
+            guard force || shouldTryBackupTextOcr(primaryText) else { return "" }
+            return backupPlateText(from: recognizeBackupText(in: image), primaryText: primaryText)
+        }
+    }
+
+    private func recognizeBackupText(in image: UIImage) -> String {
+        guard let cgImage = image.cgImage else { return "" }
+        var recognizedText = ""
+        let request = VNRecognizeTextRequest { request, _ in
+            let observations = request.results as? [VNRecognizedTextObservation] ?? []
+            recognizedText = observations
+                .compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ")
+        }
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        request.recognitionLanguages = ["en-US"]
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
+        return recognizedText
+    }
+
+    private func shouldTryBackupTextOcr(_ primaryText: String) -> Bool {
+        let normalized = normalizePlateText(primaryText)
+        if normalized.isEmpty { return true }
+        if !(5...8).contains(normalized.count) { return true }
+        return PlatePatternClassifier.shared.classify(rawPlate: normalized) == nil && normalized.count >= 7
+    }
+
+    private func selectPlateOcrText(primaryText: String, backupText: String) -> String {
+        let primary = normalizePlateText(primaryText)
+        let backup = normalizePlateText(backupText)
+        if backup.isEmpty { return primaryText }
+        if primary.isEmpty { return backup }
+        let primaryPattern = PlatePatternClassifier.shared.classify(rawPlate: primary)
+        let backupPattern = PlatePatternClassifier.shared.classify(rawPlate: backup)
+        if backupPattern != nil && primaryPattern == nil { return backup }
+        if !(5...8).contains(primary.count), (5...8).contains(backup.count) { return backup }
+        return primaryText
+    }
+
+    private func backupPlateText(from rawText: String, primaryText: String) -> String {
+        let primary = normalizePlateText(primaryText)
+        let tokenCandidates = rawText
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .flatMap { plateLikeWindows(from: $0) }
+        let compactCandidates = plateLikeWindows(from: normalizePlateText(rawText))
+        let candidates = Array(Set(tokenCandidates + compactCandidates))
+        guard !candidates.isEmpty else {
+            let normalized = normalizePlateText(rawText)
+            return (5...8).contains(normalized.count) ? normalized : ""
+        }
+        return candidates.max { lhs, rhs in
+            backupPlateScore(lhs, primary: primary) < backupPlateScore(rhs, primary: primary)
+        } ?? ""
+    }
+
+    private func plateLikeWindows(from rawText: String) -> [String] {
+        let normalized = normalizePlateText(rawText)
+        if (5...8).contains(normalized.count) { return [normalized] }
+        guard normalized.count >= 5 else { return [] }
+        var windows: [String] = []
+        let chars = Array(normalized)
+        for size in stride(from: 8, through: 5, by: -1) where chars.count >= size {
+            for start in 0...(chars.count - size) {
+                windows.append(String(chars[start..<(start + size)]))
+            }
+        }
+        return windows
+    }
+
+    private func backupPlateScore(_ candidate: String, primary: String) -> Double {
+        var score = 0.0
+        if let match = PlatePatternClassifier.shared.classify(rawPlate: candidate) {
+            score += Double(match.confidence) + 3.0
+        }
+        if candidate == primary { score += 1.0 }
+        if (6...8).contains(candidate.count) { score += 0.5 }
+        score += Double(candidate.count) / 100.0
+        return score
     }
 
     private func decodeOcrRow(_ raw: [Float]) -> String {

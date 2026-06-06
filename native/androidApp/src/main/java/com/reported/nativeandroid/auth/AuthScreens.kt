@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,10 +57,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reported.nativeandroid.app.LoginViewModel
+import com.reported.nativeandroid.app.LoginAction
+import com.reported.nativeandroid.app.RegisterAction
 import com.reported.nativeandroid.app.RegisterViewModel
 import com.reported.nativeandroid.screens.MessageCard
 import com.reported.nativeandroid.screens.PrimaryButton
 import com.reported.nativeandroid.screens.ReportedField
+import com.reported.nativeandroid.screens.ReportedPasswordField
 import com.reported.nativeandroid.screens.SecondaryButton
 import com.reported.nativeandroid.screens.TertiaryButton
 import kotlinx.coroutines.launch
@@ -139,27 +143,39 @@ fun LoginScreen(
     val backAction = onBack ?: onDismiss
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    state.passwordResetMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { vm.onAction(LoginAction.PasswordResetMessageDismissed) },
+            title = { Text("Check your email") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { vm.onAction(LoginAction.PasswordResetMessageDismissed) }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
     fun startGoogleSignIn() {
         val activity = context.findActivity()
         if (activity == null) {
-            vm.onSocialSignInFailed("Google", "Google sign-in needs an active screen.")
+            vm.onAction(LoginAction.SocialSignInFailed("Google", "Google sign-in needs an active screen."))
             return
         }
         scope.launch {
             runCatching { signInWithGoogle(activity) }
-                .onSuccess { profile -> vm.completeSocialSignIn(profile, onSuccess) }
+                .onSuccess { profile -> vm.onAction(LoginAction.SocialSignInCompleted(profile, onSuccess)) }
                 .onFailure { error ->
                     if (error.isSocialAuthCancellation()) {
-                        vm.onSocialSignInCancelled()
+                        vm.onAction(LoginAction.SocialSignInCancelled)
                     } else {
-                        vm.onSocialSignInFailed("Google", error.message)
+                        vm.onAction(LoginAction.SocialSignInFailed("Google", error.message))
                     }
                 }
         }
     }
     fun startAppleSignIn() {
         runCatching { launchAppleSignIn(context) }
-            .onFailure { error -> vm.onSocialSignInFailed("Apple", error.message) }
+            .onFailure { error -> vm.onAction(LoginAction.SocialSignInFailed("Apple", error.message)) }
     }
 
     AuthScreenScaffold(
@@ -171,13 +187,13 @@ fun LoginScreen(
             SignInWithGoogleButton(onClick = ::startGoogleSignIn, enabled = !state.loading)
             SignInWithAppleButton(onClick = ::startAppleSignIn, enabled = !state.loading)
             AuthDivider()
-            ReportedField("Email", state.email, onValueChange = vm::onEmailChanged)
-            ReportedField("Password", state.password, onValueChange = vm::onPasswordChanged)
-            PrimaryButton("Login", onClick = { vm.login(onSuccess) }, enabled = !state.loading)
+            ReportedField("Email", state.email, onValueChange = { vm.onAction(LoginAction.EmailChanged(it)) })
+            ReportedPasswordField("Password", state.password, onValueChange = { vm.onAction(LoginAction.PasswordChanged(it)) })
+            PrimaryButton("Login", onClick = { vm.onAction(LoginAction.LoginPressed(onSuccess)) }, enabled = !state.loading)
             Text(
                 text = "Forgot Password?",
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = vm::forgotPassword)
+                modifier = Modifier.clickable { vm.onAction(LoginAction.ForgotPasswordPressed) }
             )
             Text(
                 text = "Need an account? Register",
@@ -204,24 +220,24 @@ fun RegisterScreen(
     fun startGoogleSignIn() {
         val activity = context.findActivity()
         if (activity == null) {
-            vm.onSocialSignInFailed("Google", "Google sign-in needs an active screen.")
+            vm.onAction(RegisterAction.SocialSignInFailed("Google", "Google sign-in needs an active screen."))
             return
         }
         scope.launch {
             runCatching { signInWithGoogle(activity) }
-                .onSuccess { profile -> vm.completeSocialSignIn(profile, onSuccess) }
+                .onSuccess { profile -> vm.onAction(RegisterAction.SocialSignInCompleted(profile, onSuccess)) }
                 .onFailure { error ->
                     if (error.isSocialAuthCancellation()) {
-                        vm.onSocialSignInCancelled()
+                        vm.onAction(RegisterAction.SocialSignInCancelled)
                     } else {
-                        vm.onSocialSignInFailed("Google", error.message)
+                        vm.onAction(RegisterAction.SocialSignInFailed("Google", error.message))
                     }
                 }
         }
     }
     fun startAppleSignIn() {
         runCatching { launchAppleSignIn(context) }
-            .onFailure { error -> vm.onSocialSignInFailed("Apple", error.message) }
+            .onFailure { error -> vm.onAction(RegisterAction.SocialSignInFailed("Apple", error.message)) }
     }
 
     AuthScreenScaffold(
@@ -233,20 +249,20 @@ fun RegisterScreen(
             SignInWithGoogleButton(onClick = ::startGoogleSignIn, enabled = !state.loading)
             SignInWithAppleButton(onClick = ::startAppleSignIn, enabled = !state.loading)
             AuthDivider()
-            ReportedField("First Name", state.firstName, onValueChange = { vm.update(firstName = it) })
-            ReportedField("Last Name", state.lastName, onValueChange = { vm.update(lastName = it) })
-            ReportedField("Phone", state.phone, onValueChange = { vm.update(phone = it) })
-            ReportedField("Email", state.email, onValueChange = { vm.update(email = it) })
-            ReportedField("Password", state.password, onValueChange = { vm.update(password = it) })
+            ReportedField("First Name", state.firstName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(firstName = it)) })
+            ReportedField("Last Name", state.lastName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(lastName = it)) })
+            ReportedField("Phone", state.phone, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(phone = it)) })
+            ReportedField("Email", state.email, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(email = it)) })
+            ReportedPasswordField("Password", state.password, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(password = it)) })
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { vm.update(testify = !state.testify) },
+                    .clickable { vm.onAction(RegisterAction.FieldsChanged(testify = !state.testify)) },
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
                 Checkbox(
                     checked = state.testify,
-                    onCheckedChange = { vm.update(testify = it) }
+                    onCheckedChange = { vm.onAction(RegisterAction.FieldsChanged(testify = it)) }
                 )
                 Text(
                     text = "I'm willing to testify by phone if needed.",
@@ -254,7 +270,7 @@ fun RegisterScreen(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            PrimaryButton("Create Account", onClick = { vm.register(onSuccess) }, enabled = !state.loading)
+            PrimaryButton("Create Account", onClick = { vm.onAction(RegisterAction.RegisterPressed(onSuccess)) }, enabled = !state.loading)
             Text(
                 text = "Already registered? Login",
                 color = MaterialTheme.colorScheme.primary,

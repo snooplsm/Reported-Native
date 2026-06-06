@@ -379,7 +379,7 @@ class ReportedApi(
     ): JsonObject {
         val complaintName = Catalogs.complaintCategories
             .firstOrNull { it.id == command.complaintIds.firstOrNull() }
-            ?.name
+            ?.key
             ?: command.complaintIds.firstOrNull().orEmpty()
         val colorTaxi = if (PlatePatternClassifier.classify(command.plate)?.type in setOf(PlateType.TAXI, PlateType.TLC)) {
             "Black"
@@ -405,7 +405,7 @@ class ReportedApi(
             }
             put("LastName", session.lastName)
             put("FirstName", session.firstName)
-            put("Status", 0)
+            put("status", 0)
             command.longitude?.let { put("longitude1", it) }
             command.latitude?.let { put("latitude1", it) }
             command.latitude?.let { put("latitude", it.toString()) }
@@ -422,6 +422,10 @@ class ReportedApi(
             put("colorTaxi", colorTaxi)
             put("loc1_address", command.address)
             put("reportDescription", command.description)
+            command.vehicleImageDescription?.takeIf { it.isNotBlank() }?.let { put("vehicleImageDescription", it) }
+            command.vehicleColor?.takeIf { it.isNotBlank() }?.let { put("vehicleColor", it) }
+            command.vehicleMake?.takeIf { it.isNotBlank() }?.let { put("vehicleMake", it) }
+            command.vehicleModel?.takeIf { it.isNotBlank() }?.let { put("vehicleModel", it) }
             if (command.notes.isNotBlank()) {
                 put("notes", command.notes)
             }
@@ -480,7 +484,7 @@ class ReportedApi(
 
     private companion object {
         const val parseReportListKeys =
-            "objectId,createdAt,updatedAt,license,state,timeofreport,timeofreported,timeofincident,Status,status,reqnumber,typeofcomplaint,loc1_address,reportDescription,notes"
+            "objectId,createdAt,updatedAt,license,state,timeofreport,timeofreported,timeofincident,status,reqnumber,typeofcomplaint,loc1_address,reportDescription,notes"
         const val parseReportDetailKeys =
             "$parseReportListKeys,photoData0,photoData1,photoData2,PhotoData2,PhotoData3,videoData0,videoData1,videoData2"
         const val parseReportsPageSize = 100

@@ -1,8 +1,96 @@
 import Foundation
+import FirebaseAnalytics
 import ImageIO
 import SharedCore
 import UIKit
 import UniformTypeIdentifiers
+
+private enum ReportedAnalytics {
+    static func logLogin(method: String) {
+        Analytics.logEvent(AnalyticsEventLogin, parameters: [
+            AnalyticsParameterMethod: method
+        ])
+    }
+
+    static func logLogout() {
+        Analytics.logEvent("logout", parameters: nil)
+    }
+
+    static func logReportsList() {
+        Analytics.logEvent("reports_list", parameters: nil)
+    }
+
+    static func logReportsSearch(hasLicense: Bool, hasStartDate: Bool, hasEndDate: Bool) {
+        Analytics.logEvent("reports_search", parameters: [
+            "has_license": hasLicense ? 1 : 0,
+            "has_start_date": hasStartDate ? 1 : 0,
+            "has_end_date": hasEndDate ? 1 : 0
+        ])
+    }
+
+    static func logSubmitReport(
+        county: String,
+        plateRegion: String,
+        complaintCount: Int,
+        mediaCount: Int,
+        hasVideo: Bool
+    ) {
+        Analytics.logEvent("submit_report", parameters: [
+            "county": county,
+            "plate_region": plateRegion,
+            "complaint_count": complaintCount,
+            "media_count": mediaCount,
+            "has_video": hasVideo ? 1 : 0
+        ])
+    }
+
+    static func logAlprResultSelected(
+        plateRegion: String?,
+        candidateCount: Int,
+        selectedRank: Int,
+        confidence: Double?,
+        wasCorrected: Bool
+    ) {
+        var parameters: [String: Any] = [
+            "plate_region": plateRegion ?? "unknown",
+            "candidate_count": candidateCount,
+            "selected_rank": selectedRank,
+            "was_corrected": wasCorrected ? 1 : 0
+        ]
+        if let confidence {
+            parameters["confidence"] = confidence
+        }
+        Analytics.logEvent("alpr_result_selected", parameters: parameters)
+    }
+
+    static func county(from address: String) -> String {
+        let normalized = address.lowercased()
+        if normalized.contains("manhattan") ||
+            normalized.contains("new york, ny") ||
+            normalized.contains("new york ny") {
+            return "New York County"
+        }
+        if normalized.contains("brooklyn") ||
+            normalized.contains("kings county") {
+            return "Kings County"
+        }
+        if normalized.contains("queens") {
+            return "Queens County"
+        }
+        if normalized.contains("bronx") {
+            return "Bronx County"
+        }
+        if normalized.contains("staten island") ||
+            normalized.contains("richmond county") {
+            return "Richmond County"
+        }
+        if normalized.contains("philadelphia") ||
+            normalized.contains("philly") {
+            return "Philadelphia County"
+        }
+        return "unknown"
+    }
+}
 
 struct SessionState {
     var loading = true
@@ -15,6 +103,7 @@ struct LoginState {
     var password = ""
     var loading = false
     var error: String?
+    var passwordResetMessage: String?
 }
 
 struct RegisterState {
@@ -38,6 +127,94 @@ struct ProfileState {
     var editing = false
     var loading = false
     var error: String?
+}
+
+enum ReportsMode: Equatable {
+    case search
+    case list
+}
+
+struct ReportsState {
+    var reports: [ReportSummary] = []
+    var reportDetails: [String: ReportSummary] = [:]
+    var detailLoadingIds: Set<String> = []
+    var loading = false
+    var loadingMore = false
+    var hasMore = false
+    var nextSkip: Int32 = 0
+    var deletingReportKeys: Set<String> = []
+    var error: String?
+    var mode: ReportsMode?
+    var licenseQuery = ""
+    var startDate = Date()
+    var endDate = Date()
+    var usesStartDate = false
+    var usesEndDate = false
+}
+
+enum SessionAction {
+    case load
+    case authenticated
+    case continueAsGuest
+    case logout
+}
+
+enum LoginAction {
+    case emailChanged(String)
+    case passwordChanged(String)
+    case loginPressed(onSuccess: () -> Void)
+    case googleSignInPressed(onSuccess: () -> Void)
+    case appleSignInPressed(onSuccess: () -> Void)
+    case forgotPasswordPressed
+    case passwordResetMessageDismissed
+}
+
+enum RegisterAction {
+    case fieldsChanged(
+        firstName: String? = nil,
+        lastName: String? = nil,
+        phone: String? = nil,
+        email: String? = nil,
+        password: String? = nil,
+        testify: Bool? = nil
+    )
+    case registerPressed(onSuccess: () -> Void)
+    case googleSignInPressed(onSuccess: () -> Void)
+    case appleSignInPressed(onSuccess: () -> Void)
+}
+
+enum ReportsAction {
+    case listChosen
+    case searchChosen
+    case searchPressed
+    case nextPageRequested(current: ReportSummary)
+    case detailRequested(ReportSummary)
+    case reportOpened(objectId: String)
+    case reportDeleted(ReportSummary)
+    case licenseChanged(String)
+    case startDateChanged(Date)
+    case endDateChanged(Date)
+    case usesStartDateChanged(Bool)
+    case usesEndDateChanged(Bool)
+}
+
+enum ProfileAction {
+    case load
+    case toggleEditing
+    case save
+    case themeModeChanged(AppThemeMode)
+    case fieldsChanged(
+        firstName: String? = nil,
+        lastName: String? = nil,
+        phone: String? = nil,
+        email: String? = nil,
+        testify: Bool? = nil
+    )
+}
+
+enum ThemeAction {
+    case load
+    case modeChanged(AppThemeMode)
 }
 
 struct ComposerState {
@@ -140,9 +317,84 @@ struct ComposerState {
     let info = "Media, location, uploads, and notifications are the next native migration slice. This Swift app already shares the live API, use cases, and draft state with the KMP core."
 }
 
+enum ComposerAction {
+    case loadDraft
+    case reloadDraft
+    case submitValidationRequested
+    case submitPressed
+    case clearDraft
+    case submittedReportConsumed
+    case mediaLimitReached
+    case draftPersistenceRequested
+
+    case complaintTileChosen(String)
+    case selectedComplaintChanged(String)
+    case uploadMediaChosen(ComposerState.SubmissionMedia)
+    case primaryMediaChosen(ComposerState.SubmissionMedia, complaintId: String)
+    case pendingComplaintConfirmed(String)
+    case extraMediaAdded(ComposerState.SubmissionMedia)
+    case mediaRemoved(ComposerState.SubmissionMedia)
+
+    case videoProcessingDecision(Bool)
+    case videoProcessingCancelled
+    case detectionProgressChanged(
+        message: String,
+        progress: Double,
+        framePreview: UIImage? = nil,
+        frameTimeSeconds: Double = 0,
+        videoDurationSeconds: Double = 0,
+        frameCandidates: [ComposerState.PlateCandidate] = [],
+        allCandidates: [ComposerState.PlateCandidate] = []
+    )
+    case detectionFinished(
+        candidates: [ComposerState.PlateCandidate] = [],
+        inferredPlate: String? = nil,
+        inferredState: String? = nil
+    )
+    case plateCandidateChosen(ComposerState.PlateCandidate)
+
+    case addressQueryChanged(String)
+    case addressSuggestionsChanged([ComposerState.AddressSuggestion], loading: Bool = false)
+    case addressLookupLoadingChanged(Bool)
+    case addressChosen(ComposerState.AddressSuggestion)
+    case metadataApplied(
+        occurredAtIso: String? = nil,
+        photoOccurredAtIso: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        inferredState: String? = nil,
+        inferredAddress: String? = nil
+    )
+    case fieldsChanged(
+        plate: String? = nil,
+        plateRegion: String? = nil,
+        address: String? = nil,
+        description: String? = nil,
+        notes: String? = nil,
+        occurredAtIso: String? = nil
+    )
+
+    case plateCorrectionAccepted
+    case plateCorrectionKept
+    case plateCorrectionDismissed
+}
+
 @MainActor
 final class SessionViewModel: ObservableObject {
     @Published private(set) var state = SessionState()
+
+    func onAction(_ action: SessionAction) {
+        switch action {
+        case .load:
+            load()
+        case .authenticated:
+            didAuthenticate()
+        case .continueAsGuest:
+            continueAsGuest()
+        case .logout:
+            logout()
+        }
+    }
 
     func load() {
         Task {
@@ -175,6 +427,7 @@ final class SessionViewModel: ObservableObject {
         Task {
             try? await SharedBridge.shared.container.logoutUseCase.execute()
             try? await SharedBridge.shared.container.saveGuestModeUseCase.execute(enabled: false)
+            ReportedAnalytics.logLogout()
             state = SessionState(loading: false, session: nil, isGuest: false)
         }
     }
@@ -183,6 +436,25 @@ final class SessionViewModel: ObservableObject {
 @MainActor
 final class LoginViewModel: ObservableObject {
     @Published private(set) var state = LoginState()
+
+    func onAction(_ action: LoginAction) {
+        switch action {
+        case .emailChanged(let value):
+            update(email: value)
+        case .passwordChanged(let value):
+            update(password: value)
+        case .loginPressed(let onSuccess):
+            login(onSuccess: onSuccess)
+        case .googleSignInPressed(let onSuccess):
+            signInWithGoogle(onSuccess: onSuccess)
+        case .appleSignInPressed(let onSuccess):
+            signInWithApple(onSuccess: onSuccess)
+        case .forgotPasswordPressed:
+            forgotPassword()
+        case .passwordResetMessageDismissed:
+            dismissPasswordResetMessage()
+        }
+    }
 
     func update(email: String? = nil, password: String? = nil) {
         if let email { state.email = email }
@@ -199,10 +471,12 @@ final class LoginViewModel: ObservableObject {
                     password: state.password
                 )
                 state.loading = false
+                ReportedAnalytics.logLogin(method: "password")
                 onSuccess()
             } catch {
+                print("ReportedAuth: login failed \(error)")
                 state.loading = false
-                state.error = error.localizedDescription
+                state.error = "There was an error signing in. Please try again."
             }
         }
     }
@@ -217,7 +491,8 @@ final class LoginViewModel: ObservableObject {
             } catch {
                 state.loading = false
                 if !NativeSocialAuth.isCancellation(error) {
-                    state.error = error.localizedDescription
+                    print("ReportedAuth: Google sign-in failed \(error)")
+                    state.error = "There was an error signing in. Please try again."
                 }
             }
         }
@@ -233,7 +508,8 @@ final class LoginViewModel: ObservableObject {
             } catch {
                 state.loading = false
                 if !NativeSocialAuth.isCancellation(error) {
-                    state.error = error.localizedDescription
+                    print("ReportedAuth: Apple sign-in failed \(error)")
+                    state.error = "There was an error signing in. Please try again."
                 }
             }
         }
@@ -255,10 +531,12 @@ final class LoginViewModel: ObservableObject {
                     testify: false
                 )
                 state.loading = false
+                ReportedAnalytics.logLogin(method: profile.provider)
                 onSuccess()
             } catch {
+                print("ReportedAuth: social login failed \(error)")
                 state.loading = false
-                state.error = error.localizedDescription
+                state.error = "There was an error signing in. Please try again."
             }
         }
     }
@@ -271,16 +549,42 @@ final class LoginViewModel: ObservableObject {
         Task {
             do {
                 try await SharedBridge.shared.container.forgotPasswordUseCase.execute(email: state.email)
+                state.error = nil
+                state.passwordResetMessage = "We sent password reset instructions to \(state.email)."
             } catch {
                 state.error = "Couldn't send reset email."
             }
         }
+    }
+
+    func dismissPasswordResetMessage() {
+        state.passwordResetMessage = nil
     }
 }
 
 @MainActor
 final class RegisterViewModel: ObservableObject {
     @Published private(set) var state = RegisterState()
+
+    func onAction(_ action: RegisterAction) {
+        switch action {
+        case .fieldsChanged(let firstName, let lastName, let phone, let email, let password, let testify):
+            update(
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                email: email,
+                password: password,
+                testify: testify
+            )
+        case .registerPressed(let onSuccess):
+            register(onSuccess: onSuccess)
+        case .googleSignInPressed(let onSuccess):
+            signInWithGoogle(onSuccess: onSuccess)
+        case .appleSignInPressed(let onSuccess):
+            signInWithApple(onSuccess: onSuccess)
+        }
+    }
 
     func update(
         firstName: String? = nil,
@@ -312,10 +616,12 @@ final class RegisterViewModel: ObservableObject {
                     password: state.password
                 )
                 state.loading = false
+                ReportedAnalytics.logLogin(method: "password")
                 onSuccess()
             } catch {
+                print("ReportedAuth: registration failed \(error)")
                 state.loading = false
-                state.error = error.localizedDescription
+                state.error = "There was an error creating your account. Please try again."
             }
         }
     }
@@ -330,7 +636,8 @@ final class RegisterViewModel: ObservableObject {
             } catch {
                 state.loading = false
                 if !NativeSocialAuth.isCancellation(error) {
-                    state.error = error.localizedDescription
+                    print("ReportedAuth: Google registration sign-in failed \(error)")
+                    state.error = "There was an error signing in. Please try again."
                 }
             }
         }
@@ -346,7 +653,8 @@ final class RegisterViewModel: ObservableObject {
             } catch {
                 state.loading = false
                 if !NativeSocialAuth.isCancellation(error) {
-                    state.error = error.localizedDescription
+                    print("ReportedAuth: Apple registration sign-in failed \(error)")
+                    state.error = "There was an error signing in. Please try again."
                 }
             }
         }
@@ -370,10 +678,12 @@ final class RegisterViewModel: ObservableObject {
                     testify: state.testify
                 )
                 state.loading = false
+                ReportedAnalytics.logLogin(method: profile.provider)
                 onSuccess()
             } catch {
+                print("ReportedAuth: social registration failed \(error)")
                 state.loading = false
-                state.error = error.localizedDescription
+                state.error = "There was an error signing in. Please try again."
             }
         }
     }
@@ -381,46 +691,73 @@ final class RegisterViewModel: ObservableObject {
 
 @MainActor
 final class ReportsViewModel: ObservableObject {
-    enum Mode: Equatable {
-        case search
-        case list
-    }
-
-    @Published private(set) var reports: [ReportSummary] = []
-    @Published private(set) var reportDetails: [String: ReportSummary] = [:]
-    @Published private(set) var detailLoadingIds: Set<String> = []
-    @Published private(set) var loading = false
-    @Published private(set) var loadingMore = false
-    @Published private(set) var hasMore = false
-    @Published private(set) var nextSkip: Int32 = 0
-    @Published private(set) var deletingReportKeys: Set<String> = []
-    @Published private(set) var error: String?
-    @Published private(set) var mode: Mode?
-    @Published var licenseQuery = ""
-    @Published var startDate = Date()
-    @Published var endDate = Date()
-    @Published var usesStartDate = false
-    @Published var usesEndDate = false
+    @Published private(set) var state = ReportsState()
     private var activeFilter: ReportFilter?
 
+    var reports: [ReportSummary] { state.reports }
+    var reportDetails: [String: ReportSummary] { state.reportDetails }
+    var detailLoadingIds: Set<String> { state.detailLoadingIds }
+    var loading: Bool { state.loading }
+    var loadingMore: Bool { state.loadingMore }
+    var hasMore: Bool { state.hasMore }
+    var deletingReportKeys: Set<String> { state.deletingReportKeys }
+    var error: String? { state.error }
+    var mode: ReportsMode? { state.mode }
+    var licenseQuery: String { state.licenseQuery }
+    var startDate: Date { state.startDate }
+    var endDate: Date { state.endDate }
+    var usesStartDate: Bool { state.usesStartDate }
+    var usesEndDate: Bool { state.usesEndDate }
+
+    func onAction(_ action: ReportsAction) {
+        switch action {
+        case .listChosen:
+            chooseList()
+        case .searchChosen:
+            chooseSearch()
+        case .searchPressed:
+            search()
+        case .nextPageRequested(let report):
+            loadNextPageIfNeeded(current: report)
+        case .detailRequested(let report):
+            loadDetail(for: report)
+        case .reportOpened(let objectId):
+            openReport(objectId: objectId)
+        case .reportDeleted(let report):
+            delete(report: report)
+        case .licenseChanged(let value):
+            state.licenseQuery = value
+        case .startDateChanged(let value):
+            state.startDate = value
+        case .endDateChanged(let value):
+            state.endDate = value
+        case .usesStartDateChanged(let value):
+            state.usesStartDate = value
+        case .usesEndDateChanged(let value):
+            state.usesEndDate = value
+        }
+    }
+
     func chooseList() {
-        mode = .list
-        reports = []
-        reportDetails = [:]
-        hasMore = false
-        nextSkip = 0
+        ReportedAnalytics.logReportsList()
+        state.mode = .list
+        state.reports = []
+        state.reportDetails = [:]
+        state.hasMore = false
+        state.nextSkip = 0
+        state.error = nil
         activeFilter = nil
         load(filter: nil, append: false)
     }
 
     func chooseSearch() {
-        mode = .search
-        reports = []
-        reportDetails = [:]
-        hasMore = false
-        nextSkip = 0
+        state.mode = .search
+        state.reports = []
+        state.reportDetails = [:]
+        state.hasMore = false
+        state.nextSkip = 0
         activeFilter = nil
-        error = nil
+        state.error = nil
     }
 
     func search() {
@@ -430,47 +767,52 @@ final class ReportsViewModel: ObservableObject {
             complaints: [],
             whenDescription: "",
             locationDescription: "",
-            license: licenseQuery.trimmingCharacters(in: .whitespacesAndNewlines),
-            startDateIso: usesStartDate ? startDate.ISO8601Format() : "",
-            endDateIso: usesEndDate ? endDate.ISO8601Format() : ""
+            license: state.licenseQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+            startDateIso: state.usesStartDate ? state.startDate.ISO8601Format() : "",
+            endDateIso: state.usesEndDate ? state.endDate.ISO8601Format() : ""
+        )
+        ReportedAnalytics.logReportsSearch(
+            hasLicense: !filter.license.isEmpty,
+            hasStartDate: !filter.startDateIso.isEmpty,
+            hasEndDate: !filter.endDateIso.isEmpty
         )
         activeFilter = filter
         load(filter: filter, append: false)
     }
 
     func loadNextPageIfNeeded(current report: ReportSummary) {
-        guard hasMore, !loading, !loadingMore else { return }
-        guard reports.suffix(5).contains(where: { reportKey($0) == reportKey(report) }) else { return }
+        guard state.hasMore, !state.loading, !state.loadingMore else { return }
+        guard state.reports.suffix(5).contains(where: { reportKey($0) == reportKey(report) }) else { return }
         load(filter: activeFilter, append: true)
     }
 
     private func load(filter: ReportFilter?, append: Bool) {
         if append {
-            loadingMore = true
+            state.loadingMore = true
         } else {
-            loading = true
+            state.loading = true
         }
-        error = nil
-        let skip = append ? nextSkip : 0
+        state.error = nil
+        let skip = append ? state.nextSkip : 0
         Task {
             do {
                 let page = try await SharedBridge.shared.container.fetchReportsUseCase.execute(filter: filter, skip: skip, forCurrentUser: true)
                 if append {
-                    let existingKeys = Set(reports.map(reportKey))
-                    reports.append(contentsOf: page.reports.filter { !existingKeys.contains(reportKey($0)) })
+                    let existingKeys = Set(state.reports.map(reportKey))
+                    state.reports.append(contentsOf: page.reports.filter { !existingKeys.contains(reportKey($0)) })
                 } else {
-                    reports = page.reports
-                    reportDetails = [:]
-                    detailLoadingIds = []
+                    state.reports = page.reports
+                    state.reportDetails = [:]
+                    state.detailLoadingIds = []
                 }
-                hasMore = page.hasMore
-                nextSkip = Int32(reports.count)
-                loading = false
-                loadingMore = false
+                state.hasMore = page.hasMore
+                state.nextSkip = Int32(state.reports.count)
+                state.loading = false
+                state.loadingMore = false
             } catch {
-                self.error = error.localizedDescription
-                loading = false
-                loadingMore = false
+                state.error = error.localizedDescription
+                state.loading = false
+                state.loadingMore = false
             }
         }
     }
@@ -481,63 +823,63 @@ final class ReportsViewModel: ObservableObject {
 
     func loadDetail(for report: ReportSummary) {
         let objectId = report.objectId
-        guard !objectId.isEmpty, reportDetails[objectId] == nil, !detailLoadingIds.contains(objectId) else { return }
-        detailLoadingIds.insert(objectId)
+        guard !objectId.isEmpty, state.reportDetails[objectId] == nil, !state.detailLoadingIds.contains(objectId) else { return }
+        state.detailLoadingIds.insert(objectId)
         Task {
             do {
                 let detail = try await SharedBridge.shared.container.fetchReportDetailUseCase.execute(objectId: objectId)
-                reportDetails[objectId] = detail
-                detailLoadingIds.remove(objectId)
+                state.reportDetails[objectId] = detail
+                state.detailLoadingIds.remove(objectId)
             } catch {
-                self.error = error.localizedDescription
-                detailLoadingIds.remove(objectId)
+                state.error = error.localizedDescription
+                state.detailLoadingIds.remove(objectId)
             }
         }
     }
 
     func openReport(objectId: String) {
         guard !objectId.isEmpty else { return }
-        mode = .list
-        loading = true
-        loadingMore = false
-        error = nil
-        detailLoadingIds.insert(objectId)
+        state.mode = .list
+        state.loading = true
+        state.loadingMore = false
+        state.error = nil
+        state.detailLoadingIds.insert(objectId)
         Task {
             do {
                 let detail = try await SharedBridge.shared.container.fetchReportDetailUseCase.execute(objectId: objectId)
-                let existingKeys = Set(reports.map(reportKey))
+                let existingKeys = Set(state.reports.map(reportKey))
                 if existingKeys.contains(reportKey(detail)) {
-                    reports = reports.map { reportKey($0) == reportKey(detail) ? detail : $0 }
+                    state.reports = state.reports.map { reportKey($0) == reportKey(detail) ? detail : $0 }
                 } else {
-                    reports.insert(detail, at: 0)
+                    state.reports.insert(detail, at: 0)
                 }
-                reportDetails[objectId] = detail
-                detailLoadingIds.remove(objectId)
-                nextSkip = Int32(reports.count)
-                loading = false
+                state.reportDetails[objectId] = detail
+                state.detailLoadingIds.remove(objectId)
+                state.nextSkip = Int32(state.reports.count)
+                state.loading = false
             } catch {
-                self.error = error.localizedDescription
-                detailLoadingIds.remove(objectId)
-                loading = false
+                state.error = error.localizedDescription
+                state.detailLoadingIds.remove(objectId)
+                state.loading = false
             }
         }
     }
 
     func delete(report: ReportSummary) {
         let key = reportKey(report)
-        guard report.canDelete, !deletingReportKeys.contains(key) else { return }
-        deletingReportKeys.insert(key)
-        error = nil
+        guard report.canDelete, !state.deletingReportKeys.contains(key) else { return }
+        state.deletingReportKeys.insert(key)
+        state.error = nil
         Task {
             do {
                 try await SharedBridge.shared.container.deleteReportUseCase.execute(report: report)
-                reports.removeAll { reportKey($0) == key }
-                reportDetails.removeValue(forKey: report.objectId)
-                detailLoadingIds.remove(report.objectId)
-                deletingReportKeys.remove(key)
+                state.reports.removeAll { reportKey($0) == key }
+                state.reportDetails.removeValue(forKey: report.objectId)
+                state.detailLoadingIds.remove(report.objectId)
+                state.deletingReportKeys.remove(key)
             } catch {
-                self.error = error.localizedDescription
-                deletingReportKeys.remove(key)
+                state.error = error.localizedDescription
+                state.deletingReportKeys.remove(key)
             }
         }
     }
@@ -546,6 +888,27 @@ final class ReportsViewModel: ObservableObject {
 @MainActor
 final class ProfileViewModel: ObservableObject {
     @Published private(set) var state = ProfileState()
+
+    func onAction(_ action: ProfileAction) {
+        switch action {
+        case .load:
+            load()
+        case .toggleEditing:
+            toggleEditing()
+        case .save:
+            save()
+        case .themeModeChanged(let mode):
+            setThemeMode(mode)
+        case .fieldsChanged(let firstName, let lastName, let phone, let email, let testify):
+            update(
+                firstName: firstName,
+                lastName: lastName,
+                phone: phone,
+                email: email,
+                testify: testify
+            )
+        }
+    }
 
     func load() {
         Task {
@@ -613,6 +976,15 @@ final class ProfileViewModel: ObservableObject {
 final class ThemeViewModel: ObservableObject {
     @Published private(set) var mode: AppThemeMode = .system
 
+    func onAction(_ action: ThemeAction) {
+        switch action {
+        case .load:
+            load()
+        case .modeChanged(let mode):
+            update(mode)
+        }
+    }
+
     func load() {
         Task {
             if let loadedMode = try? await SharedBridge.shared.container.loadAppThemeModeUseCase.execute() {
@@ -663,6 +1035,93 @@ final class ComposerViewModel: ObservableObject {
     func refreshRemoteConfigValues() {
         state.complaintCategories = Array(Catalogs.shared.complaintCategories)
         state.showComplaintImages = RemoteConfigOverrides.shared.showComplaintImages
+    }
+
+    @discardableResult
+    func onAction(_ action: ComposerAction) -> Bool {
+        switch action {
+        case .loadDraft:
+            loadDraft()
+        case .reloadDraft:
+            reloadDraft()
+        case .submitValidationRequested:
+            return prepareSubmit()
+        case .submitPressed:
+            submit()
+        case .clearDraft:
+            clearDraft()
+        case .submittedReportConsumed:
+            consumeSubmittedReport()
+        case .mediaLimitReached:
+            markMediaLimitReached()
+        case .draftPersistenceRequested:
+            persistCurrentDraft()
+        case .complaintTileChosen(let complaintId):
+            onComplaintTileChosen(complaintId)
+        case .selectedComplaintChanged(let complaintId):
+            updateSelectedComplaint(complaintId)
+        case .uploadMediaChosen(let media):
+            onUploadMediaChosen(media)
+        case .primaryMediaChosen(let media, let complaintId):
+            onPrimaryMediaChosen(media, complaintId: complaintId)
+        case .pendingComplaintConfirmed(let complaintId):
+            confirmPendingComplaint(complaintId)
+        case .extraMediaAdded(let media):
+            return addExtraMedia(media)
+        case .mediaRemoved(let media):
+            removeMedia(media)
+        case .videoProcessingDecision(let process):
+            onVideoProcessingDecision(process)
+        case .videoProcessingCancelled:
+            cancelVideoProcessing()
+        case .detectionProgressChanged(let message, let progress, let framePreview, let frameTimeSeconds, let videoDurationSeconds, let frameCandidates, let allCandidates):
+            setDetectionProgress(
+                message: message,
+                progress: progress,
+                framePreview: framePreview,
+                frameTimeSeconds: frameTimeSeconds,
+                videoDurationSeconds: videoDurationSeconds,
+                frameCandidates: frameCandidates,
+                allCandidates: allCandidates
+            )
+        case .detectionFinished(let candidates, let inferredPlate, let inferredState):
+            finishDetection(candidates: candidates, inferredPlate: inferredPlate, inferredState: inferredState)
+        case .plateCandidateChosen(let candidate):
+            choosePlateCandidate(candidate)
+        case .addressQueryChanged(let value):
+            updateAddressQuery(value)
+        case .addressSuggestionsChanged(let suggestions, let loading):
+            setAddressSuggestions(suggestions, loading: loading)
+        case .addressLookupLoadingChanged(let loading):
+            setAddressLookupLoading(loading)
+        case .addressChosen(let suggestion):
+            chooseAddress(suggestion)
+        case .metadataApplied(let occurredAtIso, let photoOccurredAtIso, let latitude, let longitude, let inferredState, let inferredAddress):
+            applyDetectedMetadata(
+                occurredAtIso: occurredAtIso,
+                photoOccurredAtIso: photoOccurredAtIso,
+                latitude: latitude,
+                longitude: longitude,
+                inferredState: inferredState,
+                inferredAddress: inferredAddress
+            )
+        case .fieldsChanged(let plate, let plateRegion, let address, let description, let notes, let occurredAtIso):
+            update(
+                plate: plate,
+                plateRegion: plateRegion,
+                address: address,
+                description: description,
+                notes: notes,
+                occurredAtIso: occurredAtIso
+            )
+        case .plateCorrectionAccepted:
+            acceptPlateCorrection()
+        case .plateCorrectionKept:
+            keepPlateCorrection()
+        case .plateCorrectionDismissed:
+            dismissPlateCorrection()
+        }
+        return true
     }
 
     func loadDraft() {
@@ -905,6 +1364,14 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func choosePlateCandidate(_ candidate: ComposerState.PlateCandidate) {
+        let selectedRank = state.plateCandidates.firstIndex { $0.plate == candidate.plate }.map { $0 + 1 } ?? 0
+        ReportedAnalytics.logAlprResultSelected(
+            plateRegion: candidate.state,
+            candidateCount: state.plateCandidates.count,
+            selectedRank: selectedRank,
+            confidence: candidate.confidence,
+            wasCorrected: candidate.wasPlateCorrected
+        )
         state.selectedPlateCandidate = candidate.plate
         state.plate = candidate.plate
         if let detectedState = candidate.state {
@@ -918,9 +1385,17 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func updateAddressQuery(_ value: String) {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matchesChosenAddress = value == state.address
         state.addressQuery = value
-        state.address = value
-        if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if trimmedValue.isEmpty {
+            state.address = ""
+        }
+        if !matchesChosenAddress {
+            state.latitude = nil
+            state.longitude = nil
+        }
+        if !trimmedValue.isEmpty {
             state.validationErrors.address = nil
         }
         persistDraft()
@@ -1111,7 +1586,11 @@ final class ComposerViewModel: ObservableObject {
                     videoFrameTimeMs: $0.videoFrameTimeSeconds.map { KotlinLong(longLong: Int64($0 * 1000)) }
                 )
             },
-            selectedPlateCandidate: state.selectedPlateCandidate
+            selectedPlateCandidate: state.selectedPlateCandidate,
+            vehicleImageDescription: nil,
+            vehicleColor: nil,
+            vehicleMake: nil,
+            vehicleModel: nil
         )
         Task {
             try? await SharedBridge.shared.container.saveDraftUseCase.execute(draft: draft)
@@ -1172,6 +1651,12 @@ final class ComposerViewModel: ObservableObject {
         state.validationErrors = ComposerState.ValidationErrors()
         let submittedMedia = [state.primaryMedia].compactMap { $0 } + state.extraMedia
         let submittedMediaURLs = submittedMedia.map(\.fileURL) + state.plateCandidates.compactMap(Self.persistedVideoFramePreviewURL)
+        let submitAddress = state.addressQuery.isEmpty ? state.address : state.addressQuery
+        let submitCounty = ReportedAnalytics.county(from: submitAddress)
+        let submitPlateRegion = state.plateRegion
+        let submitComplaintCount = state.selectedComplaintIds.count
+        let submitMediaCount = submittedMedia.count
+        let submitHasVideo = submittedMedia.contains { $0.isVideo }
         print("ReportedSubmit: validated report; media=\(submittedMedia.count) plate=\(state.plate)/\(state.plateRegion) complaintIds=\(state.selectedComplaintIds)")
         Task {
             do {
@@ -1191,11 +1676,15 @@ final class ComposerViewModel: ObservableObject {
                     plateRegion: state.plateRegion,
                     description: state.description,
                     notes: state.notes,
-                    address: state.addressQuery.isEmpty ? state.address : state.addressQuery,
+                    address: submitAddress,
                     complaintIds: state.selectedComplaintIds,
                     timeOfIncidentIso: state.occurredAtIso.isEmpty ? nil : state.occurredAtIso,
                     latitude: state.latitude.map { KotlinDouble(double: $0) },
                     longitude: state.longitude.map { KotlinDouble(double: $0) },
+                    vehicleImageDescription: nil,
+                    vehicleColor: nil,
+                    vehicleMake: nil,
+                    vehicleModel: nil,
                     mediaUrls: [],
                     mediaFiles: mediaFiles
                 )
@@ -1211,6 +1700,13 @@ final class ComposerViewModel: ObservableObject {
                 }
                 try? await SharedBridge.shared.container.clearDraftUseCase.execute()
                 PersistentMediaStore.deleteStoredMedia(submittedMediaURLs)
+                ReportedAnalytics.logSubmitReport(
+                    county: submitCounty,
+                    plateRegion: submitPlateRegion,
+                    complaintCount: submitComplaintCount,
+                    mediaCount: submitMediaCount,
+                    hasVideo: submitHasVideo
+                )
                 print("ReportedSubmit: submit flow finished successfully")
                 state = ComposerState()
                 submittedReportObjectId = submittedObjectId
@@ -1219,7 +1715,7 @@ final class ComposerViewModel: ObservableObject {
                 state.loading = false
                 state.submitProgress = nil
                 state.submitMessage = nil
-                state.error = error.localizedDescription
+                state.error = "There was an error submitting your report. Please try again."
             }
         }
     }

@@ -29,7 +29,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if sessionViewModel.state.session?.isAuthorized == true || sessionViewModel.state.isGuest {
+            if sessionViewModel.state.loading {
+                StartupLoadingView()
+            } else if sessionViewModel.state.session?.isAuthorized == true || sessionViewModel.state.isGuest {
                 MainShellView(
                     sessionViewModel: sessionViewModel,
                     themeViewModel: themeViewModel,
@@ -43,8 +45,8 @@ struct ContentView: View {
         }
         .task {
             await ReportedRemoteConfigService.shared.configureAndFetch()
-            sessionViewModel.load()
-            themeViewModel.load()
+            sessionViewModel.onAction(.load)
+            themeViewModel.onAction(.load)
         }
         .onOpenURL { url in
             if NativeSocialAuth.handle(url: url) {
@@ -59,13 +61,13 @@ struct ContentView: View {
             }
             sharedMediaImportId = importId
             if sessionViewModel.state.session?.isAuthorized != true && !sessionViewModel.state.isGuest {
-                sessionViewModel.continueAsGuest()
+                sessionViewModel.onAction(.continueAsGuest)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .reportedDetectedInfractionEditRequested)) { _ in
             detectedDraftOpenRequest = UUID()
             if sessionViewModel.state.session?.isAuthorized != true && !sessionViewModel.state.isGuest {
-                sessionViewModel.continueAsGuest()
+                sessionViewModel.onAction(.continueAsGuest)
             }
         }
         .preferredColorScheme(appPreferredColorScheme(for: themeViewModel.mode))
@@ -76,6 +78,18 @@ struct ContentView: View {
                 allowSkip: false,
                 onDismiss: { authRoute = nil }
             )
+        }
+    }
+}
+
+private struct StartupLoadingView: View {
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+            ProgressView()
+                .controlSize(.regular)
+                .tint(Color.reportedOrange)
         }
     }
 }
@@ -126,7 +140,7 @@ struct AuthFlowView: View {
                     }
                     if allowSkip {
                         Button {
-                            sessionViewModel.continueAsGuest()
+                            sessionViewModel.onAction(.continueAsGuest)
                         } label: {
                             Text("Skip")
                                 .font(.body.weight(.semibold))
@@ -145,7 +159,7 @@ struct AuthFlowView: View {
                 switch route {
                 case .login:
                     LoginScreen {
-                        sessionViewModel.didAuthenticate()
+                        sessionViewModel.onAction(.authenticated)
                         onDismiss?()
                     } onRegister: {
                         path.append(.register)
@@ -156,7 +170,7 @@ struct AuthFlowView: View {
                     }
                 case .register:
                     RegisterScreen {
-                        sessionViewModel.didAuthenticate()
+                        sessionViewModel.onAction(.authenticated)
                         onDismiss?()
                     } onLogin: {
                         path.append(.login)
@@ -284,6 +298,8 @@ struct MainShellView: View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width > proxy.size.height
             let reportOwnsToolbar = selection == .report && isLandscape
+            let usesTabletToolbarActions = UIDevice.current.userInterfaceIdiom == .pad || min(proxy.size.width, proxy.size.height) >= 700
+            let profileLogoutUsesToolbar = selection == .profile && usesTabletToolbarActions && sessionViewModel.state.session?.isAuthorized == true
             let baseOffset = isNavigationOpen ? drawerWidth : 0
             let currentOffset = min(max(baseOffset + navigationDragTranslation, 0), drawerWidth)
 
@@ -298,6 +314,8 @@ struct MainShellView: View {
                         MainShellToolbar(
                             title: selection.title,
                             showClear: selection == .report && reportHasDraftContent,
+                            trailingActionTitle: profileLogoutUsesToolbar ? "Logout" : nil,
+                            trailingAction: profileLogoutUsesToolbar ? { sessionViewModel.onAction(.logout) } : nil,
                             onMenuTapped: { toggleNavigation() },
                             onClear: { reportClearRequest += 1 }
                         )
@@ -332,11 +350,12 @@ struct MainShellView: View {
                             ProfileScreen(
                                 isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
                                 onRequireLogin: onRequireLogin,
-                                onLogout: { sessionViewModel.logout() }
+                                showsLogoutInToolbar: profileLogoutUsesToolbar,
+                                onLogout: { sessionViewModel.onAction(.logout) }
                             )
                         case .settings:
                             SettingsScreen(
-                                onThemeModeSelected: { themeViewModel.update($0) }
+                                onThemeModeSelected: { themeViewModel.onAction(.modeChanged($0)) }
                             )
                         }
                     }
@@ -373,12 +392,11 @@ struct MainShellView: View {
             .background(Color(.systemBackground))
             .background(alignment: .bottom) {
                 if selection == .report && reportSubmitBarVisible {
-                    Color.reportedOrange
+                    Color(.systemBackground)
                         .frame(height: max(proxy.safeAreaInsets.bottom, 1))
                         .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
             .overlay(alignment: .bottom) {
                 if let objectId = submittedSnackbarObjectId {
                     SubmittedReportSnackbar(
@@ -481,19 +499,25 @@ private struct MainShellToolbar: View {
     let title: String
     var showClear = false
     var compact = false
+    var trailingActionTitle: String? = nil
+    var trailingAction: (() -> Void)? = nil
     let onMenuTapped: () -> Void
     let onClear: () -> Void
 
     var body: some View {
+        let buttonHeight: CGFloat = compact ? 38 : 44
+        let sideSlotWidth: CGFloat = compact ? 68 : 96
+
         HStack {
             Button(action: onMenuTapped) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: compact ? 22 : 24, weight: .semibold))
-                    .frame(width: compact ? 38 : 44, height: compact ? 38 : 44)
+                    .frame(width: buttonHeight, height: buttonHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(.primary)
+            .frame(width: sideSlotWidth, height: buttonHeight, alignment: .leading)
 
             Spacer()
 
@@ -507,10 +531,15 @@ private struct MainShellToolbar: View {
                 Button("Clear", action: onClear)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Color.reportedOrange)
-                    .frame(width: compact ? 44 : 58, height: compact ? 38 : 44, alignment: .trailing)
+                    .frame(width: sideSlotWidth, height: buttonHeight, alignment: .trailing)
+            } else if let trailingActionTitle, let trailingAction {
+                Button(trailingActionTitle, action: trailingAction)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.reportedOrange)
+                    .frame(width: sideSlotWidth, height: buttonHeight, alignment: .trailing)
             } else {
                 Color.clear
-                    .frame(width: compact ? 44 : 58, height: compact ? 38 : 44)
+                    .frame(width: sideSlotWidth, height: buttonHeight)
             }
         }
         .padding(.horizontal, compact ? 8 : 20)
@@ -583,7 +612,7 @@ struct LoginScreen: View {
                     borderColor: Color(.separator),
                     enabled: !viewModel.state.loading
                 ) {
-                    viewModel.signInWithGoogle(onSuccess: onSuccess)
+                    viewModel.onAction(.googleSignInPressed(onSuccess: onSuccess))
                 }
                 ProviderSignInButton(
                     title: "Sign in with Apple",
@@ -594,21 +623,23 @@ struct LoginScreen: View {
                     borderColor: .black,
                     enabled: !viewModel.state.loading
                 ) {
-                    viewModel.signInWithApple(onSuccess: onSuccess)
+                    viewModel.onAction(.appleSignInPressed(onSuccess: onSuccess))
                 }
                 AuthDivider()
                 InputField(title: "Email", text: Binding(
                     get: { viewModel.state.email },
-                    set: { viewModel.update(email: $0) }
-                ), keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
-                InputField(title: "Password", text: Binding(
+                    set: { viewModel.onAction(.emailChanged($0)) }
+                ), keyboardType: .emailAddress, textContentType: .emailAddress, autocapitalizationType: .none, autocorrectionDisabled: true)
+                PasswordInputField(title: "Password", text: Binding(
                     get: { viewModel.state.password },
-                    set: { viewModel.update(password: $0) }
+                    set: { viewModel.onAction(.passwordChanged($0)) }
                 ))
                 PrimaryButton(title: viewModel.state.loading ? "Logging In..." : "Login") {
-                    viewModel.login(onSuccess: onSuccess)
+                    viewModel.onAction(.loginPressed(onSuccess: onSuccess))
                 }
-                Button("Forgot Password?", action: viewModel.forgotPassword)
+                Button("Forgot Password?") {
+                    viewModel.onAction(.forgotPasswordPressed)
+                }
                     .foregroundStyle(Color.reportedOrange)
                 Button("Need an account? Register", action: onRegister)
                     .foregroundStyle(Color.reportedOrange)
@@ -617,6 +648,19 @@ struct LoginScreen: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .alert(
+            "Check your email",
+            isPresented: Binding(
+                get: { viewModel.state.passwordResetMessage != nil },
+                set: { if !$0 { viewModel.onAction(.passwordResetMessageDismissed) } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                viewModel.onAction(.passwordResetMessageDismissed)
+            }
+        } message: {
+            Text(viewModel.state.passwordResetMessage ?? "")
+        }
     }
 }
 
@@ -642,7 +686,7 @@ struct RegisterScreen: View {
                     borderColor: Color(.separator),
                     enabled: !viewModel.state.loading
                 ) {
-                    viewModel.signInWithGoogle(onSuccess: onSuccess)
+                    viewModel.onAction(.googleSignInPressed(onSuccess: onSuccess))
                 }
                 ProviderSignInButton(
                     title: "Sign in with Apple",
@@ -653,20 +697,20 @@ struct RegisterScreen: View {
                     borderColor: .black,
                     enabled: !viewModel.state.loading
                 ) {
-                    viewModel.signInWithApple(onSuccess: onSuccess)
+                    viewModel.onAction(.appleSignInPressed(onSuccess: onSuccess))
                 }
                 AuthDivider()
-                InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }))
-                InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }))
-                InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }))
-                InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
-                InputField(title: "Password", text: Binding(get: { viewModel.state.password }, set: { viewModel.update(password: $0) }))
+                InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.onAction(.fieldsChanged(firstName: $0)) }))
+                InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.onAction(.fieldsChanged(lastName: $0)) }))
+                InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.onAction(.fieldsChanged(phone: $0)) }))
+                InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.onAction(.fieldsChanged(email: $0)) }), keyboardType: .emailAddress, textContentType: .emailAddress, autocapitalizationType: .none, autocorrectionDisabled: true)
+                PasswordInputField(title: "Password", text: Binding(get: { viewModel.state.password }, set: { viewModel.onAction(.fieldsChanged(password: $0)) }))
                 Toggle("I'm willing to testify by phone if needed.", isOn: Binding(
                     get: { viewModel.state.testify },
-                    set: { viewModel.update(testify: $0) }
+                    set: { viewModel.onAction(.fieldsChanged(testify: $0)) }
                 ))
                 PrimaryButton(title: viewModel.state.loading ? "Creating..." : "Create Account") {
-                    viewModel.register(onSuccess: onSuccess)
+                    viewModel.onAction(.registerPressed(onSuccess: onSuccess))
                 }
                 Button("Already registered? Login", action: onLogin)
                     .foregroundStyle(Color.reportedOrange)
@@ -718,6 +762,7 @@ private struct AuthToolbar: View {
 
 struct ComposerScreen: View {
     @StateObject private var viewModel = ComposerViewModel()
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let isAuthorized: Bool
     let onRequireLogin: () -> Void
     let showEmbeddedLandscapeToolbar: Bool
@@ -736,6 +781,9 @@ struct ComposerScreen: View {
     @State private var pickedItems: [PhotosPickerItem] = []
     @State private var pendingComplaintId: String?
     @State private var metadataTask: Task<Void, Never>?
+    @State private var imageTimeRefreshTask: Task<Void, Never>?
+    @State private var refreshedPhotoOccurredAtIso: String?
+    @State private var imageTimeRefreshInFlight = false
     @State private var videoScanTask: Task<Void, Never>?
     @State private var addressSearchTask: Task<Void, Never>?
     @State private var showPreferredPlateRegions = false
@@ -759,10 +807,25 @@ struct ComposerScreen: View {
     @State private var tutorialScannerEnabled = true
     @State private var tutorialNotificationsEnabled = true
     @State private var isLandscapeComposer = false
-    @State private var composerBottomSafeArea: CGFloat = 0
     private let previewScrollId = "composer-primary-media-preview"
 
-    private let complaintColumns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    private func complaintPickerColumns(for width: CGFloat) -> [GridItem] {
+        let spacing: CGFloat = width >= 700 ? 18 : 10
+        let columnCount = 2
+        return Array(repeating: GridItem(.flexible(), spacing: spacing), count: columnCount)
+    }
+
+    private func complaintPickerMaxWidth(for width: CGFloat) -> CGFloat {
+        width >= 700 ? min(width, 980) : width
+    }
+
+    private func complaintTileMetrics(for width: CGFloat) -> (imageHeight: CGFloat, minHeight: CGFloat) {
+        width >= 700 ? (224, 320) : (96, 150)
+    }
+    private func primaryPreviewHeight(for availableSize: CGSize) -> CGFloat {
+        availableSize.width >= 700 ? 440 : 220
+    }
+
     private func landscapeMediaColumnWidth(for width: CGFloat) -> CGFloat {
         min(max(236, width * 0.31), 276)
     }
@@ -812,24 +875,29 @@ struct ComposerScreen: View {
     }
 
     private var decoratedComposerContent: AnyView {
+        let photoIsoValue = viewModel.state.photoOccurredAtIso ?? refreshedPhotoOccurredAtIso
+        let hasImageTimeSource = viewModel.state.primaryMedia?.isVideo == false
         var view = AnyView(composerContent)
         view = AnyView(view.overlay(alignment: .bottom) { detectionProgressChip })
         view = AnyView(view.sheet(isPresented: $showOccurredAtPicker) {
             ReportedDateTimeSheet(
                 isoValue: viewModel.state.occurredAtIso,
-                photoIsoValue: viewModel.state.photoOccurredAtIso
+                photoIsoValue: photoIsoValue,
+                hasImageTimeSource: hasImageTimeSource,
+                isRefreshingImageTime: imageTimeRefreshInFlight
             ) { iso in
-                viewModel.update(occurredAtIso: iso)
+                viewModel.onAction(.fieldsChanged(occurredAtIso: iso))
             }
-            .presentationDetents([.height(328)])
+            .presentationDetents([.height(360)])
             .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
         })
         view = AnyView(view.sheet(isPresented: $showPlateRegionSheet) {
             PlateRegionSheet(
                 selectedValue: viewModel.state.plateRegion,
                 showAllStates: $showAllPlateRegions,
                 onSelected: { value in
-                    viewModel.update(plateRegion: value)
+                    viewModel.onAction(.fieldsChanged(plateRegion: value))
                     showPlateRegionSheet = false
                 }
             )
@@ -843,7 +911,7 @@ struct ComposerScreen: View {
                 initialAddress: viewModel.state.addressQuery.isEmpty ? viewModel.state.address : viewModel.state.addressQuery,
                 onCancel: { showAddressMapSheet = false },
                 onDone: { suggestion in
-                    viewModel.chooseAddress(suggestion)
+                    viewModel.onAction(.addressChosen(suggestion))
                     showAddressMapSheet = false
                 }
             )
@@ -867,7 +935,7 @@ struct ComposerScreen: View {
             .presentationDragIndicator(.hidden)
             .interactiveDismissDisabled()
         })
-        view = AnyView(view.overlay(alignment: .bottom) {
+        view = AnyView(view.safeAreaInset(edge: .bottom, spacing: 0) {
             if showsBottomSubmitBar {
                 submitBottomBar()
             }
@@ -885,7 +953,7 @@ struct ComposerScreen: View {
         view = AnyView(view.alert("Clear report?", isPresented: $showDiscardConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Clear", role: .destructive) {
-                viewModel.clearDraft()
+                viewModel.onAction(.clearDraft)
                 onDraftContentChanged(false)
             }
         } message: {
@@ -922,7 +990,12 @@ struct ComposerScreen: View {
         view = AnyView(view.onChange(of: viewModel.submittedReportObjectId) { _, objectId in
             guard let objectId, !objectId.isEmpty else { return }
             onReportSubmitted(objectId)
-            viewModel.consumeSubmittedReport()
+            viewModel.onAction(.submittedReportConsumed)
+        })
+        view = AnyView(view.onChange(of: viewModel.state.primaryMedia?.fileURL.path) { _, _ in
+            imageTimeRefreshTask?.cancel()
+            refreshedPhotoOccurredAtIso = nil
+            imageTimeRefreshInFlight = false
         })
         view = AnyView(view.onChange(of: clearRequest) { _, token in
             guard token != handledClearRequest else { return }
@@ -951,7 +1024,7 @@ struct ComposerScreen: View {
         })
         view = AnyView(view.onChange(of: detectedDraftOpenRequest) { _, request in
             guard request != nil else { return }
-            viewModel.reloadDraft()
+            viewModel.onAction(.reloadDraft)
             detectedDraftOpenRequest = nil
         })
         view = AnyView(view.sheet(
@@ -968,38 +1041,45 @@ struct ComposerScreen: View {
         )) {
             Button("Process") { startVideoScan() }
             Button("Skip", role: .cancel) {
-                viewModel.onVideoProcessingDecision(false)
+                viewModel.onAction(.videoProcessingDecision(false))
             }
         } message: {
             Text("We can scan every video frame and show the best candidate plates for you to choose from.")
         })
-        view = AnyView(view.confirmationDialog("Change complaint", isPresented: $showComplaintChooser, titleVisibility: .visible) {
-            ForEach(complaintOptions) { option in
-                Button(option.title) {
-                    viewModel.updateSelectedComplaint(option.id)
-                }
+        view = AnyView(view.sheet(isPresented: $showComplaintChooser) {
+            ComplaintChooserSheet(
+                title: "What kind of complaint is this?",
+                options: complaintOptions,
+                selectedComplaintId: viewModel.state.selectedComplaintId,
+                activeAnimatedComplaintId: activeAnimatedComplaintId
+            ) { option in
+                viewModel.onAction(.selectedComplaintChanged(option.id))
+                showComplaintChooser = false
             }
-            Button("Cancel", role: .cancel) {}
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(.systemBackground))
         })
         view = AnyView(view.sheet(isPresented: $showPlateCandidatesChooser) {
             PlateCandidatePickerSheet(
                 candidates: viewModel.state.plateCandidates,
                 selectedPlate: viewModel.state.selectedPlateCandidate,
                 onSelected: { candidate in
-                    viewModel.choosePlateCandidate(candidate)
+                    viewModel.onAction(.plateCandidateChosen(candidate))
                     showPlateCandidatesChooser = false
                 },
                 onDismiss: { showPlateCandidatesChooser = false }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .presentationBackground(Color(.systemBackground))
         })
         view = AnyView(view.sheet(item: $pendingPlateCandidate) { candidate in
             UsePlateCandidateSheet(
                 candidate: candidate,
                 sourceImage: pendingPlatePreviewImage,
                 onUse: {
-                    viewModel.choosePlateCandidate(candidate)
+                    viewModel.onAction(.plateCandidateChosen(candidate))
                     pendingPlateCandidate = nil
                     pendingPlatePreviewImage = nil
                 },
@@ -1008,25 +1088,26 @@ struct ComposerScreen: View {
                     pendingPlatePreviewImage = nil
                 }
             )
-            .presentationDetents([.height(260)])
+            .presentationDetents([.height(plateCandidateSheetDetentHeight)])
             .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
         })
         view = AnyView(view.alert(
             "Fix plate format?",
             isPresented: Binding(
                 get: { viewModel.state.plateCorrectionPrompt != nil },
-                set: { if !$0 { viewModel.dismissPlateCorrection() } }
+                set: { if !$0 { viewModel.onAction(.plateCorrectionDismissed) } }
             ),
             presenting: viewModel.state.plateCorrectionPrompt
         ) { prompt in
             Button("Use \(prompt.suggestedPlate)") {
-                viewModel.acceptPlateCorrection()
+                viewModel.onAction(.plateCorrectionAccepted)
             }
             Button("Keep") {
-                viewModel.keepPlateCorrection()
+                viewModel.onAction(.plateCorrectionKept)
             }
             Button("Edit", role: .cancel) {
-                viewModel.dismissPlateCorrection()
+                viewModel.onAction(.plateCorrectionDismissed)
             }
         } message: { prompt in
             Text("This looks like a \(prompt.label) plate. Use \(prompt.suggestedPlate) instead of \(prompt.rawPlate)?")
@@ -1067,7 +1148,7 @@ struct ComposerScreen: View {
                 let trailingPadding = horizontalPadding + (isLandscape ? horizontalUnsafeAreaWidth : 0)
                 let landscapeLeftColumnWidth = landscapeMediaColumnWidth(for: geometry.size.width)
                 let landscapeColumnSpacing: CGFloat = 14
-                let bottomPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 24 + geometry.safeAreaInsets.bottom : 96 + geometry.safeAreaInsets.bottom) : 8
+                let bottomPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 24 + geometry.safeAreaInsets.bottom : 16) : 8
                 let content = ScrollView {
                     Group {
                         switch viewModel.state.stage {
@@ -1075,10 +1156,10 @@ struct ComposerScreen: View {
                             if isLandscape && showEmbeddedLandscapeToolbar {
                                 VStack(alignment: .leading, spacing: 10) {
                                     embeddedLandscapeToolbar
-                                    pickMediaContent
+                                    pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding)
                                 }
                             } else {
-                                pickMediaContent
+                                pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding)
                             }
                         case .verify:
                             verifyContent(isLandscape: isLandscape, availableSize: geometry.size)
@@ -1092,17 +1173,13 @@ struct ComposerScreen: View {
                 ZStack(alignment: .bottom) {
                     content
                         .task {
-                            viewModel.loadDraft()
+                            viewModel.onAction(.loadDraft)
                         }
                         .onAppear {
                             isLandscapeComposer = isLandscape
-                            composerBottomSafeArea = geometry.safeAreaInsets.bottom
                         }
                         .onChange(of: geometry.size) { _, newSize in
                             isLandscapeComposer = newSize.width > newSize.height
-                        }
-                        .onChange(of: geometry.safeAreaInsets.bottom) { _, newValue in
-                            composerBottomSafeArea = newValue
                         }
                         .onChange(of: viewModel.state.primaryMedia?.fileURL.path) { _, newValue in
                             guard viewModel.state.stage == .verify, newValue != nil, !isLandscape else { return }
@@ -1133,29 +1210,18 @@ struct ComposerScreen: View {
     }
 
     private var pendingComplaintSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("What kind of complaint is this?")
-                        .font(.title2.bold())
-                    LazyVGrid(columns: complaintColumns, spacing: 12) {
-                        ForEach(complaintOptions) { option in
-                            ComplaintMediaTile(
-                                option: option,
-                                animate: option.id == activeAnimatedComplaintId,
-                                showImage: viewModel.state.showComplaintImages
-                            ) {
-                                viewModel.confirmPendingComplaint(option.id)
-                            }
-                        }
-                    }
-                }
-                .padding()
-            }
-            .interactiveDismissDisabled()
+        ComplaintChooserSheet(
+            title: "What kind of complaint is this?",
+            options: complaintOptions,
+            selectedComplaintId: viewModel.state.selectedComplaintId,
+            activeAnimatedComplaintId: activeAnimatedComplaintId
+        ) { option in
+            viewModel.onAction(.pendingComplaintConfirmed(option.id))
         }
+        .interactiveDismissDisabled()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.hidden)
+        .presentationBackground(Color(.systemBackground))
     }
 
     private func handleAddressQueryChanged(_ oldValue: String, _ newValue: String) {
@@ -1163,24 +1229,24 @@ struct ComposerScreen: View {
               !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               newValue != viewModel.state.address else {
             addressSearchTask?.cancel()
-            viewModel.setAddressSuggestions([])
+            viewModel.onAction(.addressSuggestionsChanged([]))
             return
         }
         addressSearchTask?.cancel()
         addressSearchTask = Task {
-            viewModel.setAddressLookupLoading(true)
+            viewModel.onAction(.addressLookupLoadingChanged(true))
             try? await Task.sleep(for: .milliseconds(250))
             if Task.isCancelled { return }
             let suggestions = await searchNycAddresses(query: newValue)
             if Task.isCancelled { return }
-            viewModel.setAddressSuggestions(suggestions)
+            viewModel.onAction(.addressSuggestionsChanged(suggestions))
         }
     }
 
     private func startVideoScan(from startTimeSeconds: Double = 0, resetProgress: Bool = true) {
         let videoMedia = viewModel.state.primaryMedia
         if resetProgress {
-            viewModel.onVideoProcessingDecision(true)
+            viewModel.onAction(.videoProcessingDecision(true))
         }
         videoScanTask?.cancel()
         videoScanGeneration += 1
@@ -1188,7 +1254,7 @@ struct ComposerScreen: View {
         let scanGeneration = videoScanGeneration
         videoScanTask = Task {
             guard let videoMedia else {
-                viewModel.finishDetection()
+                viewModel.onAction(.detectionFinished())
                 return
             }
             let candidates = await NativeAlprEngine.shared.detectLicensePlatesInVideo(
@@ -1210,7 +1276,7 @@ struct ComposerScreen: View {
                 }
                 await MainActor.run {
                     guard scanGeneration == videoScanGeneration else { return }
-                    viewModel.setDetectionProgress(
+                    viewModel.onAction(.detectionProgressChanged(
                         message: "Scanning frame \(progress.processedFrames)/\(totalFrames), \(foundText)",
                         progress: percent,
                         framePreview: progress.framePreview,
@@ -1218,7 +1284,7 @@ struct ComposerScreen: View {
                         videoDurationSeconds: progress.durationSeconds,
                         frameCandidates: progress.frameCandidates,
                         allCandidates: progress.allCandidates
-                    )
+                    ))
                 }
                 while await MainActor.run(body: { videoScanPaused }) {
                     try? await Task.sleep(for: .milliseconds(80))
@@ -1230,11 +1296,11 @@ struct ComposerScreen: View {
             let isCurrentScan = await MainActor.run { scanGeneration == videoScanGeneration }
             guard isCurrentScan else { return }
             let topCandidate = candidates.first
-            viewModel.finishDetection(
+            viewModel.onAction(.detectionFinished(
                 candidates: candidates,
                 inferredPlate: topCandidate?.plate,
                 inferredState: topCandidate?.state
-            )
+            ))
         }
     }
 
@@ -1256,7 +1322,9 @@ struct ComposerScreen: View {
     }
 
     @ViewBuilder
-    private var pickMediaContent: some View {
+    private func pickMediaContent(availableWidth: CGFloat) -> some View {
+        let pickerMaxWidth = complaintPickerMaxWidth(for: availableWidth)
+        let tileMetrics = complaintTileMetrics(for: availableWidth)
         ScreenCard {
             VStack(spacing: 12) {
                 Text("Upload Photo of Complaint")
@@ -1268,23 +1336,32 @@ struct ComposerScreen: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                LazyVGrid(columns: complaintColumns, spacing: 10) {
+                LazyVGrid(columns: complaintPickerColumns(for: availableWidth), spacing: availableWidth >= 700 ? 18 : 10) {
                     ForEach(complaintOptions) { option in
                         ComplaintMediaTile(
                             option: option,
                             animate: option.id == activeAnimatedComplaintId,
-                            showImage: viewModel.state.showComplaintImages
+                            showImage: viewModel.state.showComplaintImages,
+                            imageHeight: tileMetrics.imageHeight,
+                            minHeight: tileMetrics.minHeight,
+                            titleFont: availableWidth >= 700 ? .title2.weight(.semibold) : .subheadline.weight(.semibold)
                         ) {
                             pendingComplaintId = option.id
                             singlePickerPresented = true
                         }
                     }
-                    UploadMediaTile {
+                    UploadMediaTile(
+                        minHeight: tileMetrics.minHeight,
+                        iconSize: availableWidth >= 700 ? 54 : 30,
+                        titleFont: availableWidth >= 700 ? .title2.weight(.semibold) : .subheadline.weight(.semibold)
+                    ) {
                         pendingComplaintId = nil
                         singlePickerPresented = true
                     }
                 }
             }
+            .frame(maxWidth: pickerMaxWidth)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -1450,12 +1527,12 @@ struct ComposerScreen: View {
         videoScanGeneration += 1
         videoScanTask?.cancel()
         videoScanTask = nil
-        viewModel.choosePlateCandidate(candidate)
-        viewModel.finishDetection(
+        viewModel.onAction(.plateCandidateChosen(candidate))
+        viewModel.onAction(.detectionFinished(
             candidates: viewModel.state.plateCandidates.isEmpty ? [candidate] : viewModel.state.plateCandidates,
             inferredPlate: candidate.plate,
             inferredState: candidate.state
-        )
+        ))
     }
 
     private func cancelVideoScan() {
@@ -1464,7 +1541,7 @@ struct ComposerScreen: View {
         videoScanTask = nil
         videoScanPaused = false
         detectionProgressMinimized = false
-        viewModel.cancelVideoProcessing()
+        viewModel.onAction(.videoProcessingCancelled)
     }
 
     @ViewBuilder
@@ -1515,12 +1592,16 @@ struct ComposerScreen: View {
                     if let error = viewModel.state.error {
                         MessageView(text: error)
                     }
-                    mediaPanel(selectedCandidate: selectedCandidate, expandPreview: true)
+                    mediaPanel(
+                        selectedCandidate: selectedCandidate,
+                        expandPreview: true,
+                        previewHeight: primaryPreviewHeight(for: availableSize)
+                    )
                     landscapeMediaActions
                 }
                 .frame(width: landscapeMediaColumnWidth(for: availableSize.width))
                 VStack(alignment: .leading, spacing: 10) {
-                    verifyFormContent(isLandscape: true)
+                    verifyFormContent(isLandscape: true, isTablet: availableSize.width >= 700)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -1529,32 +1610,41 @@ struct ComposerScreen: View {
                 if let error = viewModel.state.error {
                     MessageView(text: error)
                 }
-                mediaPanel(selectedCandidate: selectedCandidate, expandPreview: false)
+                mediaPanel(
+                    selectedCandidate: selectedCandidate,
+                    expandPreview: false,
+                    previewHeight: primaryPreviewHeight(for: availableSize)
+                )
                 addMoreMediaButton
                 if viewModel.state.validationErrors.media != nil {
                     ValidationMessage(text: viewModel.state.validationErrors.media)
                 }
-                verifyFormContent(isLandscape: false)
+                verifyFormContent(isLandscape: false, isTablet: availableSize.width >= 700)
             }
         }
     }
 
     @ViewBuilder
-    private func mediaPanel(selectedCandidate: ComposerState.PlateCandidate?, expandPreview: Bool) -> some View {
+    private func mediaPanel(
+        selectedCandidate: ComposerState.PlateCandidate?,
+        expandPreview: Bool,
+        previewHeight: CGFloat
+    ) -> some View {
         if let media = viewModel.state.primaryMedia {
             PrimarySubmissionPreview(
                 media: media,
                 selectedCandidate: selectedCandidate,
                 candidates: viewModel.state.plateCandidates,
                 selectedPlate: viewModel.state.selectedPlateCandidate,
+                previewHeight: previewHeight,
                 onCandidateTapped: { candidate, image in
                     pendingPlatePreviewImage = image
                     pendingPlateCandidate = candidate
                 },
                 onCandidateConfirmedFromFullScreen: { candidate in
-                    viewModel.choosePlateCandidate(candidate)
+                    viewModel.onAction(.plateCandidateChosen(candidate))
                 },
-                onRemove: { viewModel.removeMedia(media) }
+                onRemove: { viewModel.onAction(.mediaRemoved(media)) }
             )
             .frame(maxHeight: expandPreview ? .infinity : nil)
             .id(previewScrollId)
@@ -1598,14 +1688,12 @@ struct ComposerScreen: View {
         HStack {
             Button(action: onClearTapped) {
                 Label("Clear", systemImage: "xmark")
-                    .font(.body.weight(.semibold))
-                    .padding(.horizontal, 18)
-                    .frame(height: 52)
+                    .frame(minWidth: 108)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.reportedOrange)
-            .background(Color(.systemBackground))
-            .clipShape(Capsule())
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(Color.reportedOrange)
             .shadow(color: Color.black.opacity(0.16), radius: 10, x: 0, y: 4)
             .opacity(shellHasDraftContent ? 1 : 0)
             .disabled(!shellHasDraftContent)
@@ -1614,14 +1702,12 @@ struct ComposerScreen: View {
 
             Button(action: submitReport) {
                 Label(viewModel.state.loading ? "Submitting" : "Submit", systemImage: "paperplane.fill")
-                    .font(.body.weight(.semibold))
-                    .padding(.horizontal, 18)
-                    .frame(height: 52)
+                    .frame(minWidth: 132)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .background(Color.reportedOrange)
-            .clipShape(Capsule())
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(Color.reportedOrange)
             .shadow(color: Color.black.opacity(0.16), radius: 10, x: 0, y: 4)
             .disabled(viewModel.state.loading)
         }
@@ -1634,7 +1720,7 @@ struct ComposerScreen: View {
                 if viewModel.remainingMediaSlots > 0 {
                     multiPickerPresented = true
                 } else {
-                    viewModel.markMediaLimitReached()
+                    viewModel.onAction(.mediaLimitReached)
                 }
             } else {
                 singlePickerPresented = true
@@ -1644,36 +1730,26 @@ struct ComposerScreen: View {
 
     private var submitInlineButton: some View {
         VStack(spacing: 8) {
-            submitButton(height: 56)
+            submitButton()
             submitProgressContent
         }
     }
 
     private func submitBottomBar() -> some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 10) {
             if viewModel.state.loading {
                 submitProgressContent
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemBackground))
             }
-            submitButton(height: 64)
-            Color.reportedOrange
-                .frame(height: bottomUnsafeAreaHeight)
+            submitButton()
         }
         .frame(maxWidth: .infinity)
-        .background(Color.reportedOrange)
-        .ignoresSafeArea(.container, edges: .bottom)
-    }
-
-    private var bottomUnsafeAreaHeight: CGFloat {
-        let windowBottom = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets
-            .bottom ?? 0
-        return max(composerBottomSafeArea, windowBottom, 0)
+        .padding(.horizontal, usesTabletSubmitMetrics ? 16 : 20)
+        .padding(.top, usesTabletSubmitMetrics ? 12 : 8)
+        .padding(.bottom, usesTabletSubmitMetrics ? 16 : 20)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 
     private var horizontalUnsafeAreaWidth: CGFloat {
@@ -1685,17 +1761,30 @@ struct ComposerScreen: View {
         return max(insets.left, insets.right, 0)
     }
 
-    private func submitButton(height: CGFloat) -> some View {
-        Button(action: submitReport) {
+    private var usesTabletSubmitMetrics: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
+    }
+
+    private func submitButton() -> some View {
+        let buttonHeight: CGFloat = usesTabletSubmitMetrics ? 68 : 50
+        let cornerRadius: CGFloat = usesTabletSubmitMetrics ? 18 : 12
+
+        return Button(action: submitReport) {
             Text(viewModel.state.loading ? "Submitting..." : "Submit Report")
-                .font(.system(size: 20, weight: .semibold))
+                .font(usesTabletSubmitMetrics ? .title2.weight(.semibold) : .headline.weight(.semibold))
+                .multilineTextAlignment(.center)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: height)
+                .frame(height: buttonHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color.reportedOrange)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-        .background(Color.reportedOrange)
         .disabled(viewModel.state.loading)
+        .opacity(viewModel.state.loading ? 0.72 : 1)
     }
 
     @ViewBuilder
@@ -1713,7 +1802,13 @@ struct ComposerScreen: View {
     }
 
     @ViewBuilder
-    private func verifyFormContent(isLandscape: Bool) -> some View {
+    private func verifyFormContent(isLandscape: Bool, isTablet: Bool) -> some View {
+        let complaintMaxWidth: CGFloat = isLandscape ? .infinity : (isTablet ? 312 : 156)
+        let complaintMinWidth: CGFloat = isLandscape ? 160 : (isTablet ? 260 : 130)
+        let plateWidth: CGFloat = isLandscape || isTablet ? 150 : 134
+        let stateWidth: CGFloat = isLandscape || isTablet ? 76 : 62
+        let multilineFieldMinHeight: CGFloat? = isLandscape || isTablet ? 104 : nil
+
         HStack(alignment: .top, spacing: 12) {
             ComplaintPickerField(
                 value: complaintOptions.first(where: { $0.id == viewModel.state.selectedComplaintId })?.title ?? "Select complaint",
@@ -1721,14 +1816,14 @@ struct ComposerScreen: View {
             ) {
                 showComplaintChooser = true
             }
-            .frame(minWidth: isLandscape ? 160 : 130, maxWidth: isLandscape ? .infinity : 156)
+            .frame(minWidth: complaintMinWidth, maxWidth: complaintMaxWidth)
             PlateInputField(
-                text: Binding(get: { viewModel.state.plate }, set: { viewModel.update(plate: String($0.prefix(8))) }),
+                text: Binding(get: { viewModel.state.plate }, set: { viewModel.onAction(.fieldsChanged(plate: String($0.prefix(8)))) }),
                 isError: viewModel.state.validationErrors.plate != nil,
                 showCandidateButton: !viewModel.state.plateCandidates.isEmpty,
                 onShowCandidates: { showPlateCandidatesChooser = true }
             )
-            .frame(width: isLandscape ? 150 : 134)
+            .frame(width: plateWidth)
             PickerField(
                 title: "State",
                 value: viewModel.state.plateRegion,
@@ -1739,7 +1834,7 @@ struct ComposerScreen: View {
                 showAllPlateRegions = false
                 showPlateRegionSheet = true
             }
-            .frame(width: isLandscape ? 76 : 62)
+            .frame(width: stateWidth)
         }
         FieldErrorGroup([
             viewModel.state.validationErrors.complaint,
@@ -1764,7 +1859,7 @@ struct ComposerScreen: View {
         }
         ForEach(viewModel.state.addressSuggestions) { suggestion in
             Button {
-                viewModel.chooseAddress(suggestion)
+                viewModel.onAction(.addressChosen(suggestion))
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "location")
@@ -1793,16 +1888,16 @@ struct ComposerScreen: View {
         }
         if isLandscape {
             HStack(alignment: .top, spacing: 12) {
-                InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.update(description: $0) }), fieldMinHeight: 104)
-                    .onChange(of: viewModel.state.description) { _, _ in viewModel.persistCurrentDraft() }
-                InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.update(notes: $0) }), fieldMinHeight: 104)
-                    .onChange(of: viewModel.state.notes) { _, _ in viewModel.persistCurrentDraft() }
+                InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.onAction(.fieldsChanged(description: $0)) }), fieldMinHeight: multilineFieldMinHeight)
+                    .onChange(of: viewModel.state.description) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
+                InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.onAction(.fieldsChanged(notes: $0)) }), fieldMinHeight: multilineFieldMinHeight)
+                    .onChange(of: viewModel.state.notes) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
             }
         } else {
-            InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.update(description: $0) }))
-                .onChange(of: viewModel.state.description) { _, _ in viewModel.persistCurrentDraft() }
-            InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.update(notes: $0) }))
-                .onChange(of: viewModel.state.notes) { _, _ in viewModel.persistCurrentDraft() }
+            InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.onAction(.fieldsChanged(description: $0)) }), fieldMinHeight: multilineFieldMinHeight)
+                .onChange(of: viewModel.state.description) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
+            InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.onAction(.fieldsChanged(notes: $0)) }), fieldMinHeight: multilineFieldMinHeight)
+                .onChange(of: viewModel.state.notes) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
         }
     }
 
@@ -1811,11 +1906,11 @@ struct ComposerScreen: View {
             title: "Address",
             text: Binding(
                 get: { viewModel.state.addressQuery },
-                set: { viewModel.updateAddressQuery($0) }
+                set: { viewModel.onAction(.addressQueryChanged($0)) }
             ),
             isError: viewModel.state.validationErrors.address != nil,
             onClear: {
-                viewModel.updateAddressQuery("")
+                viewModel.onAction(.addressQueryChanged(""))
             },
             trailingIconSystemName: "map",
             onTrailingIcon: {
@@ -1830,14 +1925,38 @@ struct ComposerScreen: View {
             value: viewModel.state.occurredAtIso.reportDateTimeDisplay,
             isError: viewModel.state.validationErrors.occurredAt != nil
         ) {
+            refreshOccurredAtImageTime()
             showOccurredAtPicker = true
         }
     }
 
+    private func refreshOccurredAtImageTime() {
+        guard let media = viewModel.state.primaryMedia, !media.isVideo else {
+            refreshedPhotoOccurredAtIso = nil
+            imageTimeRefreshInFlight = false
+            imageTimeRefreshTask?.cancel()
+            return
+        }
+        refreshedPhotoOccurredAtIso = viewModel.state.photoOccurredAtIso
+        imageTimeRefreshTask?.cancel()
+        imageTimeRefreshInFlight = true
+        imageTimeRefreshTask = Task {
+            let metadata = await extractSubmissionMetadata(from: media)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                imageTimeRefreshInFlight = false
+                refreshedPhotoOccurredAtIso = metadata.occurredAtIso
+                if let occurredAtIso = metadata.occurredAtIso, !occurredAtIso.isEmpty {
+                    viewModel.onAction(.metadataApplied(photoOccurredAtIso: occurredAtIso))
+                }
+            }
+        }
+    }
+
     private func submitReport() {
-        guard viewModel.prepareSubmit() else { return }
+        guard viewModel.onAction(.submitValidationRequested) else { return }
         if isAuthorized {
-            viewModel.submit()
+            viewModel.onAction(.submitPressed)
         } else {
             onRequireLogin()
         }
@@ -1846,49 +1965,49 @@ struct ComposerScreen: View {
     private func handlePickedItem(_ item: PhotosPickerItem) async {
         guard let media = await loadSubmissionMedia(from: item) else { return }
         if let complaintId = pendingComplaintId {
-            viewModel.onPrimaryMediaChosen(media, complaintId: complaintId)
+            viewModel.onAction(.primaryMediaChosen(media, complaintId: complaintId))
         } else if viewModel.state.stage == .verify, viewModel.state.selectedComplaintId != nil {
-            guard viewModel.addExtraMedia(media) else {
+            guard viewModel.onAction(.extraMediaAdded(media)) else {
                 pendingComplaintId = nil
                 return
             }
         } else {
-            viewModel.onUploadMediaChosen(media)
+            viewModel.onAction(.uploadMediaChosen(media))
         }
         pendingComplaintId = nil
         metadataTask?.cancel()
         metadataTask = Task {
-            viewModel.setDetectionProgress(message: "Reading media metadata", progress: 0.1)
+            viewModel.onAction(.detectionProgressChanged(message: "Reading media metadata", progress: 0.1))
             let metadata = await extractSubmissionMetadata(from: media)
             let inferredState = metadata.latitude != nil && metadata.longitude != nil ? "NY" : nil
             let inferredAddress: String?
             if let latitude = metadata.latitude, let longitude = metadata.longitude {
-                viewModel.setDetectionProgress(message: "Finding NYC address", progress: 0.35)
+                viewModel.onAction(.detectionProgressChanged(message: "Finding NYC address", progress: 0.35))
                 inferredAddress = await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
             } else {
                 inferredAddress = nil
             }
             if Task.isCancelled { return }
-            viewModel.applyDetectedMetadata(
+            viewModel.onAction(.metadataApplied(
                 occurredAtIso: metadata.occurredAtIso,
                 photoOccurredAtIso: media.isVideo ? nil : metadata.occurredAtIso,
                 latitude: metadata.latitude,
                 longitude: metadata.longitude,
                 inferredState: inferredState,
                 inferredAddress: inferredAddress
-            )
+            ))
             if !media.isVideo {
-                viewModel.setDetectionProgress(message: "Detecting plates", progress: 0.65)
+                viewModel.onAction(.detectionProgressChanged(message: "Detecting plates", progress: 0.65))
                 let candidates = await NativeAlprEngine.shared.detectLicensePlates(
                     media: media,
                     expectedComplaintHint: selectedComplaintDetectionHint
                 )
                 if !Task.isCancelled {
-                    viewModel.finishDetection(
+                    viewModel.onAction(.detectionFinished(
                         candidates: candidates,
                         inferredPlate: candidates.first?.plate,
                         inferredState: inferredState
-                    )
+                    ))
                 }
             }
         }
@@ -1899,54 +2018,54 @@ struct ComposerScreen: View {
         guard !mediaItems.isEmpty else { return }
 
         if viewModel.state.primaryMedia != nil {
-            mediaItems.forEach { viewModel.addExtraMedia($0) }
+            mediaItems.forEach { viewModel.onAction(.extraMediaAdded($0)) }
             return
         }
 
         let primary = mediaItems[0]
         if let complaintId = viewModel.state.selectedComplaintId {
-            viewModel.onPrimaryMediaChosen(primary, complaintId: complaintId)
+            viewModel.onAction(.primaryMediaChosen(primary, complaintId: complaintId))
         } else {
-            viewModel.onUploadMediaChosen(primary)
+            viewModel.onAction(.uploadMediaChosen(primary))
         }
-        mediaItems.dropFirst().forEach { viewModel.addExtraMedia($0) }
+        mediaItems.dropFirst().forEach { viewModel.onAction(.extraMediaAdded($0)) }
         await processMetadataAndDetection(for: primary)
     }
 
     private func processMetadataAndDetection(for media: ComposerState.SubmissionMedia) async {
         metadataTask?.cancel()
         metadataTask = Task {
-            viewModel.setDetectionProgress(message: "Reading media metadata", progress: 0.1)
+            viewModel.onAction(.detectionProgressChanged(message: "Reading media metadata", progress: 0.1))
             let metadata = await extractSubmissionMetadata(from: media)
             let inferredState = metadata.latitude != nil && metadata.longitude != nil ? "NY" : nil
             let inferredAddress: String?
             if let latitude = metadata.latitude, let longitude = metadata.longitude {
-                viewModel.setDetectionProgress(message: "Finding NYC address", progress: 0.35)
+                viewModel.onAction(.detectionProgressChanged(message: "Finding NYC address", progress: 0.35))
                 inferredAddress = await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
             } else {
                 inferredAddress = nil
             }
             if Task.isCancelled { return }
-            viewModel.applyDetectedMetadata(
+            viewModel.onAction(.metadataApplied(
                 occurredAtIso: metadata.occurredAtIso,
                 photoOccurredAtIso: media.isVideo ? nil : metadata.occurredAtIso,
                 latitude: metadata.latitude,
                 longitude: metadata.longitude,
                 inferredState: inferredState,
                 inferredAddress: inferredAddress
-            )
+            ))
             if !media.isVideo {
-                viewModel.setDetectionProgress(message: "Detecting plates", progress: 0.65)
+                viewModel.onAction(.detectionProgressChanged(message: "Detecting plates", progress: 0.65))
                 let candidates = await NativeAlprEngine.shared.detectLicensePlates(
                     media: media,
                     expectedComplaintHint: selectedComplaintDetectionHint
                 )
                 if !Task.isCancelled {
-                    viewModel.finishDetection(
+                    viewModel.onAction(.detectionFinished(
                         candidates: candidates,
                         inferredPlate: candidates.first?.plate,
                         inferredState: inferredState
-                    )
+                    ))
                 }
             }
         }
@@ -1954,7 +2073,7 @@ struct ComposerScreen: View {
 
     private func handleAdditionalPickedItem(_ item: PhotosPickerItem) async {
         guard let media = await loadSubmissionMedia(from: item) else { return }
-        viewModel.addExtraMedia(media)
+        viewModel.onAction(.extraMediaAdded(media))
     }
 }
 
@@ -2053,29 +2172,18 @@ private func complaintOptionFor(
     keywords: [String]
 ) -> ComplaintOption {
     guard let category = categories.first(where: { category in
-        let name = category.name.lowercased()
-        return keywords.contains { name.contains($0) }
+        let searchableText = "\(category.name) \(category.key)".lowercased()
+        return keywords.contains { searchableText.contains($0) }
     }) else {
         return fallback
     }
     return ComplaintOption(
         id: category.id,
-        title: displayComplaintTitle(category.name),
+        title: category.name,
         imageName: fallback.imageName,
         imageExtension: fallback.imageExtension,
         lottieName: fallback.lottieName
     )
-}
-
-private func displayComplaintTitle(_ title: String) -> String {
-    switch title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-    case "blocked the bike lane", "blocked the biek lane":
-        return "Blocked bike lane"
-    case "blocked the crosswalk":
-        return "Blocked crosswalk"
-    default:
-        return title
-    }
 }
 
 private struct ExtractedSubmissionMetadata {
@@ -2084,10 +2192,78 @@ private struct ExtractedSubmissionMetadata {
     let longitude: Double?
 }
 
+private struct ComplaintChooserSheet: View {
+    let title: String
+    let options: [ComplaintOption]
+    let selectedComplaintId: String?
+    let activeAnimatedComplaintId: String?
+    let onSelected: (ComplaintOption) -> Void
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: isTabletLayout ? 20 : 16) {
+                        Text(title)
+                            .font(isTabletLayout ? .largeTitle.bold() : .title2.bold())
+                        LazyVGrid(columns: columns(for: geometry.size.width), spacing: isTabletLayout ? 16 : 12) {
+                            ForEach(options) { option in
+                                ZStack(alignment: .topTrailing) {
+                                    ComplaintMediaTile(
+                                        option: option,
+                                        animate: option.id == activeAnimatedComplaintId,
+                                        showImage: true,
+                                        imageHeight: tileMetrics(for: geometry.size.width).imageHeight,
+                                        minHeight: tileMetrics(for: geometry.size.width).minHeight,
+                                        titleFont: isTabletLayout ? .title3.weight(.semibold) : .subheadline.weight(.semibold)
+                                    ) {
+                                        onSelected(option)
+                                    }
+                                    if option.id == selectedComplaintId {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.title3.weight(.semibold))
+                                            .foregroundStyle(Color.green)
+                                            .background(Color(.systemBackground), in: Circle())
+                                            .padding(10)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: maxContentWidth(for: geometry.size.width), alignment: .leading)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                }
+            }
+        }
+    }
+
+    private func columns(for width: CGFloat) -> [GridItem] {
+        let columnCount = width >= 700 ? 3 : 2
+        return Array(repeating: GridItem(.flexible(), spacing: isTabletLayout ? 16 : 12), count: columnCount)
+    }
+
+    private func maxContentWidth(for width: CGFloat) -> CGFloat {
+        width >= 700 ? min(width, 780) : width
+    }
+
+    private func tileMetrics(for width: CGFloat) -> (imageHeight: CGFloat, minHeight: CGFloat) {
+        width >= 700 ? (136, 218) : (96, 150)
+    }
+
+    private var isTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
+    }
+}
+
 private struct ComplaintMediaTile: View {
     let option: ComplaintOption
     var animate = false
     var showImage = true
+    var imageHeight: CGFloat = 96
+    var minHeight: CGFloat = 150
+    var titleFont: Font = .subheadline.weight(.semibold)
     let action: () -> Void
 
     var body: some View {
@@ -2095,12 +2271,12 @@ private struct ComplaintMediaTile: View {
             VStack(spacing: 8) {
                 if showImage {
                     ComplaintOptionImage(option: option, animate: animate)
-                        .frame(height: 96)
+                        .frame(height: imageHeight)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 Text(option.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(titleFont)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
@@ -2108,7 +2284,7 @@ private struct ComplaintMediaTile: View {
                     .minimumScaleFactor(0.82)
             }
             .padding(8)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .top)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .top)
             .background(Color(.secondarySystemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -2131,7 +2307,7 @@ private struct ComplaintOptionImage: View {
                 LottieAssetView(
                     animationName: lottieName,
                     isPlaying: animate,
-                    contentMode: .scaleAspectFill
+                    contentMode: .scaleAspectFit
                 )
                 .scaleEffect(option.id == "ran_red_light" ? 1.18 : 1, anchor: .bottom)
                 .clipped()
@@ -2146,7 +2322,7 @@ private struct ComplaintOptionImage: View {
                 option.artBackground
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: option.id == "drove_recklessly" || option.id == "parked_illegally" ? .fill : .fit)
+                    .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             }
@@ -2294,6 +2470,9 @@ private struct LottieAssetView: UIViewRepresentable {
 }
 
 private struct UploadMediaTile: View {
+    var minHeight: CGFloat = 150
+    var iconSize: CGFloat = 30
+    var titleFont: Font = .subheadline.weight(.semibold)
     let action: () -> Void
 
     var body: some View {
@@ -2301,14 +2480,14 @@ private struct UploadMediaTile: View {
             VStack(spacing: 8) {
                 Spacer()
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 30, weight: .medium))
+                    .font(.system(size: iconSize, weight: .medium))
                     .foregroundStyle(Color.reportedOrange)
                 Text("Upload")
-                    .font(.subheadline.weight(.semibold))
+                    .font(titleFont)
                     .foregroundStyle(.primary)
                 Spacer()
             }
-            .frame(maxWidth: .infinity, minHeight: 150)
+            .frame(maxWidth: .infinity, minHeight: minHeight)
             .background(Color(.secondarySystemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -2325,6 +2504,7 @@ private struct PrimarySubmissionPreview: View {
     let selectedCandidate: ComposerState.PlateCandidate?
     let candidates: [ComposerState.PlateCandidate]
     let selectedPlate: String?
+    let previewHeight: CGFloat
     let onCandidateTapped: (ComposerState.PlateCandidate, UIImage?) -> Void
     let onCandidateConfirmedFromFullScreen: (ComposerState.PlateCandidate) -> Void
     let onRemove: () -> Void
@@ -2353,11 +2533,11 @@ private struct PrimarySubmissionPreview: View {
                                 )
                             }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 220)
+                            .frame(height: previewHeight)
                         } else {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color(.secondarySystemBackground))
-                                .frame(height: 220)
+                                .frame(height: previewHeight)
                                 .overlay(
                                     VStack(spacing: 10) {
                                         Image(systemName: "video")
@@ -2409,7 +2589,7 @@ private struct PrimarySubmissionPreview: View {
                     )
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 220)
+                .frame(height: previewHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(RoundedRectangle(cornerRadius: 12))
                 .onTapGesture {
@@ -2676,10 +2856,15 @@ private struct FullScreenImageViewer: View {
                     pendingCandidate = nil
                 }
             )
-            .presentationDetents([.height(260)])
+            .presentationDetents([.height(plateCandidateSheetDetentHeight)])
             .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
         }
     }
+}
+
+private var plateCandidateSheetDetentHeight: CGFloat {
+    UIDevice.current.userInterfaceIdiom == .pad ? 420 : 260
 }
 
 private struct PlateCandidateChip: View {
@@ -2732,12 +2917,13 @@ private struct UsePlateCandidateSheet: View {
     let sourceImage: UIImage?
     let onUse: () -> Void
     let onDismiss: () -> Void
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: isTabletLayout ? 24 : 18) {
             HStack {
                 Text("Use this plate?")
-                    .font(.title3.weight(.semibold))
+                    .font(isTabletLayout ? .title2.weight(.semibold) : .title3.weight(.semibold))
                 Spacer()
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
@@ -2750,31 +2936,36 @@ private struct UsePlateCandidateSheet: View {
                 .buttonStyle(.plain)
             }
 
-            HStack(alignment: .center, spacing: 14) {
-                PlateCandidateCropPreview(candidate: candidate, sourceImage: sourceImage)
-                    .frame(width: 112, height: 58)
+            HStack(alignment: .center, spacing: isTabletLayout ? 22 : 14) {
+                PlateCandidateCropPreview(
+                    candidate: candidate,
+                    sourceImage: sourceImage,
+                    size: isTabletLayout ? CGSize(width: 224, height: 116) : CGSize(width: 112, height: 58),
+                    cornerRadius: isTabletLayout ? 10 : 6
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(candidate.plate)
-                        .font(.title2.weight(.semibold))
+                        .font(isTabletLayout ? .largeTitle.weight(.semibold) : .title2.weight(.semibold))
                     if let correctionText = candidate.plateCorrectionText {
                         Text(correctionText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(Color.reportedOrange)
                     }
                     Text("\(Int(candidate.confidence * 100))% confidence")
-                        .font(.subheadline)
+                        .font(isTabletLayout ? .body : .subheadline)
                         .foregroundStyle(.secondary)
                     if let classifierText = candidate.stateClassifierText {
                         Text(classifierText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(.secondary)
                     }
                     if let plateTypeText = candidate.plateTypeText {
                         Text(plateTypeText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(.secondary)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack(spacing: 12) {
@@ -2782,9 +2973,13 @@ private struct UsePlateCandidateSheet: View {
                 PrimaryButton(title: "Yes", action: onUse)
             }
         }
-        .padding(20)
+        .padding(isTabletLayout ? 28 : 20)
         .presentationCornerRadius(24)
         .background(Color(.systemBackground))
+    }
+
+    private var isTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
     }
 }
 
@@ -2793,11 +2988,12 @@ private struct PlateCandidatePickerSheet: View {
     let selectedPlate: String?
     let onSelected: (ComposerState.PlateCandidate) -> Void
     let onDismiss: () -> Void
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 10) {
+                LazyVStack(spacing: isTabletLayout ? 14 : 10) {
                     ForEach(candidates) { candidate in
                         PlateCandidatePickerRow(
                             candidate: candidate,
@@ -2807,9 +3003,10 @@ private struct PlateCandidatePickerSheet: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, isTabletLayout ? 24 : 16)
+                .padding(.vertical, isTabletLayout ? 18 : 12)
             }
+            .background(Color(.systemBackground))
             .navigationTitle("Possible plates")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2819,6 +3016,11 @@ private struct PlateCandidatePickerSheet: View {
                 }
             }
         }
+        .background(Color(.systemBackground))
+    }
+
+    private var isTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
     }
 }
 
@@ -2826,44 +3028,49 @@ private struct PlateCandidatePickerRow: View {
     let candidate: ComposerState.PlateCandidate
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                PlateCandidateCropPreview(candidate: candidate)
+            HStack(spacing: isTabletLayout ? 16 : 12) {
+                PlateCandidateCropPreview(
+                    candidate: candidate,
+                    size: isTabletLayout ? CGSize(width: 160, height: 82) : CGSize(width: 96, height: 48),
+                    cornerRadius: isTabletLayout ? 8 : 6
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(candidate.plate)
-                        .font(.title3.weight(.semibold))
+                        .font(isTabletLayout ? .title2.weight(.semibold) : .title3.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                     if let correctionText = candidate.plateCorrectionText {
                         Text(correctionText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(Color.reportedOrange)
                     }
                     Text("\(Int(candidate.confidence * 100))% detection confidence")
-                        .font(.caption)
+                        .font(isTabletLayout ? .callout : .caption)
                         .foregroundStyle(.secondary)
                     if let stateText = candidate.stateClassifierText {
                         Text(stateText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(.secondary)
                     }
                     if let typeText = candidate.plateTypeText {
                         Text(typeText)
-                            .font(.caption)
+                            .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if isSelected {
                     Text("Selected")
-                        .font(.caption.weight(.semibold))
+                        .font(isTabletLayout ? .callout.weight(.semibold) : .caption.weight(.semibold))
                         .foregroundStyle(Color.green)
                 }
             }
-            .padding(10)
+            .padding(isTabletLayout ? 14 : 10)
             .background(Color(.systemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -2873,15 +3080,21 @@ private struct PlateCandidatePickerRow: View {
         }
         .buttonStyle(.plain)
     }
+
+    private var isTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || horizontalSizeClass == .regular
+    }
 }
 
 private struct PlateCandidateCropPreview: View {
     let candidate: ComposerState.PlateCandidate
     var sourceImage: UIImage? = nil
+    var size = CGSize(width: 96, height: 48)
+    var cornerRadius: CGFloat = 6
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color(.secondarySystemBackground))
             if let crop = candidate.plateCropPreview ?? sourceImage?.croppedPlatePreview(for: candidate) {
                 Image(uiImage: crop)
@@ -2897,8 +3110,8 @@ private struct PlateCandidateCropPreview: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 96, height: 48)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 
@@ -3201,7 +3414,7 @@ struct ReportsScreen: View {
                 presenting: pendingDeleteReport
             ) { report in
                 Button("Delete report", role: .destructive) {
-                    viewModel.delete(report: report)
+                    viewModel.onAction(.reportDeleted(report))
                     pendingDeleteReport = nil
                 }
                 Button("Cancel", role: .cancel) {
@@ -3216,7 +3429,7 @@ struct ReportsScreen: View {
     private func openSubmittedReport(_ objectId: String?) {
         guard let objectId, !objectId.isEmpty else { return }
         expandedReports.insert(objectId)
-        viewModel.openReport(objectId: objectId)
+        viewModel.onAction(.reportOpened(objectId: objectId))
         onOpenedReport()
     }
 }
@@ -3248,7 +3461,7 @@ private struct ReportsListContent: View {
                             expandedReports.remove(report.reportKey)
                         } else {
                             expandedReports.insert(report.reportKey)
-                            viewModel.loadDetail(for: report)
+                            viewModel.onAction(.detailRequested(report))
                         }
                     },
                     onDelete: {
@@ -3256,7 +3469,7 @@ private struct ReportsListContent: View {
                     }
                 )
                 .onAppear {
-                    viewModel.loadNextPageIfNeeded(current: report)
+                    viewModel.onAction(.nextPageRequested(current: report))
                 }
             }
             if viewModel.loadingMore {
@@ -3278,8 +3491,8 @@ private struct ReportsModeSection: View {
             Text("Choose how you want to pull your reports. We will not load the list until you ask.")
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {
-                SecondaryButton(title: "Search", action: viewModel.chooseSearch)
-                PrimaryButton(title: "List", action: viewModel.chooseList)
+                SecondaryButton(title: "Search") { viewModel.onAction(.searchChosen) }
+                PrimaryButton(title: "List") { viewModel.onAction(.listChosen) }
             }
         }
     }
@@ -3290,29 +3503,47 @@ private struct ReportsSearchSection: View {
 
     var body: some View {
         Section("Search Filters") {
-            TextField("License plate", text: $viewModel.licenseQuery)
-                .textInputAutocapitalization(.characters)
-                .foregroundStyle(.primary)
-                .tint(.primary)
-            Toggle("Use start date", isOn: $viewModel.usesStartDate)
+            StableSingleLineTextInput(
+                text: Binding(
+                    get: { viewModel.licenseQuery },
+                    set: { viewModel.onAction(.licenseChanged($0)) }
+                ),
+                placeholder: "License plate",
+                autocapitalizationType: .allCharacters,
+                autocorrectionDisabled: true
+            )
+            .frame(height: 24)
+            Toggle("Use start date", isOn: Binding(
+                get: { viewModel.usesStartDate },
+                set: { viewModel.onAction(.usesStartDateChanged($0)) }
+            ))
             if viewModel.usesStartDate {
                 DatePicker(
                     "Start Date",
-                    selection: $viewModel.startDate,
+                    selection: Binding(
+                        get: { viewModel.startDate },
+                        set: { viewModel.onAction(.startDateChanged($0)) }
+                    ),
                     in: ...Date(),
                     displayedComponents: [.date, .hourAndMinute]
                 )
             }
-            Toggle("Use end date", isOn: $viewModel.usesEndDate)
+            Toggle("Use end date", isOn: Binding(
+                get: { viewModel.usesEndDate },
+                set: { viewModel.onAction(.usesEndDateChanged($0)) }
+            ))
             if viewModel.usesEndDate {
                 DatePicker(
                     "End Date",
-                    selection: $viewModel.endDate,
+                    selection: Binding(
+                        get: { viewModel.endDate },
+                        set: { viewModel.onAction(.endDateChanged($0)) }
+                    ),
                     in: ...Date(),
                     displayedComponents: [.date, .hourAndMinute]
                 )
             }
-            PrimaryButton(title: "Search reports", action: viewModel.search)
+            PrimaryButton(title: "Search reports") { viewModel.onAction(.searchPressed) }
         }
     }
 }
@@ -3403,9 +3634,15 @@ private struct ReportSummaryRow: View {
     }
 }
 
+private struct RemoteReportImageSelection: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 private struct ReportMediaStrip: View {
     let mediaUrls: [String]
     let videoUrls: [String]
+    @State private var selectedImage: RemoteReportImageSelection?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -3413,13 +3650,22 @@ private struct ReportMediaStrip: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(mediaUrls, id: \.self) { url in
-                            AsyncImage(url: URL(string: url)) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                Color(.secondarySystemBackground)
+                            if let imageURL = URL(string: url) {
+                                Button {
+                                    selectedImage = RemoteReportImageSelection(url: imageURL)
+                                } label: {
+                                    AsyncImage(url: imageURL) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        Color(.secondarySystemBackground)
+                                    }
+                                    .frame(width: 112, height: 112)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open report image")
                             }
-                            .frame(width: 112, height: 112)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
@@ -3428,6 +3674,104 @@ private struct ReportMediaStrip: View {
                 Text("Video \(index + 1)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.reportedOrange)
+            }
+        }
+        .fullScreenCover(item: $selectedImage) { selection in
+            RemoteReportImageViewer(url: selection.url) {
+                selectedImage = nil
+            }
+        }
+    }
+}
+
+private struct RemoteReportImageViewer: View {
+    let url: URL
+    let onDismiss: () -> Void
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                Color.black.ignoresSafeArea()
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .tint(.white)
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                    case .failure:
+                        VStack(spacing: 10) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 36, weight: .medium))
+                            Text("Image unavailable")
+                                .font(.headline)
+                        }
+                        .foregroundStyle(.white)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .scaleEffect(scale)
+                .offset(offset)
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scale = min(max(lastScale * value, 1), 6)
+                            if scale <= 1.01 {
+                                offset = .zero
+                            }
+                        }
+                        .onEnded { _ in
+                            scale = min(max(scale, 1), 6)
+                            lastScale = scale
+                            if scale <= 1.01 {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                )
+                .simultaneousGesture(
+                    DragGesture()
+                        .onChanged { value in
+                            guard scale > 1 else { return }
+                            offset = CGSize(
+                                width: lastOffset.width + value.translation.width,
+                                height: lastOffset.height + value.translation.height
+                            )
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+                .onTapGesture(count: 2) {
+                    if scale > 1 {
+                        scale = 1
+                        lastScale = 1
+                        offset = .zero
+                        lastOffset = .zero
+                    } else {
+                        scale = 2
+                        lastScale = 2
+                    }
+                }
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.62))
+                        .clipShape(Circle())
+                }
+                .padding(16)
             }
         }
     }
@@ -3462,6 +3806,7 @@ private extension String {
 struct ProfileScreen: View {
     let isAuthorized: Bool
     let onRequireLogin: () -> Void
+    var showsLogoutInToolbar = false
     @StateObject private var viewModel = ProfileViewModel()
     let onLogout: () -> Void
 
@@ -3484,16 +3829,18 @@ struct ProfileScreen: View {
                             profileFields(isLandscape: isLandscape)
                             Toggle("I'm willing to testify by phone if needed.", isOn: Binding(
                                 get: { viewModel.state.testify },
-                                set: { viewModel.update(testify: $0) }
+                                set: { viewModel.onAction(.fieldsChanged(testify: $0)) }
                             ))
                             .disabled(!viewModel.state.editing)
                             if viewModel.state.editing {
-                                PrimaryButton(title: viewModel.state.loading ? "Saving..." : "Save") { viewModel.save() }
+                                PrimaryButton(title: viewModel.state.loading ? "Saving..." : "Save") { viewModel.onAction(.save) }
                             } else {
-                                PrimaryButton(title: "Edit Profile") { viewModel.toggleEditing() }
+                                PrimaryButton(title: "Edit Profile") { viewModel.onAction(.toggleEditing) }
                             }
-                            Button("Logout", action: onLogout)
-                                .foregroundStyle(Color.reportedOrange)
+                            if !showsLogoutInToolbar {
+                                Button("Logout", action: onLogout)
+                                    .foregroundStyle(Color.reportedOrange)
+                            }
                         }
                         .padding(isLandscape ? 12 : 16)
                     }
@@ -3503,7 +3850,7 @@ struct ProfileScreen: View {
         }
         .task {
             if isAuthorized {
-                viewModel.load()
+                viewModel.onAction(.load)
             }
         }
     }
@@ -3512,18 +3859,18 @@ struct ProfileScreen: View {
     private func profileFields(isLandscape: Bool) -> some View {
         if isLandscape {
             HStack(alignment: .top, spacing: 12) {
-                InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }), disabled: !viewModel.state.editing)
-                InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }), disabled: !viewModel.state.editing)
+                InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.onAction(.fieldsChanged(firstName: $0)) }), disabled: !viewModel.state.editing)
+                InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.onAction(.fieldsChanged(lastName: $0)) }), disabled: !viewModel.state.editing)
             }
             HStack(alignment: .top, spacing: 12) {
-                InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }), disabled: !viewModel.state.editing)
-                InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
+                InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.onAction(.fieldsChanged(phone: $0)) }), disabled: !viewModel.state.editing)
+                InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.onAction(.fieldsChanged(email: $0)) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, autocapitalizationType: .none, autocorrectionDisabled: true)
             }
         } else {
-            InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.update(firstName: $0) }), disabled: !viewModel.state.editing)
-            InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.update(lastName: $0) }), disabled: !viewModel.state.editing)
-            InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.update(phone: $0) }), disabled: !viewModel.state.editing)
-            InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.update(email: $0) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, textInputAutocapitalization: .never, autocorrectionDisabled: true)
+            InputField(title: "First Name", text: Binding(get: { viewModel.state.firstName }, set: { viewModel.onAction(.fieldsChanged(firstName: $0)) }), disabled: !viewModel.state.editing)
+            InputField(title: "Last Name", text: Binding(get: { viewModel.state.lastName }, set: { viewModel.onAction(.fieldsChanged(lastName: $0)) }), disabled: !viewModel.state.editing)
+            InputField(title: "Phone", text: Binding(get: { viewModel.state.phone }, set: { viewModel.onAction(.fieldsChanged(phone: $0)) }), disabled: !viewModel.state.editing)
+            InputField(title: "Email", text: Binding(get: { viewModel.state.email }, set: { viewModel.onAction(.fieldsChanged(email: $0)) }), disabled: !viewModel.state.editing, keyboardType: .emailAddress, textContentType: .emailAddress, autocapitalizationType: .none, autocorrectionDisabled: true)
         }
     }
 }
@@ -3573,7 +3920,7 @@ struct SettingsScreen: View {
             .background(Color(.systemBackground))
         }
         .task {
-            viewModel.load()
+            viewModel.onAction(.load)
             refreshMediaFlags()
         }
         .onReceive(NotificationCenter.default.publisher(for: .reportedRemoteConfigUpdated)) { _ in
@@ -3652,7 +3999,7 @@ struct SettingsScreen: View {
     }
 
     private func setTheme(_ mode: AppThemeMode) {
-        viewModel.setThemeMode(mode)
+        viewModel.onAction(.themeModeChanged(mode))
         onThemeModeSelected(mode)
     }
 
@@ -4152,6 +4499,211 @@ private struct VideoPlateOverlay: View {
     }
 }
 
+private let reportedFieldLabelSpacing: CGFloat = 10
+private let reportedFieldLabelHorizontalInset: CGFloat = 2
+
+private struct ReportedFieldLabel: View {
+    let title: String
+    var isError = false
+
+    var body: some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(isError ? Color.red : Color.reportedOrange)
+            .lineLimit(1)
+            .minimumScaleFactor(0.68)
+            .allowsTightening(true)
+            .padding(.horizontal, reportedFieldLabelHorizontalInset)
+    }
+}
+
+private struct StableSingleLineTextInput: UIViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var disabled = false
+    var keyboardType: UIKeyboardType = .default
+    var textContentType: UITextContentType? = nil
+    var autocapitalizationType: UITextAutocapitalizationType = .sentences
+    var autocorrectionDisabled = false
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField(frame: .zero)
+        field.borderStyle = .none
+        field.backgroundColor = .clear
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
+        field.adjustsFontForContentSizeCategory = true
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        applyTraits(to: field)
+        applyAppearance(to: field)
+        return field
+    }
+
+    func updateUIView(_ uiView: UITextField, context: Context) {
+        context.coordinator.text = $text
+        let isComposingMarkedText = uiView.markedTextRange != nil
+        if uiView.text != text && (!uiView.isFirstResponder || !isComposingMarkedText) {
+            uiView.text = text
+        }
+        if uiView.placeholder != placeholder { uiView.placeholder = placeholder }
+        if uiView.isEnabled == disabled { uiView.isEnabled = !disabled }
+        if !uiView.isFirstResponder {
+            applyTraits(to: uiView)
+        }
+        applyAppearance(to: uiView)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    private func applyTraits(to field: UITextField) {
+        if field.keyboardType != keyboardType { field.keyboardType = keyboardType }
+        if field.textContentType != textContentType { field.textContentType = textContentType }
+        if field.autocapitalizationType != autocapitalizationType { field.autocapitalizationType = autocapitalizationType }
+        let autocorrectionType: UITextAutocorrectionType = autocorrectionDisabled ? .no : .default
+        if field.autocorrectionType != autocorrectionType { field.autocorrectionType = autocorrectionType }
+        let spellCheckingType: UITextSpellCheckingType = autocorrectionDisabled ? .no : .default
+        if field.spellCheckingType != spellCheckingType { field.spellCheckingType = spellCheckingType }
+    }
+
+    private func applyAppearance(to field: UITextField) {
+        let preferredFont = UIFont.preferredFont(forTextStyle: .body)
+        if field.font != preferredFont { field.font = preferredFont }
+        if field.textColor != .label { field.textColor = .label }
+        if field.tintColor != .label { field.tintColor = .label }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var text: Binding<String>
+        private var beganEditingAt: Date?
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        @objc func textDidChange(_ sender: UITextField) {
+            guard sender.markedTextRange == nil else { return }
+            let value = sender.text ?? ""
+            if text.wrappedValue != value {
+                text.wrappedValue = value
+            }
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            beganEditingAt = Date()
+        }
+
+        func textFieldShouldEndEditing(_ textField: UITextField) -> Bool {
+            guard let beganEditingAt else { return true }
+            return Date().timeIntervalSince(beganEditingAt) > 0.2
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            beganEditingAt = nil
+            let value = textField.text ?? ""
+            if text.wrappedValue != value {
+                text.wrappedValue = value
+            }
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            return true
+        }
+    }
+}
+
+private struct StableMultilineTextInput: UIViewRepresentable {
+    @Binding var text: String
+    var disabled = false
+    var autocapitalizationType: UITextAutocapitalizationType = .sentences
+    var autocorrectionDisabled = false
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView(frame: .zero)
+        textView.backgroundColor = .clear
+        textView.delegate = context.coordinator
+        textView.isScrollEnabled = true
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.adjustsFontForContentSizeCategory = true
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        applyTraits(to: textView)
+        applyAppearance(to: textView)
+        return textView
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        context.coordinator.text = $text
+        let isComposingMarkedText = uiView.markedTextRange != nil
+        if uiView.text != text && (!uiView.isFirstResponder || !isComposingMarkedText) {
+            uiView.text = text
+        }
+        if uiView.isEditable == disabled { uiView.isEditable = !disabled }
+        if uiView.isSelectable == disabled { uiView.isSelectable = !disabled }
+        if !uiView.isFirstResponder {
+            applyTraits(to: uiView)
+        }
+        applyAppearance(to: uiView)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    private func applyTraits(to textView: UITextView) {
+        if textView.autocapitalizationType != autocapitalizationType { textView.autocapitalizationType = autocapitalizationType }
+        let autocorrectionType: UITextAutocorrectionType = autocorrectionDisabled ? .no : .default
+        if textView.autocorrectionType != autocorrectionType { textView.autocorrectionType = autocorrectionType }
+        let spellCheckingType: UITextSpellCheckingType = autocorrectionDisabled ? .no : .default
+        if textView.spellCheckingType != spellCheckingType { textView.spellCheckingType = spellCheckingType }
+    }
+
+    private func applyAppearance(to textView: UITextView) {
+        let preferredFont = UIFont.preferredFont(forTextStyle: .body)
+        if textView.font != preferredFont { textView.font = preferredFont }
+        if textView.textColor != .label { textView.textColor = .label }
+        if textView.tintColor != .label { textView.tintColor = .label }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var text: Binding<String>
+        private var beganEditingAt: Date?
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            guard textView.markedTextRange == nil else { return }
+            let value = textView.text ?? ""
+            if text.wrappedValue != value {
+                text.wrappedValue = value
+            }
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            beganEditingAt = Date()
+        }
+
+        func textViewShouldEndEditing(_ textView: UITextView) -> Bool {
+            guard let beganEditingAt else { return true }
+            return Date().timeIntervalSince(beganEditingAt) > 0.2
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            beganEditingAt = nil
+            let value = textView.text ?? ""
+            if text.wrappedValue != value {
+                text.wrappedValue = value
+            }
+        }
+    }
+}
+
 struct InputField: View {
     let title: String
     @Binding var text: String
@@ -4160,29 +4712,17 @@ struct InputField: View {
     var fieldMinHeight: CGFloat? = nil
     var keyboardType: UIKeyboardType = .default
     var textContentType: UITextContentType? = nil
-    var textInputAutocapitalization: TextInputAutocapitalization? = nil
+    var autocapitalizationType: UITextAutocapitalizationType = .sentences
     var autocorrectionDisabled = false
     var onClear: (() -> Void)? = nil
     var trailingIconSystemName: String? = nil
     var onTrailingIcon: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(isError ? Color.red : Color.reportedOrange)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                .allowsTightening(true)
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: title, isError: isError)
             HStack(spacing: 8) {
-                TextField(title, text: $text, axis: .vertical)
-                    .disabled(disabled)
-                    .keyboardType(keyboardType)
-                    .textContentType(textContentType)
-                    .textInputAutocapitalization(textInputAutocapitalization)
-                    .autocorrectionDisabled(autocorrectionDisabled)
-                    .foregroundStyle(.primary)
-                    .tint(.primary)
+                inputControl
                 if let onClear, !text.isEmpty {
                     Button(action: onClear) {
                         Image(systemName: "xmark.circle.fill")
@@ -4210,6 +4750,87 @@ struct InputField: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
+
+    @ViewBuilder
+    private var inputControl: some View {
+        if fieldMinHeight != nil {
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text(title)
+                        .foregroundStyle(Color(.placeholderText))
+                        .allowsHitTesting(false)
+                }
+                StableMultilineTextInput(
+                    text: $text,
+                    disabled: disabled,
+                    autocapitalizationType: autocapitalizationType,
+                    autocorrectionDisabled: autocorrectionDisabled
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        } else {
+            StableSingleLineTextInput(
+                text: $text,
+                placeholder: title,
+                disabled: disabled,
+                keyboardType: keyboardType,
+                textContentType: textContentType,
+                autocapitalizationType: autocapitalizationType,
+                autocorrectionDisabled: autocorrectionDisabled
+            )
+            .frame(height: 24)
+        }
+    }
+}
+
+struct PasswordInputField: View {
+    let title: String
+    @Binding var text: String
+    var disabled = false
+    var isError = false
+    var fieldMinHeight: CGFloat? = nil
+    @State private var isPasswordVisible = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: title, isError: isError)
+            HStack(spacing: 8) {
+                Group {
+                    if isPasswordVisible {
+                        TextField(title, text: $text)
+                    } else {
+                        SecureField(title, text: $text)
+                    }
+                }
+                .disabled(disabled)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .foregroundStyle(.primary)
+                .tint(.primary)
+
+                Button {
+                    isPasswordVisible.toggle()
+                } label: {
+                    Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .disabled(disabled)
+                .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(minHeight: fieldMinHeight, alignment: .topLeading)
+            .background(isError ? Color.reportedFieldErrorBackground : Color(.systemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isError ? Color.red : Color(.separator), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
 }
 
 private struct ComplaintPickerField: View {
@@ -4218,10 +4839,8 @@ private struct ComplaintPickerField: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Complaint")
-                .font(.headline)
-                .foregroundStyle(isError ? Color.red : Color.reportedOrange)
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: "Complaint", isError: isError)
             Button(action: action) {
                 AutoFitFieldText(value.isEmpty ? "Select complaint" : value)
                     .foregroundStyle(.primary)
@@ -4247,20 +4866,17 @@ private struct PlateInputField: View {
     let onShowCandidates: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Plate")
-                .font(.headline)
-                .foregroundStyle(isError ? Color.red : Color.reportedOrange)
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: "Plate", isError: isError)
             HStack(spacing: 6) {
-                TextField("Plate", text: $text)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .tint(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-                    .allowsTightening(true)
+                StableSingleLineTextInput(
+                    text: $text,
+                    placeholder: "Plate",
+                    keyboardType: .default,
+                    autocapitalizationType: .allCharacters,
+                    autocorrectionDisabled: true
+                )
+                .frame(height: 24)
                 if showCandidateButton {
                     Button(action: onShowCandidates) {
                         Text("?")
@@ -4641,6 +5257,8 @@ private struct AddressMapSheet: View {
 private struct ReportedDateTimeSheet: View {
     let isoValue: String
     let photoIsoValue: String?
+    let hasImageTimeSource: Bool
+    let isRefreshingImageTime: Bool
     let onSelected: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var month: Int
@@ -4650,9 +5268,17 @@ private struct ReportedDateTimeSheet: View {
     @State private var minute: Int
     @State private var meridiem: String
 
-    init(isoValue: String, photoIsoValue: String?, onSelected: @escaping (String) -> Void) {
+    init(
+        isoValue: String,
+        photoIsoValue: String?,
+        hasImageTimeSource: Bool = false,
+        isRefreshingImageTime: Bool = false,
+        onSelected: @escaping (String) -> Void
+    ) {
         self.isoValue = isoValue
         self.photoIsoValue = photoIsoValue
+        self.hasImageTimeSource = hasImageTimeSource
+        self.isRefreshingImageTime = isRefreshingImageTime
         self.onSelected = onSelected
         let components = Self.components(from: Self.date(from: isoValue) ?? Date())
         _month = State(initialValue: components.month)
@@ -4665,16 +5291,63 @@ private struct ReportedDateTimeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Occurred At")
-                    .font(.title2.bold())
-                Spacer()
-                Button("Done") {
-                    onSelected(Self.isoString(from: selectedDate))
-                    dismiss()
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Occurred At")
+                        .font(.title2.bold())
+                    Spacer()
+                    Button("Done") {
+                        onSelected(Self.isoString(from: selectedDate))
+                        dismiss()
+                    }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.reportedOrange)
                 }
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Color.reportedOrange)
+                if let photoDate {
+                    Button {
+                        useImageTime(photoDate)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "camera")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Use time from image")
+                                    .font(.subheadline.weight(.semibold))
+                                Text(photoDate.formatted(.dateTime.month(.abbreviated).day().year().hour(.defaultDigits(amPM: .abbreviated)).minute()))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(Color.reportedOrange)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.reportedOrange.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                } else if hasImageTimeSource {
+                    HStack(spacing: 10) {
+                        Image(systemName: "camera")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(isRefreshingImageTime ? "Reading time from image" : "No image time found")
+                                .font(.subheadline.weight(.semibold))
+                            Text(isRefreshingImageTime ? "Checking the selected media metadata." : "This image does not include a readable capture time.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if isRefreshingImageTime {
+                            ProgressView()
+                        }
+                    }
+                    .foregroundStyle(Color.reportedOrange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.reportedOrange.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
             }
             GeometryReader { proxy in
                 let availableWidth = max(proxy.size.width, 1)
@@ -4710,25 +5383,14 @@ private struct ReportedDateTimeSheet: View {
             .frame(height: 154)
             .onChange(of: month) { _, _ in clampDay() }
             .onChange(of: year) { _, _ in clampDay() }
-            if let photoIsoValue, let photoDate = Self.date(from: photoIsoValue) {
-                Button {
-                    apply(photoDate)
-                    onSelected(Self.isoString(from: photoDate))
-                    dismiss()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "camera")
-                        Text("Use photo time of \(photoIsoValue.photoTimeDisplay)")
-                        Spacer(minLength: 0)
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.reportedOrange)
-                }
-                .buttonStyle(.plain)
-            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+
+    private var photoDate: Date? {
+        guard let photoIsoValue else { return nil }
+        return Self.date(from: photoIsoValue)
     }
 
     private var currentYear: Int {
@@ -4818,6 +5480,12 @@ private struct ReportedDateTimeSheet: View {
         meridiem = components.meridiem
     }
 
+    private func useImageTime(_ date: Date) {
+        apply(date)
+        onSelected(Self.isoString(from: date))
+        dismiss()
+    }
+
     private static func date(from iso: String) -> Date? {
         guard !iso.isEmpty else { return nil }
         let isoFormatter = ISO8601DateFormatter()
@@ -4857,10 +5525,8 @@ struct PickerField: View {
     let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(isError ? Color.red : Color.reportedOrange)
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: title, isError: isError)
             Button(action: action) {
                 HStack(spacing: 6) {
                     AutoFitFieldText(value.isEmpty ? "Select" : value, alignment: alignment)

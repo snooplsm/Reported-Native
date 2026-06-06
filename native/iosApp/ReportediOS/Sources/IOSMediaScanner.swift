@@ -209,7 +209,11 @@ struct IOSDetectedInfraction: Codable {
             latitude: latitude.map { KotlinDouble(double: $0) },
             longitude: longitude.map { KotlinDouble(double: $0) },
             plateCandidates: candidates.map { $0.toDraft() },
-            selectedPlateCandidate: plate
+            selectedPlateCandidate: plate,
+            vehicleImageDescription: nil,
+            vehicleColor: nil,
+            vehicleMake: nil,
+            vehicleModel: nil
         )
     }
 }
@@ -587,6 +591,10 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
                 timeOfIncidentIso: infraction.occurredAtIso,
                 latitude: infraction.latitude.map { KotlinDouble(double: $0) },
                 longitude: infraction.longitude.map { KotlinDouble(double: $0) },
+                vehicleImageDescription: nil,
+                vehicleColor: nil,
+                vehicleMake: nil,
+                vehicleModel: nil,
                 mediaUrls: [],
                 mediaFiles: mediaFiles
             ))
@@ -594,8 +602,9 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             IOSDetectedInfractionStore.remove(id: candidateId)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [candidateId])
         } catch {
+            print("\(reportedMediaScannerLogTag): detected infraction submit failed \(error)")
             try? await SharedBridge.shared.container.saveDraftUseCase.execute(draft: infraction.toDraft())
-            await showNeedsEditNotification(candidateId: candidateId, reason: error.localizedDescription)
+            await showNeedsEditNotification(candidateId: candidateId, reason: "Open Reported to review this detected report.")
         }
     }
 

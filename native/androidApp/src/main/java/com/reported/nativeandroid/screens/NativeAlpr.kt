@@ -24,6 +24,10 @@ import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.app.PlateCandidate
 import com.reported.nativeandroid.app.SubmissionMedia
 import com.reported.shared.model.PlatePatternClassifier
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -37,6 +41,7 @@ import java.nio.FloatBuffer
 import java.util.Collections
 import java.util.EnumSet
 import java.util.WeakHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -262,7 +267,13 @@ internal object NativeAlprEngine {
     ): LiveFrameDetectionResult = withContext(Dispatchers.IO) {
         val sessions = getSessionsOrNull(context.applicationContext)
             ?: return@withContext LiveFrameDetectionResult(emptyList(), null)
-        val candidates = detectLicensePlatesInBitmap(context, bitmap, sessions, expectedComplaintHint)
+        val candidates = detectLicensePlatesInBitmap(
+            context = context,
+            bitmap = bitmap,
+            sessions = sessions,
+            expectedComplaintHint = expectedComplaintHint,
+            forceBackupTextOcr = false
+        )
         val complaintId = if (candidates.isNotEmpty()) {
             detectComplaint(bitmap, sessions.complaint)
         } else {
@@ -424,7 +435,8 @@ internal object NativeAlprEngine {
         context: Context,
         bitmap: Bitmap,
         sessions: AlprSessions,
-        expectedComplaintHint: String? = null
+        expectedComplaintHint: String? = null,
+        forceBackupTextOcr: Boolean = true
     ): List<PlateCandidate> {
         val detections = detect(bitmap, sessions.detector)
         Log.d(
@@ -452,13 +464,19 @@ internal object NativeAlprEngine {
             return emptyList()
         }
         val ocrTexts = runOcrBatched(works.map { it.crop.bitmap }, sessions.ocr)
+        val backupOcrTexts = runBackupTextOcrBatched(
+            bitmaps = works.map { it.crop.bitmap },
+            primaryTexts = ocrTexts,
+            force = forceBackupTextOcr
+        )
         val plateStates = classifyPlateStatesBatched(works.map { it.crop.bitmap }, sessions.plateState)
         Log.d(
             PLATE_DETECTION_LOG_TAG,
             "OCR/state classifier results: " + works.indices.joinToString(prefix = "[", postfix = "]") { index ->
                 val ocr = ocrTexts.getOrNull(index).orEmpty()
+                val backupOcr = backupOcrTexts.getOrNull(index).orEmpty()
                 val state = plateStates.getOrNull(index)
-                "#$index rawOcr='$ocr' state=${state?.label}/${state?.state} stateConfidence=${state?.confidence}"
+                "#$index rawOcr='$ocr' backupOcr='$backupOcr' selected='${selectPlateOcrText(ocr, backupOcr)}' state=${state?.label}/${state?.state} stateConfidence=${state?.confidence}"
             }
         )
         val candidates = works.mapIndexedNotNull { index, work ->
@@ -467,7 +485,10 @@ internal object NativeAlprEngine {
                 bitmap = work.bitmap,
                 detection = work.sourceDetection,
                 plateCrop = work.crop,
-                plateText = ocrTexts.getOrNull(index).orEmpty(),
+                plateText = selectPlateOcrText(
+                    primaryText = ocrTexts.getOrNull(index).orEmpty(),
+                    backupText = backupOcrTexts.getOrNull(index).orEmpty()
+                ),
                 plateState = plateStates.getOrNull(index)
             )
         }.distinctBy { it.plate }.sortedByDescending { it.confidence }
@@ -495,19 +516,26 @@ internal object NativeAlprEngine {
         }
         val allWorks = worksByBitmap.flatten()
         val ocrTexts = runOcrBatched(allWorks.map { it.crop.bitmap }, sessions.ocr)
+        val backupOcrTexts = runBackupTextOcrBatched(
+            bitmaps = allWorks.map { it.crop.bitmap },
+            primaryTexts = ocrTexts,
+            force = false
+        )
         val plateStates = classifyPlateStatesBatched(allWorks.map { it.crop.bitmap }, sessions.plateState)
         var ocrIndex = 0
+        var backupOcrIndex = 0
         var classifierIndex = 0
         return worksByBitmap.map { works ->
             works.mapNotNull { work ->
-                val plateText = ocrTexts.getOrNull(ocrIndex++).orEmpty()
+                val primaryPlateText = ocrTexts.getOrNull(ocrIndex++).orEmpty()
+                val backupPlateText = backupOcrTexts.getOrNull(backupOcrIndex++).orEmpty()
                 val plateState = plateStates.getOrNull(classifierIndex++)
                 buildPlateCandidate(
                     context = context,
                     bitmap = work.bitmap,
                     detection = work.sourceDetection,
                     plateCrop = work.crop,
-                    plateText = plateText,
+                    plateText = selectPlateOcrText(primaryPlateText, backupPlateText),
                     plateState = plateState
                 )
             }.distinctBy { it.plate }.sortedByDescending { it.confidence }
@@ -584,7 +612,12 @@ internal object NativeAlprEngine {
     ): RotatedVariantDetection? {
         for (degrees in probeDegrees) {
             val rotated = rotateBitmapWithTransform(bitmap, degrees)
-            val candidates = detectLicensePlatesInBitmap(context, rotated.bitmap, sessions)
+            val candidates = detectLicensePlatesInBitmap(
+                context = context,
+                bitmap = rotated.bitmap,
+                sessions = sessions,
+                forceBackupTextOcr = false
+            )
             if (candidates.isNotEmpty()) {
                 val mappedCandidates = candidates.mapNotNull { candidate ->
                     candidate.mapFromRotatedToSource(rotated, bitmap.width, bitmap.height)
@@ -1294,6 +1327,81 @@ internal object NativeAlprEngine {
         }.getOrElse {
             bitmaps.map { runOcr(it, session) }
         }
+    }
+
+    private fun runBackupTextOcrBatched(
+        bitmaps: List<Bitmap>,
+        primaryTexts: List<String>,
+        force: Boolean
+    ): List<String> {
+        if (bitmaps.isEmpty()) return emptyList()
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        return try {
+            bitmaps.mapIndexed { index, bitmap ->
+                val primaryText = primaryTexts.getOrNull(index).orEmpty()
+                if (!force && !shouldTryBackupTextOcr(primaryText)) {
+                    return@mapIndexed ""
+                }
+                runCatching {
+                    val input = InputImage.fromBitmap(bitmap, 0)
+                    val result = Tasks.await(recognizer.process(input), 2, TimeUnit.SECONDS)
+                    result.text.toBackupPlateText(primaryText)
+                }.getOrElse { error ->
+                    Log.d(PLATE_DETECTION_LOG_TAG, "Backup Google OCR failed for plate crop #$index", error)
+                    ""
+                }
+            }
+        } finally {
+            recognizer.close()
+        }
+    }
+
+    private fun shouldTryBackupTextOcr(primaryText: String): Boolean {
+        val normalized = normalizePlateText(primaryText)
+        if (normalized.isBlank()) return true
+        if (normalized.length !in 5..8) return true
+        return PlatePatternClassifier.classify(normalized) == null && normalized.length >= 7
+    }
+
+    private fun selectPlateOcrText(primaryText: String, backupText: String): String {
+        val primary = normalizePlateText(primaryText)
+        val backup = normalizePlateText(backupText)
+        if (backup.isBlank()) return primaryText
+        if (primary.isBlank()) return backup
+        val primaryPattern = PlatePatternClassifier.classify(primary)
+        val backupPattern = PlatePatternClassifier.classify(backup)
+        if (backupPattern != null && primaryPattern == null) return backup
+        if (primary.length !in 5..8 && backup.length in 5..8) return backup
+        return primaryText
+    }
+
+    private fun String.toBackupPlateText(primaryText: String): String {
+        val primary = normalizePlateText(primaryText)
+        val tokenCandidates = split(Regex("[^A-Za-z0-9]+"))
+            .flatMap { token -> token.plateLikeWindows() }
+        val compactCandidates = normalizePlateText(this).plateLikeWindows()
+        val candidates = (tokenCandidates + compactCandidates).distinct()
+        if (candidates.isEmpty()) return normalizePlateText(this).takeIf { it.length in 5..8 }.orEmpty()
+        return candidates.maxWithOrNull(
+            compareBy<String> { PlatePatternClassifier.classify(it)?.confidence ?: 0f }
+                .thenBy { if (it == primary) 1 else 0 }
+                .thenBy { if (it.length in 6..8) 1 else 0 }
+                .thenBy { it.length }
+        ).orEmpty()
+    }
+
+    private fun String.plateLikeWindows(): List<String> {
+        val normalized = normalizePlateText(this)
+        if (normalized.length in 5..8) return listOf(normalized)
+        if (normalized.length < 5) return emptyList()
+        val windows = mutableListOf<String>()
+        for (size in 8 downTo 5) {
+            if (normalized.length < size) continue
+            for (start in 0..(normalized.length - size)) {
+                windows += normalized.substring(start, start + size)
+            }
+        }
+        return windows
     }
 
     private fun putOcrBitmapBytes(bitmap: Bitmap, byteBuffer: ByteBuffer) {

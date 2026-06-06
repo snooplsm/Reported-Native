@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.reported.nativeandroid.app.ProfileAction
 import com.reported.nativeandroid.app.ProfileViewModel
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
@@ -52,7 +53,7 @@ fun ProfileScreen(
     val state by vm.state.collectAsState()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.load() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.onAction(ProfileAction.Load) }
 
     Column(
         modifier = Modifier
@@ -93,14 +94,14 @@ fun ProfileScreen(
                             ReportedField(
                                 "First Name",
                                 state.firstName,
-                                { vm.update(firstName = it) },
+                                { vm.onAction(ProfileAction.FieldsChanged(firstName = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
                             ReportedField(
                                 "Last Name",
                                 state.lastName,
-                                { vm.update(lastName = it) },
+                                { vm.onAction(ProfileAction.FieldsChanged(lastName = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
@@ -112,42 +113,42 @@ fun ProfileScreen(
                             ReportedField(
                                 "Phone",
                                 state.phone,
-                                { vm.update(phone = it) },
+                                { vm.onAction(ProfileAction.FieldsChanged(phone = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
                             ReportedField(
                                 "Email",
                                 state.email,
-                                { vm.update(email = it) },
+                                { vm.onAction(ProfileAction.FieldsChanged(email = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
                         }
                     } else {
-                        ReportedField("First Name", state.firstName, { vm.update(firstName = it) }, enabled = state.editing)
-                        ReportedField("Last Name", state.lastName, { vm.update(lastName = it) }, enabled = state.editing)
-                        ReportedField("Phone", state.phone, { vm.update(phone = it) }, enabled = state.editing)
-                        ReportedField("Email", state.email, { vm.update(email = it) }, enabled = state.editing)
+                        ReportedField("First Name", state.firstName, { vm.onAction(ProfileAction.FieldsChanged(firstName = it)) }, enabled = state.editing)
+                        ReportedField("Last Name", state.lastName, { vm.onAction(ProfileAction.FieldsChanged(lastName = it)) }, enabled = state.editing)
+                        ReportedField("Phone", state.phone, { vm.onAction(ProfileAction.FieldsChanged(phone = it)) }, enabled = state.editing)
+                        ReportedField("Email", state.email, { vm.onAction(ProfileAction.FieldsChanged(email = it)) }, enabled = state.editing)
                     }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = state.editing) { vm.update(testify = !state.testify) },
+                            .clickable(enabled = state.editing) { vm.onAction(ProfileAction.FieldsChanged(testify = !state.testify)) },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Checkbox(
                             checked = state.testify,
-                            onCheckedChange = { vm.update(testify = it) },
+                            onCheckedChange = { vm.onAction(ProfileAction.FieldsChanged(testify = it)) },
                             enabled = state.editing
                         )
                         Text("I'm willing to testify by phone if needed.")
                     }
                     if (state.editing) {
-                        PrimaryButton("Save", onClick = { vm.save {} }, enabled = !state.loading)
+                        PrimaryButton("Save", onClick = { vm.onAction(ProfileAction.SavePressed()) }, enabled = !state.loading)
                     } else {
-                        PrimaryButton("Edit Profile", onClick = vm::toggleEditing)
+                        PrimaryButton("Edit Profile", onClick = { vm.onAction(ProfileAction.ToggleEditing) })
                     }
                     Text(
                         text = "Logout",
@@ -202,7 +203,7 @@ fun SettingsScreen(
             MediaScannerScheduler.scanNow(context)
         }
     }
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.load() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.onAction(ProfileAction.Load) }
 
     Column(
         modifier = Modifier
@@ -248,7 +249,7 @@ fun SettingsScreen(
                         ),
                         onToggle = {
                             val mode = AppThemeMode.valueOf(it)
-                            vm.setThemeMode(mode)
+                            vm.onAction(ProfileAction.ThemeModeChanged(mode))
                             onThemeModeSelected(mode)
                         }
                     )

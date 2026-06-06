@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -102,13 +103,13 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     val systemDark = isSystemInDarkTheme()
 
     LaunchedEffect(Unit) {
-        sessionViewModel.load()
-        themeViewModel.load()
+        sessionViewModel.onAction(SessionAction.Load)
+        themeViewModel.onAction(ThemeAction.Load)
     }
 
     LaunchedEffect(Unit) {
         SocialAuthDeepLinks.profiles.collect { profile ->
-            sessionViewModel.completeSocialSignIn(profile)
+            sessionViewModel.onAction(SessionAction.SocialSignInCompleted(profile))
         }
     }
 
@@ -124,11 +125,13 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
 
         LaunchedEffect(sharedMediaRequest?.id, inMainShell, sessionState.loading) {
             if (sharedMediaRequest != null && !inMainShell && !sessionState.loading) {
-                sessionViewModel.continueAsGuest()
+                sessionViewModel.onAction(SessionAction.ContinueAsGuest)
             }
         }
 
-        if (inMainShell) {
+        if (sessionState.loading) {
+            StartupLoadingScreen()
+        } else if (inMainShell) {
             val remoteConfigSnapshot by ReportedRemoteConfig.snapshot.collectAsState()
             val items = buildList {
                 add(TabDestination.Report)
@@ -267,13 +270,13 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                 ProfileScreen(
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
-                                    onLogout = sessionViewModel::logout,
+                                    onLogout = { sessionViewModel.onAction(SessionAction.Logout) },
                                     onOpenMenu = onOpenMenu
                                 )
                             }
                             composable(TabDestination.Settings.route) {
                                 SettingsScreen(
-                                    onThemeModeSelected = themeViewModel::update,
+                                    onThemeModeSelected = { themeViewModel.onAction(ThemeAction.ModeChanged(it)) },
                                     onOpenMenu = onOpenMenu
                                 )
                             }
@@ -307,7 +310,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                                     val action = afterAuthAction
                                                     authOverlay = null
                                                     afterAuthAction = null
-                                                    sessionViewModel.onAuthenticated()
+                                                    sessionViewModel.onAction(SessionAction.Authenticated)
                                                     action?.invoke()
                                                 },
                                                 onRegister = { overlayNavController.navigate(AuthDestination.Register.route) },
@@ -328,7 +331,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                                     val action = afterAuthAction
                                                     authOverlay = null
                                                     afterAuthAction = null
-                                                    sessionViewModel.onAuthenticated()
+                                                    sessionViewModel.onAction(SessionAction.Authenticated)
                                                     action?.invoke()
                                                 },
                                                 onLogin = { overlayNavController.navigate(AuthDestination.Login.route) },
@@ -359,25 +362,37 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                     SplashScreen(
                         onLogin = { navController.navigate(AuthDestination.Login.route) },
                         onRegister = { navController.navigate(AuthDestination.Register.route) },
-                        onSkip = sessionViewModel::continueAsGuest
+                        onSkip = { sessionViewModel.onAction(SessionAction.ContinueAsGuest) }
                     )
                 }
                 composable(AuthDestination.Login.route) {
                     LoginScreen(
-                        onSuccess = sessionViewModel::onAuthenticated,
+                        onSuccess = { sessionViewModel.onAction(SessionAction.Authenticated) },
                         onRegister = { navController.navigate(AuthDestination.Register.route) },
                         onBack = { navController.popBackStack() }
                     )
                 }
                 composable(AuthDestination.Register.route) {
                     RegisterScreen(
-                        onSuccess = sessionViewModel::onAuthenticated,
+                        onSuccess = { sessionViewModel.onAction(SessionAction.Authenticated) },
                         onLogin = { navController.navigate(AuthDestination.Login.route) },
                         onBack = { navController.popBackStack() }
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StartupLoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
     }
 }
 

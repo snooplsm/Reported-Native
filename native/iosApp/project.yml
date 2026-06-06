@@ -62,9 +62,9 @@ targets:
         SWIFT_VERSION: "5.10"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: B5M5MPWY89
         MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 92
+        CURRENT_PROJECT_VERSION: 96
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
@@ -74,6 +74,8 @@ targets:
         codeSign: true
       - package: Firebase
         product: FirebaseAnalytics
+      - package: Firebase
+        product: FirebaseCrashlytics
       - package: Firebase
         product: FirebaseRemoteConfig
       - package: Lottie
@@ -126,6 +128,6 @@ targets:
         SWIFT_VERSION: "5.10"
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: B5M5MPWY89
         MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 92
+        CURRENT_PROJECT_VERSION: 96
