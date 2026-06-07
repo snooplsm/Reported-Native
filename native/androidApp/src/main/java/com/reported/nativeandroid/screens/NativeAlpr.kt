@@ -85,6 +85,7 @@ private const val PLATE_STATE_SIZE = 160
 private const val PLATE_SEGMENTATION_SIZE = 160
 private const val OCR_WIDTH = 140
 private const val OCR_HEIGHT = 70
+private const val OCR_LEGACY_BATCH_SIZE = 8
 private const val DETECTION_THRESHOLD = 0.2f
 private const val SEGMENTATION_MASK_THRESHOLD = 0.5f
 private const val MAX_CANDIDATES = 8
@@ -1281,51 +1282,41 @@ internal object NativeAlprEngine {
         }
 
     private fun runOcr(bitmap: Bitmap, session: OrtSession): String {
-        val inputName = session.inputNames.first()
-        val processed = prepareOcrBitmap(bitmap)
-        val byteBuffer = ByteBuffer.allocateDirect(OCR_WIDTH * OCR_HEIGHT)
-        putOcrBitmapBytes(processed, byteBuffer)
-        byteBuffer.rewind()
-        OnnxTensor.createTensor(
-            ortEnvironment,
-            byteBuffer,
-            longArrayOf(1, OCR_HEIGHT.toLong(), OCR_WIDTH.toLong(), 1),
-            OnnxJavaType.UINT8
-        ).use { inputTensor ->
-            session.run(mapOf(inputName to inputTensor)).use { results ->
-                val raw = (results[0].value as? Array<FloatArray>)?.firstOrNull() ?: return ""
-                return decodeOcrRow(raw).also {
-                    session.logOrtProfileOnce()
-                }
-            }
-        }
+        return runOcrBatched(listOf(bitmap), session).firstOrNull().orEmpty()
     }
 
     private fun runOcrBatched(bitmaps: List<Bitmap>, session: OrtSession): List<String> {
         if (bitmaps.isEmpty()) return emptyList()
-        if (bitmaps.size == 1) return listOf(runOcr(bitmaps.first(), session))
-        return runCatching {
-            val inputName = session.inputNames.first()
-            val processed = bitmaps.map(::prepareOcrBitmap)
-            val byteBuffer = ByteBuffer.allocateDirect(bitmaps.size * OCR_WIDTH * OCR_HEIGHT)
-            processed.forEach { putOcrBitmapBytes(it, byteBuffer) }
-            byteBuffer.rewind()
-            OnnxTensor.createTensor(
-                ortEnvironment,
-                byteBuffer,
-                longArrayOf(bitmaps.size.toLong(), OCR_HEIGHT.toLong(), OCR_WIDTH.toLong(), 1),
-                OnnxJavaType.UINT8
-            ).use { inputTensor ->
-                session.run(mapOf(inputName to inputTensor)).use { results ->
-                    val raw = (results[0].value as? Array<FloatArray>) ?: return@use emptyList()
-                    if (raw.size < bitmaps.size) return@use emptyList()
-                    raw.take(bitmaps.size).map(::decodeOcrRow).also {
-                        session.logOrtProfileOnce()
-                    }
+        val results = mutableListOf<String>()
+        var index = 0
+        while (index < bitmaps.size) {
+            val end = min(index + OCR_LEGACY_BATCH_SIZE, bitmaps.size)
+            results += runOcrLegacyChunk(bitmaps.subList(index, end), session)
+            index = end
+        }
+        return results
+    }
+
+    private fun runOcrLegacyChunk(bitmaps: List<Bitmap>, session: OrtSession): List<String> {
+        if (bitmaps.isEmpty() || bitmaps.size > OCR_LEGACY_BATCH_SIZE) return emptyList()
+        val inputName = session.inputNames.first()
+        val processed = bitmaps.map(::prepareOcrBitmap)
+        val byteBuffer = ByteBuffer.allocateDirect(OCR_LEGACY_BATCH_SIZE * OCR_WIDTH * OCR_HEIGHT)
+        processed.forEach { putOcrBitmapBytes(it, byteBuffer) }
+        byteBuffer.rewind()
+        OnnxTensor.createTensor(
+            ortEnvironment,
+            byteBuffer,
+            longArrayOf(OCR_LEGACY_BATCH_SIZE.toLong(), OCR_HEIGHT.toLong(), OCR_WIDTH.toLong(), 1),
+            OnnxJavaType.UINT8
+        ).use { inputTensor ->
+            session.run(mapOf(inputName to inputTensor)).use { results ->
+                val raw = (results[0].value as? Array<FloatArray>) ?: return bitmaps.map { "" }
+                if (raw.size < bitmaps.size) return bitmaps.map { "" }
+                return raw.take(bitmaps.size).map(::decodeOcrRow).also {
+                    session.logOrtProfileOnce()
                 }
-            }.takeIf { it.size == bitmaps.size } ?: bitmaps.map { runOcr(it, session) }
-        }.getOrElse {
-            bitmaps.map { runOcr(it, session) }
+            }
         }
     }
 

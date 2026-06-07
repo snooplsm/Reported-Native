@@ -16,6 +16,8 @@ packages:
   onnxruntime:
     url: https://github.com/microsoft/onnxruntime-swift-package-manager
     from: 1.24.2
+  LiteRTLM:
+    path: Packages/LiteRTLMSafe
 targets:
   ReportediOS:
     type: application
@@ -32,6 +34,7 @@ targets:
         GIDClientID: 131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois.apps.googleusercontent.com
         NSPhotoLibraryUsageDescription: Reported uses your photo library to attach report media, read photo time and location metadata, and run optional on-device infraction detection.
         NSPhotoLibraryAddUsageDescription: Reported may save temporary report media generated while preparing a submission.
+        NSMicrophoneUsageDescription: Reported uses the microphone when you choose to talk through report fields.
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
@@ -64,7 +67,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: B5M5MPWY89
         MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 96
+        CURRENT_PROJECT_VERSION: 97
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
@@ -84,6 +88,8 @@ targets:
         product: GoogleSignIn
       - package: onnxruntime
         product: onnxruntime
+      - package: LiteRTLM
+        product: LiteRTLM
       - target: ReportedShareExtension
         embed: true
     preBuildScripts:
@@ -95,10 +101,14 @@ targets:
     postBuildScripts:
       - name: Normalize Embedded Framework Minimum OS
         script: |
-          ONNX_PLIST="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework/Info.plist"
+          ONNX_FRAMEWORK="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework"
+          ONNX_PLIST="${ONNX_FRAMEWORK}/Info.plist"
           if [ -f "$ONNX_PLIST" ]; then
             /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion ${IPHONEOS_DEPLOYMENT_TARGET}" "$ONNX_PLIST" || \
               /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string ${IPHONEOS_DEPLOYMENT_TARGET}" "$ONNX_PLIST"
+            if [ "${CODE_SIGNING_ALLOWED:-YES}" != "NO" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+              /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none --generate-entitlement-der "$ONNX_FRAMEWORK"
+            fi
           fi
   ReportedShareExtension:
     type: app-extension
@@ -130,4 +140,4 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: B5M5MPWY89
         MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 96
+        CURRENT_PROJECT_VERSION: 97

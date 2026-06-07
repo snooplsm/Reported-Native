@@ -1,16 +1,27 @@
 package com.reported.nativeandroid.screens
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.view.Gravity
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -25,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -37,11 +49,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -55,15 +70,20 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -74,6 +94,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -97,6 +118,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -110,7 +133,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,25 +184,46 @@ import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
 import com.reported.nativeandroid.report.NewReportTutorialSheet
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import com.reported.shared.model.AppThemeMode
 import com.reported.shared.model.ComplaintCategory
+import com.reported.shared.model.PlatePatternClassifier
 import com.reported.shared.model.ReportSummary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
+import org.json.JSONObject
+import java.io.File
+import java.io.RandomAccessFile
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.Year
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
+import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sin
@@ -233,6 +284,20 @@ fun ReportComposerScreen(
     var pendingMediaForCurrentReport by remember { mutableStateOf(false) }
     var showComplaintChooser by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
+    var showVoiceAssistSheet by remember { mutableStateOf(false) }
+    var voiceTranscript by remember { mutableStateOf("") }
+    var voiceDraft by remember { mutableStateOf<VoiceReportDraft?>(null) }
+    var voiceError by remember { mutableStateOf<String?>(null) }
+    var voiceProcessing by remember { mutableStateOf(false) }
+    var voiceRecording by remember { mutableStateOf(false) }
+    var voiceAmplitude by remember { mutableStateOf(0f) }
+    var voiceModelInstalled by remember { mutableStateOf(OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)) }
+    var voiceModelDownloading by remember { mutableStateOf(false) }
+    var voiceModelDownloadProgress by remember { mutableStateOf<Float?>(null) }
+    var voiceImageContext by remember { mutableStateOf<String?>(null) }
+    var voiceImageContextJob by remember { mutableStateOf<Job?>(null) }
+    val voiceAudioRecorder = remember { VoiceReportAudioRecorder() }
+    var showAddressSearchScreen by remember { mutableStateOf(false) }
     var showAddressMap by remember { mutableStateOf(false) }
     var showPlateCandidates by remember { mutableStateOf(false) }
     var pendingPlateCandidate by remember { mutableStateOf<PlateCandidate?>(null) }
@@ -308,6 +373,13 @@ fun ReportComposerScreen(
     LaunchedEffect(state.detectionFrameTimeMs, videoScanPaused) {
         if (!videoScanPaused) {
             videoPreviewScrubMs = state.detectionFrameTimeMs
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceImageContextJob?.cancel()
+            voiceAudioRecorder.cancel()
         }
     }
 
@@ -414,7 +486,8 @@ fun ReportComposerScreen(
                     latitude = metadata.latitude,
                     longitude = metadata.longitude,
                     inferredState = reverseGeocodeSuggestion?.region,
-                    inferredAddress = reverseGeocodeSuggestion?.label
+                    inferredAddress = reverseGeocodeSuggestion?.label,
+                    photoAddressSuggestion = reverseGeocodeSuggestion
                 ))
                 if (!media.isVideo) {
                     vm.onAction(ComposerAction.DetectionProgressChanged("Detecting plates", 0.65f))
@@ -536,6 +609,174 @@ fun ReportComposerScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) {}
 
+    fun processVoiceAudio(audioFile: File) {
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+        if (!voiceModelInstalled) {
+            voiceError = "Install REPORTED AI before using Talk."
+            runCatching { audioFile.delete() }
+            return
+        }
+        voiceDraft = null
+        voiceError = null
+        voiceProcessing = true
+        scope.launch {
+            voiceImageContextJob?.join()
+            voiceImageContextJob = null
+            val voiceContext = VoiceReportContext.from(
+                state = state,
+                complaintOptions = complaintOptions,
+                imageVisualContext = voiceImageContext,
+                resolvedCurrentAddress = resolveVoiceCurrentAddress(context, state)
+            )
+            OnDeviceGemmaVoiceDraftEngine.generateDraft(
+                context = context,
+                audioFile = audioFile,
+                complaintOptions = complaintOptions,
+                voiceContext = voiceContext
+            ).fold(
+                onSuccess = { result ->
+                    voiceTranscript = result.transcript.orEmpty()
+                    voiceDraft = result.draft
+                    voiceError = null
+                },
+                onFailure = { error ->
+                    voiceError = error.message ?: "On-device Gemma could not process this recording."
+                }
+            )
+            voiceProcessing = false
+            runCatching {
+                audioFile.delete()
+            }
+            voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+        }
+    }
+
+    fun startVoiceImageContextWarmup() {
+        voiceImageContextJob?.cancel()
+        voiceImageContextJob = null
+        voiceImageContext = null
+        val media = state.primaryMedia?.takeIf { !it.isVideo } ?: return
+        voiceImageContextJob = scope.launch {
+            val imageInput = resolveVoiceReportImageInput(context, media)
+            val imageContext = imageInput?.let {
+                OnDeviceGemmaVoiceDraftEngine.generateImageContext(context, it.file)
+            }
+            if (imageInput?.deleteAfterUse == true) {
+                runCatching { imageInput.file.delete() }
+            }
+            voiceImageContext = imageContext
+        }
+    }
+
+    fun openVoiceAssistant() {
+        voiceError = null
+        showVoiceAssistSheet = true
+        startVoiceImageContextWarmup()
+    }
+
+    fun downloadVoiceModel() {
+        if (voiceModelDownloading) return
+        voiceError = null
+        voiceModelDownloading = true
+        voiceModelDownloadProgress = null
+        scope.launch {
+            OnDeviceGemmaVoiceDraftEngine.downloadModel(context) { downloadedBytes, totalBytes ->
+                voiceModelDownloadProgress = if (totalBytes > 0L) {
+                    (downloadedBytes.toDouble() / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
+                } else {
+                    null
+                }
+            }.fold(
+                onSuccess = {
+                    voiceModelInstalled = true
+                    voiceError = null
+                    voiceModelDownloadProgress = 1f
+                },
+                onFailure = { error ->
+                    voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+                    voiceError = error.message ?: "Could not install REPORTED AI."
+                }
+            )
+            voiceModelDownloading = false
+        }
+    }
+
+    val voicePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            voiceError = null
+        } else {
+            voiceError = "Microphone access is needed to talk through report fields."
+        }
+    }
+
+    fun startVoiceCapture() {
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+        if (!voiceModelInstalled) {
+            voiceError = null
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        voiceTranscript = ""
+        voiceDraft = null
+        voiceError = null
+        voiceProcessing = false
+        voiceAmplitude = 0f
+        val started = voiceAudioRecorder.start(context) { amplitude ->
+            scope.launch {
+                voiceAmplitude = amplitude
+            }
+        }
+        if (started) {
+            voiceRecording = true
+        } else {
+            voiceImageContextJob?.cancel()
+            voiceImageContextJob = null
+            voiceError = voiceAudioRecorder.errorMessage ?: "Microphone recording could not start."
+        }
+    }
+
+    fun stopVoiceCapture() {
+        val audioFile = voiceAudioRecorder.stop()
+        voiceRecording = false
+        voiceAmplitude = 0f
+        if (audioFile == null) {
+            voiceError = voiceAudioRecorder.errorMessage ?: "I couldn't capture enough audio to process."
+            return
+        }
+        processVoiceAudio(audioFile)
+    }
+
+    fun applyVoiceDraft(draft: VoiceReportDraft) {
+        voiceImageContextJob?.cancel()
+        voiceImageContextJob = null
+        draft.complaintId?.let { vm.onAction(ComposerAction.SelectedComplaintChanged(it)) }
+        if (
+            draft.plate != null ||
+            draft.plateRegion != null ||
+            draft.address != null ||
+            draft.description != null ||
+            draft.notes != null ||
+            draft.occurredAtIso != null
+        ) {
+            vm.onAction(
+                ComposerAction.FieldsChanged(
+                    plate = draft.plate,
+                    plateRegion = draft.plateRegion,
+                    address = draft.address,
+                    description = draft.description,
+                    notes = draft.notes,
+                    occurredAtIso = draft.occurredAtIso
+                )
+            )
+        }
+        showVoiceAssistSheet = false
+    }
+
     fun completeReportTutorialFromButton() {
         finishReportTutorial()
     }
@@ -579,9 +820,9 @@ fun ReportComposerScreen(
         onSharedMediaConsumed(request.id)
     }
 
-    LaunchedEffect(state.addressQuery) {
+    LaunchedEffect(showAddressSearchScreen, state.addressQuery) {
         addressSearchJob?.cancel()
-        if (state.stage != SubmissionStage.VERIFY || state.addressQuery.isBlank() || state.addressQuery == state.address) {
+        if (!showAddressSearchScreen || state.stage != SubmissionStage.VERIFY || state.addressQuery.isBlank() || state.addressQuery == state.address) {
             vm.onAction(ComposerAction.AddressSuggestionsChanged(emptyList()))
             return@LaunchedEffect
         }
@@ -650,6 +891,53 @@ fun ReportComposerScreen(
                 showReportTutorial = false
             },
             onComplete = ::completeReportTutorialFromButton
+        )
+    }
+
+    if (showVoiceAssistSheet) {
+        VoiceReportAssistantSheet(
+            hasMicrophonePermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED,
+            transcript = voiceTranscript,
+            draft = voiceDraft,
+            isRecording = voiceRecording,
+            isProcessing = voiceProcessing,
+            voiceAmplitude = voiceAmplitude,
+            changeRows = voiceDraft?.changeRows(state, complaintOptions).orEmpty(),
+            modelInstalled = voiceModelInstalled,
+            modelDownloading = voiceModelDownloading,
+            modelDownloadProgress = voiceModelDownloadProgress,
+            modelDownloadSizeLabel = OnDeviceGemmaVoiceDraftEngine.ModelDownloadSizeLabel,
+            error = voiceError,
+            onRequestPermission = {
+                voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            },
+            onDownloadModel = ::downloadVoiceModel,
+            onTalk = ::startVoiceCapture,
+            onStop = ::stopVoiceCapture,
+            onClear = {
+                voiceImageContextJob?.cancel()
+                voiceImageContextJob = null
+                voiceImageContext = null
+                voiceAudioRecorder.cancel()
+                voiceTranscript = ""
+                voiceDraft = null
+                voiceError = null
+                voiceProcessing = false
+                voiceRecording = false
+                voiceAmplitude = 0f
+            },
+            onApply = ::applyVoiceDraft,
+            onDismiss = {
+                voiceImageContextJob?.cancel()
+                voiceImageContextJob = null
+                voiceAudioRecorder.cancel()
+                voiceRecording = false
+                voiceAmplitude = 0f
+                showVoiceAssistSheet = false
+            }
         )
     }
 
@@ -754,21 +1042,10 @@ fun ReportComposerScreen(
         AddressMapSheet(
             initialLatLng = LatLng(state.latitude ?: 40.7128, state.longitude ?: -74.0060),
             initialAddress = state.addressQuery.ifBlank { state.address },
+            photoAddressSuggestion = state.photoAddressSuggestion,
             onDismiss = { showAddressMap = false },
             onLocationSettled = { suggestion ->
                 vm.onAction(ComposerAction.AddressChosen(suggestion))
-            }
-        )
-    }
-
-    if (showPlateCandidates) {
-        PlateCandidatePickerDialog(
-            candidates = state.plateCandidates,
-            selectedPlate = state.selectedPlateCandidate,
-            onDismiss = { showPlateCandidates = false },
-            onSelected = { candidate ->
-                vm.onAction(ComposerAction.PlateCandidateChosen(candidate))
-                showPlateCandidates = false
             }
         )
     }
@@ -832,21 +1109,46 @@ fun ReportComposerScreen(
         )
     }
 
-    Column(
+    if (showAddressSearchScreen) {
+        AddressSearchScreen(
+            state = state,
+            onAction = vm::onAction,
+            onBack = {
+                showAddressSearchScreen = false
+                vm.onAction(ComposerAction.AddressSuggestionsChanged(emptyList()))
+            },
+            onOpenMap = {
+                showAddressSearchScreen = false
+                showAddressMap = true
+            }
+        )
+    } else if (showPlateCandidates) {
+        PlateEntryScreen(
+            state = state,
+            onAction = vm::onAction,
+            onBack = { showPlateCandidates = false },
+            onCandidateSelected = { candidate ->
+                vm.onAction(ComposerAction.PlateCandidateChosen(candidate))
+                showPlateCandidates = false
+            }
+        )
+    } else {
+        Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-    ) {
-        val landscapeColumnChrome = isScreenLandscape &&
-            (state.stage == SubmissionStage.VERIFY || state.stage == SubmissionStage.PICK_MEDIA)
-        if (!landscapeColumnChrome) {
-            ReportComposerTopBar(
-                compact = false,
-                hasDraftContent = hasDraftContent,
-                onOpenMenu = onOpenMenu,
-                onClear = { showDiscardDialog = true }
-            )
-        }
+        ) {
+            val landscapeColumnChrome = isScreenLandscape &&
+                (state.stage == SubmissionStage.VERIFY || state.stage == SubmissionStage.PICK_MEDIA)
+            if (!landscapeColumnChrome) {
+                ReportComposerTopBar(
+                    compact = false,
+                    hasDraftContent = hasDraftContent,
+                    onOpenMenu = onOpenMenu,
+                    onVoiceAssist = ::openVoiceAssistant,
+                    onClear = { showDiscardDialog = true }
+                )
+            }
 
         if (!state.draftLoaded) {
             Box(
@@ -880,6 +1182,7 @@ fun ReportComposerScreen(
                                 compact = true,
                                 hasDraftContent = false,
                                 onOpenMenu = onOpenMenu,
+                                onVoiceAssist = ::openVoiceAssistant,
                                 onClear = { showDiscardDialog = true }
                             )
                             Text(
@@ -1127,6 +1430,7 @@ fun ReportComposerScreen(
                                         compact = true,
                                         hasDraftContent = false,
                                         onOpenMenu = onOpenMenu,
+                                        onVoiceAssist = ::openVoiceAssistant,
                                         onClear = { showDiscardDialog = true }
                                     )
                                     VerifyMediaPanel(
@@ -1166,6 +1470,7 @@ fun ReportComposerScreen(
                                                     onAction = vm::onAction,
                                                     onShowComplaintChooser = { showComplaintChooser = true },
                                                     onShowPlateCandidates = { showPlateCandidates = true },
+                                                    onShowAddressSearch = { showAddressSearchScreen = true },
                                                     onShowAddressMap = { showAddressMap = true }
                                                 )
                                             }
@@ -1226,6 +1531,7 @@ fun ReportComposerScreen(
                                             onAction = vm::onAction,
                                             onShowComplaintChooser = { showComplaintChooser = true },
                                             onShowPlateCandidates = { showPlateCandidates = true },
+                                            onShowAddressSearch = { showAddressSearchScreen = true },
                                             onShowAddressMap = { showAddressMap = true }
                                         )
                                     }
@@ -1293,6 +1599,7 @@ fun ReportComposerScreen(
                 }
             }
         }
+    }
     }
 
     if (state.detectingPlates && !state.awaitingVideoProcessingDecision && !detectionProgressMinimized) {
@@ -1850,6 +2157,7 @@ private fun ReportComposerTopBar(
     compact: Boolean,
     hasDraftContent: Boolean,
     onOpenMenu: () -> Unit,
+    onVoiceAssist: () -> Unit,
     onClear: () -> Unit
 ) {
     if (compact) {
@@ -1867,12 +2175,25 @@ private fun ReportComposerTopBar(
             ) {
                 Icon(Icons.Outlined.Menu, contentDescription = "Open menu")
             }
-            Text(
-                text = "New Report",
+            Box(
                 modifier = Modifier.align(Alignment.Center),
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                color = MaterialTheme.colorScheme.onSurface
-            )
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Report",
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(
+                    onClick = onVoiceAssist,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = 34.dp)
+                        .size(34.dp)
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = "Reported AI")
+                }
+            }
             if (hasDraftContent) {
                 TextButton(
                     onClick = onClear,
@@ -1886,7 +2207,20 @@ private fun ReportComposerTopBar(
         }
     } else {
         CenterAlignedTopAppBar(
-            title = { Text("New Report") },
+            title = {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("Report")
+                    IconButton(
+                        onClick = onVoiceAssist,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .offset(x = 36.dp)
+                            .size(36.dp)
+                    ) {
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = "Reported AI")
+                    }
+                }
+            },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
@@ -1907,6 +2241,2202 @@ private fun ReportComposerTopBar(
                 }
             }
         )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun VoiceReportAssistantSheet(
+    hasMicrophonePermission: Boolean,
+    transcript: String,
+    draft: VoiceReportDraft?,
+    isRecording: Boolean,
+    isProcessing: Boolean,
+    voiceAmplitude: Float,
+    changeRows: List<VoiceDraftChangeRow>,
+    modelInstalled: Boolean,
+    modelDownloading: Boolean,
+    modelDownloadProgress: Float?,
+    modelDownloadSizeLabel: String,
+    error: String?,
+    onRequestPermission: () -> Unit,
+    onDownloadModel: () -> Unit,
+    onTalk: () -> Unit,
+    onStop: () -> Unit,
+    onClear: () -> Unit,
+    onApply: (VoiceReportDraft) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val maxRecordingMillis = 29_900L
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val rowFields = remember(changeRows) { changeRows.map { it.field } }
+    var currentSourceFields by remember { mutableStateOf<Set<VoiceDraftField>>(emptySet()) }
+    var undoCurrentSourceFields by remember { mutableStateOf<Set<VoiceDraftField>?>(null) }
+    var pendingBulkSource by remember { mutableStateOf<VoiceDraftSource?>(null) }
+    var elapsedMillis by remember(isRecording) { mutableLongStateOf(0L) }
+    val activeHeaderSource = when {
+        rowFields.isEmpty() -> null
+        currentSourceFields.containsAll(rowFields) -> VoiceDraftSource.Current
+        currentSourceFields.none { it in rowFields } -> VoiceDraftSource.ReportedAi
+        else -> null
+    }
+    val reportedFields = rowFields.toSet() - currentSourceFields
+
+    LaunchedEffect(isRecording) {
+        elapsedMillis = 0L
+        val startedAt = System.currentTimeMillis()
+        while (isRecording) {
+            elapsedMillis = (System.currentTimeMillis() - startedAt).coerceIn(0L, maxRecordingMillis)
+            if (elapsedMillis >= maxRecordingMillis) {
+                onStop()
+                break
+            }
+            delay(100)
+        }
+    }
+
+    LaunchedEffect(rowFields) {
+        currentSourceFields = emptySet()
+        undoCurrentSourceFields = null
+        pendingBulkSource = null
+    }
+
+    pendingBulkSource?.let { source ->
+        AlertDialog(
+            onDismissRequest = { pendingBulkSource = null },
+            title = { Text("Use ${source.title} for all fields?") },
+            text = { Text("This changes every field in this Reported AI draft.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        undoCurrentSourceFields = currentSourceFields
+                        currentSourceFields = if (source == VoiceDraftSource.Current) {
+                            rowFields.toSet()
+                        } else {
+                            emptySet()
+                        }
+                        pendingBulkSource = null
+                    }
+                ) {
+                    Text("Use ${source.title}")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBulkSource = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = null,
+        scrimColor = Color.Transparent
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 0.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Reported AI", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Dictate the complaint, plate, state, time, address, description, and notes, and we'll fill in the fields.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close voice assistant")
+                }
+            }
+
+            if (!modelInstalled) {
+                if (modelDownloading) {
+                    if (modelDownloadProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { modelDownloadProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        "Installing REPORTED AI...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    PrimaryButton(
+                        text = "Install REPORTED AI (${modelDownloadSizeLabel.toInstallSizeLabel()})",
+                        onClick = onDownloadModel
+                    )
+                }
+            } else if (!hasMicrophonePermission) {
+                MessageCard("Microphone access is needed before you can talk through report fields.")
+                PrimaryButton("Allow microphone", onClick = onRequestPermission)
+            } else if (isProcessing) {
+                VoiceProcessingPanel()
+            } else {
+                VoiceCaptureControl(
+                    isRecording = isRecording,
+                    amplitude = voiceAmplitude,
+                    elapsedMillis = elapsedMillis,
+                    maxMillis = maxRecordingMillis,
+                    onClick = if (isRecording) onStop else onTalk
+                )
+            }
+
+            error?.let { message ->
+                ValidationMessage(message = message, modifier = Modifier.fillMaxWidth())
+            }
+
+            if (transcript.isNotBlank()) {
+                VoiceAssistBlock(title = "Transcript", body = transcript)
+            }
+
+            if (draft != null) {
+                if (changeRows.isNotEmpty()) {
+                    VoiceAssistSectionHeader("Changes to apply")
+                    VoiceDraftSourceHeader(
+                        activeSource = activeHeaderSource,
+                        canUndo = undoCurrentSourceFields != null,
+                        onSelect = { pendingBulkSource = it },
+                        onUndo = {
+                            undoCurrentSourceFields?.let { undoFields ->
+                                currentSourceFields = undoFields
+                                undoCurrentSourceFields = null
+                            }
+                        }
+                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        changeRows.forEach { row ->
+                            VoiceDraftChangePreviewRow(
+                                row = row,
+                                selectedSource = if (row.field in currentSourceFields) {
+                                    VoiceDraftSource.Current
+                                } else {
+                                    VoiceDraftSource.ReportedAi
+                                },
+                                onSelect = { source ->
+                                    undoCurrentSourceFields = null
+                                    currentSourceFields = if (source == VoiceDraftSource.Current) {
+                                        currentSourceFields + row.field
+                                    } else {
+                                        currentSourceFields - row.field
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                if (draft.make != null || draft.model != null || draft.yearRange != null) {
+                    VoiceAssistSectionHeader("Extracted vehicle")
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        draft.yearRange?.let { VoiceDraftMetadataRow(label = "Vehicle Year", value = it) }
+                        draft.make?.let { VoiceDraftMetadataRow(label = "Make", value = it) }
+                        draft.model?.let { VoiceDraftMetadataRow(label = "Model", value = it) }
+                    }
+                }
+                if (changeRows.isEmpty() && draft.make == null && draft.model == null && draft.yearRange == null) {
+                    MessageCard("Reported AI did not find any form fields to update.")
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SecondaryButton("Clear", onClick = onClear, modifier = Modifier.weight(1f))
+                    PrimaryButton(
+                        "Fill form",
+                        onClick = { onApply(draft.keepingReportedFields(reportedFields)) },
+                        modifier = Modifier.weight(1f),
+                        enabled = draft.keepingReportedFields(reportedFields).hasAnyFillableField
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceCaptureControl(
+    isRecording: Boolean,
+    amplitude: Float,
+    elapsedMillis: Long,
+    maxMillis: Long,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.height(48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            VoiceLevelMeter(
+                amplitude = amplitude,
+                isActive = isRecording,
+                modifier = Modifier
+                    .width(170.dp)
+                    .height(26.dp)
+                    .graphicsLayer(alpha = if (isRecording) 1f else 0f)
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    formatVoiceElapsedTenths(elapsedMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isRecording) 1f else 0f)
+                )
+                Text(
+                    "/ ${formatVoiceElapsedTenths(maxMillis)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isRecording) 1f else 0f)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .padding(20.dp)
+                .size(112.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (isRecording) "STOP" else "TALK",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.surface
+                )
+                Icon(
+                    if (isRecording) Icons.Outlined.Stop else Icons.Outlined.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.surface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceLevelMeter(
+    amplitude: Float,
+    isActive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val level by animateFloatAsState(
+        targetValue = amplitude.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 80),
+        label = "voiceLevel"
+    )
+    val activeColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+    val idleColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        repeat(18) { index ->
+            val pattern = ((index * 7) % 11) / 10f
+            val liveHeight = 5.dp + ((8f + pattern * 15f) * level.coerceAtLeast(0.08f)).dp
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(if (isActive) liveHeight else 5.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (isActive) activeColor else idleColor)
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceProcessingPanel() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+            Text(
+                "Processing audio",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        VoiceProcessingStep(text = "Recording captured", isComplete = true)
+        VoiceProcessingStep(text = "Transcribing", isActive = true)
+        VoiceProcessingStep(text = "Generating form fields", isDimmed = true)
+    }
+}
+
+@Composable
+private fun VoiceProcessingStep(
+    text: String,
+    isComplete: Boolean = false,
+    isActive: Boolean = false,
+    isDimmed: Boolean = false
+) {
+    val contentColor = when {
+        isDimmed -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        isComplete -> MaterialTheme.colorScheme.onSurface
+                        isActive -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+                        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isComplete) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                )
+            } else if (isActive) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.onSurface)
+                )
+            }
+        }
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+    }
+}
+
+@Composable
+private fun VoiceDraftChangePreviewRow(
+    row: VoiceDraftChangeRow,
+    selectedSource: VoiceDraftSource,
+    onSelect: (VoiceDraftSource) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                row.label.uppercase(Locale.US),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VoiceDraftValueColumn(
+                    value = row.currentValue,
+                    isSelected = selectedSource == VoiceDraftSource.Current,
+                    onClick = { onSelect(VoiceDraftSource.Current) },
+                    modifier = Modifier.weight(1f)
+                )
+                VoiceDraftValueColumn(
+                    value = row.nextValue,
+                    isSelected = selectedSource == VoiceDraftSource.ReportedAi,
+                    onClick = { onSelect(VoiceDraftSource.ReportedAi) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceDraftValueColumn(
+    value: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val selectedGreen = Color(0xFF2E7D32)
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) selectedGreen.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isSelected) selectedGreen.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+        )
+    ) {
+        Text(
+            value,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+private fun VoiceDraftSourceHeader(
+    activeSource: VoiceDraftSource?,
+    canUndo: Boolean,
+    onSelect: (VoiceDraftSource) -> Unit,
+    onUndo: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            VoiceDraftSourceHeaderButton(
+                title = VoiceDraftSource.Current.title,
+                isSelected = activeSource == VoiceDraftSource.Current,
+                onClick = { onSelect(VoiceDraftSource.Current) },
+                modifier = Modifier.weight(1f)
+            )
+            VoiceDraftSourceHeaderButton(
+                title = VoiceDraftSource.ReportedAi.title,
+                isSelected = activeSource == VoiceDraftSource.ReportedAi,
+                onClick = { onSelect(VoiceDraftSource.ReportedAi) },
+                modifier = Modifier.weight(1f)
+            )
+            if (canUndo) {
+                TextButton(onClick = onUndo) {
+                    Text("Undo")
+                }
+            }
+        }
+        if (activeSource == null) {
+            Text(
+                "Mixed field sources",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceDraftSourceHeaderButton(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val selectedGreen = Color(0xFF2E7D32)
+    Surface(
+        modifier = modifier
+            .height(34.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isSelected) selectedGreen.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isSelected) selectedGreen.copy(alpha = 0.45f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+        )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isSelected) selectedGreen else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceAssistSectionHeader(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold
+    )
+}
+
+@Composable
+private fun VoiceDraftMetadataRow(label: String, value: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                label.uppercase(Locale.US),
+                modifier = Modifier.width(102.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold
+            )
+            Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+private fun formatVoiceElapsedTenths(milliseconds: Long): String {
+    val seconds = (milliseconds.coerceIn(0L, 29_900L).toDouble() / 1000.0)
+    return String.format(Locale.US, "%.1fs", seconds)
+}
+
+private fun String.toInstallSizeLabel(): String = replace(" ", "").lowercase(Locale.US)
+
+@Composable
+private fun VoiceAssistBlock(title: String, body: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ) {
+            Text(
+                body,
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+private data class VoiceReportGemmaResult(
+    val transcript: String?,
+    val draft: VoiceReportDraft
+)
+
+private data class VoiceReportContext(
+    val currentDeviceTimeIso: String,
+    val currentAddress: String?,
+    val currentLatitude: Double?,
+    val currentLongitude: Double?,
+    val photoAddress: String?,
+    val photoOccurredAtIso: String?,
+    val imageVisualContext: String?,
+    val currentOccurredAtIso: String?,
+    val currentComplaintTitle: String?,
+    val currentPlate: String?,
+    val currentPlateRegion: String?,
+    val currentDescription: String?,
+    val currentNotes: String?
+) {
+    companion object {
+        fun from(
+            state: ComposerUiState,
+            complaintOptions: List<ComplaintOption>,
+            imageVisualContext: String? = null,
+            resolvedCurrentAddress: String? = null
+        ): VoiceReportContext {
+            val currentAddress = cleaned(state.addressQuery.ifBlank { state.address })
+                ?: cleaned(resolvedCurrentAddress)
+            val usableCoordinates = isUsableCoordinate(state.latitude, state.longitude)
+            val selectedComplaint = complaintOptions.firstOrNull { it.id == state.selectedComplaintId }
+            return VoiceReportContext(
+                currentDeviceTimeIso = OffsetDateTime.now(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                currentAddress = currentAddress,
+                currentLatitude = state.latitude.takeIf { usableCoordinates },
+                currentLongitude = state.longitude.takeIf { usableCoordinates },
+                photoAddress = cleaned(state.photoAddressSuggestion?.label),
+                photoOccurredAtIso = cleaned(state.photoOccurredAtIso),
+                imageVisualContext = cleaned(imageVisualContext),
+                currentOccurredAtIso = cleaned(state.occurredAtIso),
+                currentComplaintTitle = cleaned(selectedComplaint?.title),
+                currentPlate = cleaned(state.plate),
+                currentPlateRegion = cleaned(state.plateRegion),
+                currentDescription = cleaned(state.description),
+                currentNotes = cleaned(state.notes)
+            )
+        }
+
+        private fun cleaned(value: String?): String? = value
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        private fun isUsableCoordinate(latitude: Double?, longitude: Double?): Boolean {
+            if (latitude == null || longitude == null) return false
+            if (!latitude.isFinite() || !longitude.isFinite()) return false
+            if (abs(latitude) > 90.0 || abs(longitude) > 180.0) return false
+            return abs(latitude) > 0.000001 || abs(longitude) > 0.000001
+        }
+    }
+
+    fun toPromptBlock(): String {
+        val lines = buildList {
+            add("- currentDeviceTimeIso: $currentDeviceTimeIso")
+            currentAddress?.let { add("- currentAddress: $it") }
+            if (currentLatitude != null && currentLongitude != null) {
+                add("- currentCoordinates: ${String.format(Locale.US, "%.6f, %.6f", currentLatitude, currentLongitude)}")
+            }
+            photoAddress?.let { add("- imageAddress: $it") }
+            photoOccurredAtIso?.let { add("- imageOccurredAtIso: $it") }
+            imageVisualContext?.let { add("- imageVisualContext: $it") }
+            currentOccurredAtIso?.let { add("- currentOccurredAtIso: $it") }
+            currentComplaintTitle?.let { add("- currentComplaint: $it") }
+            currentPlate?.let { add("- currentPlate: $it") }
+            currentPlateRegion?.let { add("- currentPlateState: $it") }
+            currentDescription?.let { add("- currentDescription: $it") }
+            currentNotes?.let { add("- currentNotes: $it") }
+        }
+        return lines.joinToString(separator = "\n")
+    }
+}
+
+private suspend fun resolveVoiceCurrentAddress(
+    context: Context,
+    state: ComposerUiState
+): String? {
+    val existingAddress = state.addressQuery.ifBlank { state.address }.trim()
+    if (existingAddress.isNotBlank()) return null
+    val latitude = state.latitude
+    val longitude = state.longitude
+    if (latitude == null || longitude == null) return null
+    if (!latitude.isFinite() || !longitude.isFinite()) return null
+    if (abs(latitude) > 90.0 || abs(longitude) > 180.0) return null
+    if (abs(latitude) <= 0.000001 && abs(longitude) <= 0.000001) return null
+    return reverseGeocodeAddress(context, latitude, longitude)?.label
+}
+
+private data class VoiceReportImageInput(
+    val file: File,
+    val deleteAfterUse: Boolean
+)
+
+private fun resolveVoiceReportImageInput(
+    context: Context,
+    media: SubmissionMedia?
+): VoiceReportImageInput? {
+    if (media == null || media.isVideo) return null
+    val uri = Uri.parse(media.uri)
+    if (uri.scheme.equals("file", ignoreCase = true)) {
+        val file = uri.path?.let(::File)
+        if (file?.isFile == true && file.length() > 0L) {
+            return VoiceReportImageInput(file = file, deleteAfterUse = false)
+        }
+    }
+
+    val tempDirectory = File(context.cacheDir, "litertlm-images").apply { mkdirs() }
+    val extension = media.displayName
+        .substringAfterLast('.', "jpg")
+        .replace(Regex("[^A-Za-z0-9]"), "")
+        .ifBlank { "jpg" }
+    val tempFile = File.createTempFile("reported_voice_image_", ".$extension", tempDirectory)
+    return try {
+        val input = context.contentResolver.openInputStream(uri)
+        if (input == null) {
+            tempFile.delete()
+            return null
+        }
+        input.use { source ->
+            tempFile.outputStream().use { target ->
+                source.copyTo(target)
+            }
+        }
+        if (tempFile.length() > 0L) {
+            VoiceReportImageInput(file = tempFile, deleteAfterUse = true)
+        } else {
+            tempFile.delete()
+            null
+        }
+    } catch (error: Throwable) {
+        tempFile.delete()
+        null
+    }
+}
+
+private object OnDeviceGemmaVoiceDraftEngine {
+    const val ModelDownloadSizeLabel = "2.6 GB"
+    private const val ModelDownloadFileName = "gemma-4-E2B-it.litertlm"
+    private const val ModelDownloadEstimatedBytes = 2_590_000_000L
+    private const val ModelDownloadMinimumBytes = 512L * 1024L * 1024L
+    private const val ModelDownloadUrl =
+        "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true"
+    private val ModelFileNames = listOf(
+        "gemma-voice-report.litertlm",
+        "gemma-4-E2B-it.litertlm",
+        "gemma-4-E4B-it.litertlm"
+    )
+
+    fun isModelInstalled(context: Context): Boolean = resolveModelFile(context) != null
+
+    suspend fun downloadModel(
+        context: Context,
+        onProgress: suspend (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            resolveModelFile(context)?.let { return@runCatching it }
+
+            val modelsDir = File(context.noBackupFilesDir, "models").apply { mkdirs() }
+            val destinationFile = File(modelsDir, ModelDownloadFileName)
+            val partialFile = File(modelsDir, "$ModelDownloadFileName.part")
+            if (partialFile.exists()) partialFile.delete()
+            if (modelsDir.usableSpace in 1 until ModelDownloadEstimatedBytes) {
+                error("Not enough free storage for REPORTED AI. It needs about ${ModelDownloadSizeLabel.toInstallSizeLabel()}.")
+            }
+
+            val connection = (URL(ModelDownloadUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 30_000
+                readTimeout = 60_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Reported Android")
+            }
+            try {
+                val responseCode = connection.responseCode
+                if (responseCode !in 200..299) {
+                    error("Could not install REPORTED AI. Server returned HTTP $responseCode.")
+                }
+                val totalBytes = connection.contentLengthLong
+                    .takeIf { it > 0L }
+                    ?: ModelDownloadEstimatedBytes
+                connection.inputStream.use { input ->
+                    partialFile.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var downloadedBytes = 0L
+                        var lastProgressBytes = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            if (
+                                downloadedBytes - lastProgressBytes >= 4L * 1024L * 1024L ||
+                                downloadedBytes == totalBytes
+                            ) {
+                                lastProgressBytes = downloadedBytes
+                                withContext(Dispatchers.Main) {
+                                    onProgress(downloadedBytes, totalBytes)
+                                }
+                            }
+                        }
+                        output.flush()
+                        withContext(Dispatchers.Main) {
+                            onProgress(downloadedBytes, totalBytes)
+                        }
+                    }
+                }
+            } catch (error: Throwable) {
+                partialFile.delete()
+                throw error
+            } finally {
+                connection.disconnect()
+            }
+
+            if (destinationFile.exists()) destinationFile.delete()
+            if (!partialFile.renameTo(destinationFile)) {
+                partialFile.copyTo(destinationFile, overwrite = true)
+                partialFile.delete()
+            }
+            destinationFile.takeIf { it.isUsableModelFile() }
+                ?: error("REPORTED AI did not finish installing correctly.")
+        }
+    }
+
+    suspend fun generateDraft(
+        context: Context,
+        audioFile: File,
+        imageFile: File? = null,
+        complaintOptions: List<ComplaintOption>,
+        voiceContext: VoiceReportContext
+    ): Result<VoiceReportGemmaResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val modelFile = resolveModelFile(context)
+                ?: error(
+                    "REPORTED AI is not installed. Install REPORTED AI (${ModelDownloadSizeLabel.toInstallSizeLabel()}) before voice drafting can run."
+                )
+            val prompt = buildVoiceReportGemmaPrompt(complaintOptions, voiceContext)
+            if (audioFile.length() <= VoiceReportAudioRecorder.WAV_HEADER_BYTES) {
+                error("The recording was too short to process.")
+            }
+
+            try {
+                generateDraftResponse(
+                    context = context,
+                    modelFile = modelFile,
+                    audioFile = audioFile,
+                    imageFile = imageFile,
+                    prompt = prompt,
+                    complaintOptions = complaintOptions
+                )
+            } catch (error: Throwable) {
+                if (imageFile == null) throw error
+                generateDraftResponse(
+                    context = context,
+                    modelFile = modelFile,
+                    audioFile = audioFile,
+                    imageFile = null,
+                    prompt = prompt,
+                    complaintOptions = complaintOptions
+                )
+            }
+        }
+    }
+
+    suspend fun generateImageContext(
+        context: Context,
+        imageFile: File
+    ): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val modelFile = resolveModelFile(context) ?: return@runCatching null
+            if (!imageFile.isFile || imageFile.length() <= 0L) return@runCatching null
+            val engineConfig = EngineConfig(
+                modelPath = modelFile.absolutePath,
+                backend = Backend.CPU(),
+                visionBackend = Backend.CPU(),
+                cacheDir = resolveCacheDir(context).absolutePath
+            )
+            Engine(engineConfig).use { engine ->
+                engine.initialize()
+                val conversationConfig = ConversationConfig(
+                    samplerConfig = SamplerConfig(
+                        topK = 1,
+                        topP = 0.1,
+                        temperature = 0.0
+                    )
+                )
+                engine.createConversation(conversationConfig).use { conversation ->
+                    val response = conversation.sendMessage(
+                        Contents.of(
+                            Content.ImageFile(imageFile.absolutePath),
+                            Content.Text(
+                                "Briefly inspect this report photo for form-filling context. Return one concise sentence with only clearly visible facts: possible complaint type, vehicle make/model/color/type, visible license plate text, location clues, and scene details. If uncertain, say uncertain rather than guessing."
+                            )
+                        )
+                    )
+                    response.contents.contents
+                        .filterIsInstance<Content.Text>()
+                        .joinToString(separator = " ") { it.text }
+                        .ifBlank { response.toString() }
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                        .take(1200)
+                        .takeIf { it.isNotBlank() }
+                }
+            }
+        }.getOrNull()
+    }
+
+    private suspend fun generateDraftResponse(
+        context: Context,
+        modelFile: File,
+        audioFile: File,
+        imageFile: File?,
+        prompt: String,
+        complaintOptions: List<ComplaintOption>
+    ): VoiceReportGemmaResult {
+        val engineConfig = EngineConfig(
+            modelPath = modelFile.absolutePath,
+            backend = Backend.CPU(),
+            visionBackend = if (imageFile != null) Backend.CPU() else null,
+            audioBackend = Backend.CPU(),
+            cacheDir = resolveCacheDir(context).absolutePath
+        )
+        Engine(engineConfig).use { engine ->
+            engine.initialize()
+            val conversationConfig = ConversationConfig(
+                samplerConfig = SamplerConfig(
+                    topK = 1,
+                    topP = 0.1,
+                    temperature = 0.0
+                )
+            )
+            engine.createConversation(conversationConfig).use { conversation ->
+                val contents = buildList {
+                    imageFile?.takeIf { it.isFile && it.length() > 0L }?.let {
+                        add(Content.ImageFile(it.absolutePath))
+                    }
+                    add(Content.AudioFile(audioFile.absolutePath))
+                    add(Content.Text(prompt))
+                }
+                val response = conversation.sendMessage(
+                    Contents.of(contents)
+                )
+                val responseText = response.contents.contents
+                    .filterIsInstance<Content.Text>()
+                    .joinToString(separator = "\n") { it.text }
+                    .ifBlank { response.toString() }
+                return resolveVoiceReportAddress(
+                    context = context,
+                    result = parseVoiceReportGemmaJson(responseText, complaintOptions)
+                )
+            }
+        }
+    }
+
+    private fun resolveModelFile(context: Context): File? {
+        modelSearchDirectories(context).forEach { directory ->
+            ModelFileNames.forEach { modelFileName ->
+                val model = File(directory, modelFileName).takeIf { it.isUsableModelFile() }
+                if (model != null) return model
+            }
+        }
+
+        ModelFileNames.forEach { modelFileName ->
+            val appNoBackupModel = File(context.noBackupFilesDir, modelFileName).takeIf { it.isUsableModelFile() }
+            if (appNoBackupModel != null) return appNoBackupModel
+        }
+
+        ModelFileNames.forEach { modelFileName ->
+            val filesModel = File(context.filesDir, modelFileName).takeIf { it.isUsableModelFile() }
+            if (filesModel != null) return filesModel
+        }
+
+        ModelFileNames.forEach { modelFileName ->
+            val assetsModel = runCatching {
+                context.assets.open(modelFileName).use { input ->
+                    val outputFile = File(context.noBackupFilesDir, modelFileName)
+                    if (!outputFile.exists() || outputFile.length() == 0L) {
+                        outputFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    outputFile.takeIf { it.isUsableModelFile() }
+                }
+            }.getOrNull()
+            if (assetsModel != null) return assetsModel
+        }
+        return null
+    }
+
+    private fun modelSearchDirectories(context: Context): List<File> = listOf(
+        File(context.noBackupFilesDir, "models"),
+        File(context.filesDir, "models")
+    )
+
+    private fun resolveCacheDir(context: Context): File {
+        return File(context.cacheDir, "litertlm").apply { mkdirs() }
+    }
+
+    private fun File.isUsableModelFile(): Boolean = exists() && isFile && length() >= ModelDownloadMinimumBytes
+}
+
+private suspend fun resolveVoiceReportAddress(
+    context: Context,
+    result: VoiceReportGemmaResult
+): VoiceReportGemmaResult {
+    val rawAddress = result.draft.address
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return result
+    val resolvedAddress = resolveVoiceAddressLabel(context, rawAddress) ?: return result
+    if (resolvedAddress.equals(rawAddress, ignoreCase = true)) return result
+    return result.copy(draft = result.draft.copy(address = resolvedAddress))
+}
+
+private suspend fun resolveVoiceAddressLabel(
+    context: Context,
+    rawAddress: String
+): String? {
+    parseVoiceCoordinate(rawAddress)?.let { (latitude, longitude) ->
+        return reverseGeocodeAddress(context, latitude, longitude)?.label
+    }
+    val queries = voiceAddressSearchQueries(rawAddress)
+    for (query in queries) {
+        val suggestions = searchNycAddresses(query)
+        val chosen = chooseVoiceAddressSuggestion(rawAddress, suggestions)
+        if (chosen != null) return chosen.label
+    }
+    return null
+}
+
+private fun parseVoiceCoordinate(rawAddress: String): Pair<Double, Double>? {
+    val match = Regex("""^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$""")
+        .find(rawAddress)
+        ?: return null
+    val latitude = match.groupValues.getOrNull(1)?.toDoubleOrNull() ?: return null
+    val longitude = match.groupValues.getOrNull(2)?.toDoubleOrNull() ?: return null
+    if (abs(latitude) > 90.0 || abs(longitude) > 180.0) return null
+    return latitude to longitude
+}
+
+private fun voiceAddressSearchQueries(rawAddress: String): List<String> {
+    val cleaned = cleanVoiceAddressQuery(rawAddress)
+    val variants = mutableListOf<String>()
+    fun add(value: String?) {
+        val normalized = value
+            ?.trim(' ', ',', '.', ';')
+            ?.replace(Regex("""\s+"""), " ")
+            ?.takeIf { it.length >= 4 }
+            ?: return
+        if (variants.none { it.equals(normalized, ignoreCase = true) }) {
+            variants += normalized
+        }
+    }
+    add(cleaned)
+    val houseStreetMatch = Regex("""\b(\d{1,6}(?:-\d{1,6})?[A-Za-z]?)\s+(.+)$""")
+        .find(cleaned)
+    if (houseStreetMatch != null) {
+        val houseNumber = houseStreetMatch.groupValues[1]
+        val street = houseStreetMatch.groupValues[2]
+            .split(Regex("""\b(?:new\s+york|ny|usa|united\s+states|apt|apartment|unit|floor|fl)\b""", RegexOption.IGNORE_CASE))
+            .firstOrNull()
+            ?.trim(' ', ',', '.', ';')
+        add("$houseNumber $street")
+    }
+    return variants
+}
+
+private fun cleanVoiceAddressQuery(rawAddress: String): String =
+    rawAddress
+        .replace(Regex("""\b(?:address\s+is|address|near|at)\b""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""\b(?:new\s+york|nyc|ny|usa|united\s+states)\b""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""[^\p{Alnum}\s-]"""), " ")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+
+private fun chooseVoiceAddressSuggestion(
+    rawAddress: String,
+    suggestions: List<AddressSuggestion>
+): AddressSuggestion? {
+    if (suggestions.isEmpty()) return null
+    val expectedHouse = Regex("""\b(\d{1,6}(?:-\d{1,6})?[A-Za-z]?)\b""")
+        .find(rawAddress)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.lowercase(Locale.US)
+    val rawTokens = cleanVoiceAddressQuery(rawAddress)
+        .lowercase(Locale.US)
+        .split(Regex("""\s+"""))
+        .filter { it.length >= 3 && !it.all(Char::isDigit) }
+    fun score(suggestion: AddressSuggestion): Int {
+        val label = suggestion.label.lowercase(Locale.US)
+        var score = 0
+        if (expectedHouse != null && expectedHouse in label) score += 6
+        score += rawTokens.count { token -> token in label }
+        if (suggestion.region == "NY") score += 1
+        return score
+    }
+    return suggestions
+        .maxByOrNull(::score)
+        ?.takeIf { score(it) >= if (expectedHouse == null) 1 else 6 }
+}
+
+private class VoiceReportAudioRecorder {
+    companion object {
+        const val WAV_HEADER_BYTES = 44
+        private const val SampleRateHz = 16_000
+        private const val BitsPerSample = 16
+        private const val ChannelCount = 1
+    }
+
+    @Volatile private var isRecording = false
+    private var recorder: AudioRecord? = null
+    private var outputFile: File? = null
+    private var writerThread: Thread? = null
+    @Volatile private var amplitudeCallback: ((Float) -> Unit)? = null
+    var errorMessage: String? = null
+        private set
+
+    @SuppressLint("MissingPermission")
+    fun start(context: Context, onAmplitude: (Float) -> Unit = {}): Boolean {
+        cancel()
+        errorMessage = null
+
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            SampleRateHz,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBufferSize <= 0) {
+            errorMessage = "This device cannot provide microphone audio in the format Gemma needs."
+            return false
+        }
+
+        val meteringBufferSize = SampleRateHz / 10 * ChannelCount * BitsPerSample / 8
+        val bufferSize = max(minBufferSize, meteringBufferSize)
+        val file = runCatching {
+            File.createTempFile("reported_voice_report_", ".wav", context.cacheDir)
+        }.getOrElse {
+            errorMessage = it.localizedMessage ?: "Could not create a temporary recording file."
+            return false
+        }
+
+        val audioRecord = runCatching {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SampleRateHz,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                bufferSize
+            )
+        }.getOrElse {
+            errorMessage = it.localizedMessage ?: "Could not open the microphone."
+            runCatching { file.delete() }
+            return false
+        }
+
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            errorMessage = "Could not initialize the microphone."
+            audioRecord.release()
+            runCatching { file.delete() }
+            return false
+        }
+
+        runCatching {
+            RandomAccessFile(file, "rw").use { output ->
+                writeWavHeader(output, pcmDataLength = 0L)
+            }
+            audioRecord.startRecording()
+        }.onFailure {
+            errorMessage = it.localizedMessage ?: "Could not start microphone recording."
+            audioRecord.release()
+            runCatching { file.delete() }
+            return false
+        }
+
+        recorder = audioRecord
+        outputFile = file
+        amplitudeCallback = onAmplitude
+        isRecording = true
+        writerThread = thread(start = true, name = "ReportedVoiceReportRecorder") {
+            writeMicInput(audioRecord, file, bufferSize)
+        }
+        return true
+    }
+
+    fun stop(): File? {
+        val file = outputFile
+        isRecording = false
+        writerThread?.join(1_500)
+        writerThread = null
+        recorder = null
+        outputFile = null
+        amplitudeCallback?.invoke(0f)
+        amplitudeCallback = null
+        return file?.takeIf { it.exists() && it.length() > WAV_HEADER_BYTES }
+    }
+
+    fun cancel() {
+        val file = outputFile
+        isRecording = false
+        writerThread?.join(750)
+        writerThread = null
+        recorder = null
+        outputFile = null
+        amplitudeCallback?.invoke(0f)
+        amplitudeCallback = null
+        runCatching { file?.delete() }
+    }
+
+    private fun writeMicInput(audioRecord: AudioRecord, file: File, bufferSize: Int) {
+        val buffer = ByteArray(bufferSize)
+        var pcmDataLength = 0L
+        var lastAmplitudeEmitNanos = 0L
+        try {
+            RandomAccessFile(file, "rw").use { output ->
+                output.seek(WAV_HEADER_BYTES.toLong())
+                while (isRecording) {
+                    val read = audioRecord.read(buffer, 0, buffer.size)
+                    if (read > 0) {
+                        output.write(buffer, 0, read)
+                        pcmDataLength += read
+                        val now = System.nanoTime()
+                        if (now - lastAmplitudeEmitNanos >= 64_000_000L) {
+                            lastAmplitudeEmitNanos = now
+                            amplitudeCallback?.invoke(calculateAmplitude(buffer, read))
+                        }
+                    }
+                }
+                output.seek(0L)
+                writeWavHeader(output, pcmDataLength)
+            }
+        } catch (error: Throwable) {
+            errorMessage = error.localizedMessage ?: "Could not write microphone recording."
+        } finally {
+            runCatching { audioRecord.stop() }
+            audioRecord.release()
+        }
+    }
+
+    private fun calculateAmplitude(buffer: ByteArray, read: Int): Float {
+        var sumSquares = 0.0
+        var sampleCount = 0
+        var index = 0
+        while (index + 1 < read) {
+            val low = buffer[index].toInt() and 0xff
+            val high = buffer[index + 1].toInt()
+            val sample = ((high shl 8) or low).toShort().toInt()
+            sumSquares += sample.toDouble() * sample.toDouble()
+            sampleCount += 1
+            index += 2
+        }
+        if (sampleCount == 0) return 0f
+        val rms = sqrt(sumSquares / sampleCount.toDouble()) / Short.MAX_VALUE.toDouble()
+        val decibels = 20.0 * log10(rms.coerceAtLeast(0.000_001))
+        val normalized = ((decibels + 60.0) / 60.0).coerceIn(0.0, 1.0)
+        return normalized.pow(1.35).toFloat().coerceIn(0f, 1f)
+    }
+
+    private fun writeWavHeader(output: RandomAccessFile, pcmDataLength: Long) {
+        val byteRate = SampleRateHz * ChannelCount * BitsPerSample / 8
+        val blockAlign = ChannelCount * BitsPerSample / 8
+        output.writeBytes("RIFF")
+        output.writeIntLe((36L + pcmDataLength).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        output.writeBytes("WAVE")
+        output.writeBytes("fmt ")
+        output.writeIntLe(16)
+        output.writeShortLe(1)
+        output.writeShortLe(ChannelCount)
+        output.writeIntLe(SampleRateHz)
+        output.writeIntLe(byteRate)
+        output.writeShortLe(blockAlign)
+        output.writeShortLe(BitsPerSample)
+        output.writeBytes("data")
+        output.writeIntLe(pcmDataLength.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
+
+    private fun RandomAccessFile.writeIntLe(value: Int) {
+        write(value and 0xff)
+        write((value shr 8) and 0xff)
+        write((value shr 16) and 0xff)
+        write((value shr 24) and 0xff)
+    }
+
+    private fun RandomAccessFile.writeShortLe(value: Int) {
+        write(value and 0xff)
+        write((value shr 8) and 0xff)
+    }
+}
+
+private data class VoiceDraftChangeRow(
+    val field: VoiceDraftField,
+    val label: String,
+    val currentValue: String,
+    val nextValue: String
+)
+
+private enum class VoiceDraftField {
+    Complaint,
+    Plate,
+    State,
+    Address,
+    OccurredAt,
+    Description,
+    Notes
+}
+
+private enum class VoiceDraftSource(val title: String) {
+    Current("Current"),
+    ReportedAi("Reported AI")
+}
+
+private data class VoiceReportDraft(
+    val complaintId: String? = null,
+    val complaintTitle: String? = null,
+    val plate: String? = null,
+    val plateRegion: String? = null,
+    val address: String? = null,
+    val occurredAtIso: String? = null,
+    val make: String? = null,
+    val model: String? = null,
+    val yearRange: String? = null,
+    val description: String? = null,
+    val notes: String? = null
+) {
+    val hasAnyFillableField: Boolean
+        get() = listOf(complaintId, plate, plateRegion, address, occurredAtIso, description, notes).any { !it.isNullOrBlank() }
+
+    fun keepingReportedFields(reportedFields: Set<VoiceDraftField>): VoiceReportDraft =
+        copy(
+            complaintId = complaintId.takeIf { VoiceDraftField.Complaint in reportedFields },
+            complaintTitle = complaintTitle.takeIf { VoiceDraftField.Complaint in reportedFields },
+            plate = plate.takeIf { VoiceDraftField.Plate in reportedFields },
+            plateRegion = plateRegion.takeIf { VoiceDraftField.State in reportedFields },
+            address = address.takeIf { VoiceDraftField.Address in reportedFields },
+            occurredAtIso = occurredAtIso.takeIf { VoiceDraftField.OccurredAt in reportedFields },
+            description = description.takeIf { VoiceDraftField.Description in reportedFields },
+            notes = notes.takeIf { VoiceDraftField.Notes in reportedFields }
+        )
+
+    fun changeRows(
+        currentState: ComposerUiState,
+        complaintOptions: List<ComplaintOption>
+    ): List<VoiceDraftChangeRow> = buildList {
+        val currentComplaint = complaintOptions.firstOrNull { it.id == currentState.selectedComplaintId }?.title
+        addVoiceChangeRow(VoiceDraftField.Complaint, "Complaint", currentComplaint, complaintTitle)
+        addVoiceChangeRow(VoiceDraftField.Plate, "Plate", currentState.plate, plate)
+        addVoiceChangeRow(VoiceDraftField.State, "State", currentState.plateRegion, plateRegion)
+        addVoiceChangeRow(VoiceDraftField.Address, "Address", currentState.addressQuery.ifBlank { currentState.address }, address)
+        addVoiceChangeRow(VoiceDraftField.OccurredAt, "Occurred At", currentState.occurredAtIso, occurredAtIso)
+        addVoiceChangeRow(VoiceDraftField.Description, "Description", currentState.description, description)
+        addVoiceChangeRow(VoiceDraftField.Notes, "Notes", currentState.notes, notes)
+    }
+}
+
+private fun MutableList<VoiceDraftChangeRow>.addVoiceChangeRow(
+    field: VoiceDraftField,
+    label: String,
+    currentValue: String?,
+    nextValue: String?
+) {
+    val cleanedNext = nextValue.cleanedVoicePreviewValue() ?: return
+    add(
+        VoiceDraftChangeRow(
+            field = field,
+            label = label,
+            currentValue = currentValue.cleanedVoicePreviewValue() ?: "Empty",
+            nextValue = cleanedNext
+        )
+    )
+}
+
+private fun String?.cleanedVoicePreviewValue(): String? =
+    this?.trim()?.takeIf { it.isNotBlank() }
+
+private fun generateVoiceReportDraft(
+    transcript: String,
+    complaintOptions: List<ComplaintOption>
+): VoiceReportDraft {
+    val cleanedTranscript = transcript.trim()
+    val complaint = inferVoiceComplaint(cleanedTranscript, complaintOptions)
+    return VoiceReportDraft(
+        complaintId = complaint?.id,
+        complaintTitle = complaint?.title,
+        plate = inferVoicePlate(cleanedTranscript),
+        plateRegion = inferVoicePlateRegion(cleanedTranscript),
+        address = inferVoiceAddress(cleanedTranscript),
+        occurredAtIso = inferVoiceOccurredAt(cleanedTranscript),
+        make = inferVoiceVehicleMake(cleanedTranscript),
+        model = inferVoiceVehicleModel(cleanedTranscript),
+        yearRange = inferVoiceVehicleYearRange(cleanedTranscript),
+        description = inferVoiceDescription(cleanedTranscript),
+        notes = inferVoiceNotes(cleanedTranscript)
+    )
+}
+
+private fun buildVoiceReportGemmaPrompt(
+    complaintOptions: List<ComplaintOption>,
+    voiceContext: VoiceReportContext
+): String {
+    val complaints = complaintOptions.joinToString(separator = "\n") { option ->
+        "- ${option.id}: ${option.title}"
+    }
+    val contextBlock = voiceContext.toPromptBlock()
+    val currentDate = LocalDate.now(ZoneId.systemDefault())
+    val currentYear = currentDate.year
+    return """
+        You are filling a Reported traffic complaint form from one spoken audio recording and an optional attached report photo.
+        Transcribe the speech, then return only one strict JSON object.
+        Do not include markdown or prose.
+
+        Available complaints:
+        $complaints
+
+        Current form and device context:
+        $contextBlock
+
+        JSON keys:
+        {
+          "transcript": string or null,
+          "complaint": one available complaint title or null,
+          "complaintId": one available complaint ID or null,
+          "timeofincident": ISO-8601 incident datetime with timezone or null,
+          "occurredAtIso": same value as timeofincident or null,
+          "plate": uppercase license plate letters/numbers only, max 8 characters, or null,
+          "state": two-letter US plate state, default "NY" only when the speaker implies New York or says no state,
+          "address": incident address or null,
+          "make": vehicle make, for example "Honda" from "2024 Honda Acura", or null,
+          "model": vehicle model, for example "Acura" from "2024 Honda Acura", or null,
+          "yearRange": vehicle year or spoken year range, for example "2024" or "2021-2024", or null,
+          "description": vehicle description and public-facing incident details or null,
+          "notes": extra private details that do not fit another field or null
+        }
+
+        Rules:
+        - Prefer exact spoken values over guesses.
+        - If a report photo is attached, use it as supporting visual context for visible plate text, vehicle details, location clues, and complaint type before producing JSON.
+        - If imageVisualContext is present, treat it as a pre-read summary of the attached photo.
+        - Spoken values win when audio conflicts with the photo. Do not invent fields from the photo unless they are clearly visible.
+        - The current date is $currentDate and the current year is $currentYear. For spoken dates without an explicit year: if the current month is January and the spoken incident month is December, use ${currentYear - 1}. Otherwise, use $currentYear.
+        - timeofincident and occurredAtIso must use that month/year rule; do not roll non-December dates back to a previous year.
+        - Use current context only when the speaker explicitly refers to it, such as "here", "this location", "current address", "same address", "now", "today", "same time as the photo", "the image time", "same plate", or "keep the state".
+        - If the speaker says "here" or "current address", use currentAddress when present; otherwise use imageAddress when present; otherwise use currentCoordinates when present; otherwise use null.
+        - If the speaker says "now" or gives a relative time, resolve it against currentDeviceTimeIso.
+        - If the speaker says "time from the photo" or "same time as the photo", use imageOccurredAtIso when present.
+        - If a field was not spoken, use null.
+        - Extract vehicle make, model, and yearRange only when the speaker says them. Do not infer trim, color, or vehicle type into these keys.
+        - If the speaker says a phrase like "2024 Honda Acura", set yearRange to "2024", make to "Honda", and model to "Acura".
+        - Put any extra information in notes.
+        - Pick complaintId only from the available IDs and complaint only from the available titles.
+    """.trimIndent()
+}
+
+private fun parseVoiceReportGemmaJson(
+    jsonText: String,
+    complaintOptions: List<ComplaintOption>
+): VoiceReportGemmaResult {
+    val json = JSONObject(extractFirstJsonObject(jsonText))
+    val transcript = json.optNullableString("transcript")
+    val transcriptFallback = transcript?.let { generateVoiceReportDraft(it, complaintOptions) }
+    val complaintId = resolveVoiceComplaintId(
+        rawComplaintId = json.optNullableString("complaintId"),
+        rawComplaint = json.optNullableString("complaint"),
+        complaintOptions = complaintOptions
+    )
+        ?: transcriptFallback?.complaintId
+    val complaintTitle = complaintOptions.firstOrNull { it.id == complaintId }?.title
+    val plate = PlatePatternClassifier.normalizePlateInput(json.optNullableString("plate").orEmpty())
+        .take(VoicePlateMaxLength)
+        .ifBlank { null }
+        ?: transcriptFallback?.plate
+    val draft = VoiceReportDraft(
+        complaintId = complaintId,
+        complaintTitle = complaintTitle,
+        plate = plate,
+        plateRegion = json.optNullableString("state")?.uppercase(Locale.US)?.take(2)
+            ?: transcriptFallback?.plateRegion,
+        address = json.optNullableString("address") ?: transcriptFallback?.address,
+        occurredAtIso = sanitizeVoiceOccurredAt(
+            json.optNullableString("occurredAtIso")
+                ?: json.optNullableString("timeofincident")
+                ?: json.optNullableString("timeOfIncident")
+                ?: json.optNullableString("time_of_incident")
+        ) ?: transcriptFallback?.occurredAtIso,
+        make = json.optNullableString("make")
+            ?: json.optNullableString("vehicleMake")
+            ?: json.optNullableString("vehicle_make")
+            ?: transcriptFallback?.make,
+        model = json.optNullableString("model")
+            ?: json.optNullableString("vehicleModel")
+            ?: json.optNullableString("vehicle_model")
+            ?: transcriptFallback?.model,
+        yearRange = json.optNullableString("yearRange")
+            ?: json.optNullableString("vehicleYearRange")
+            ?: json.optNullableString("vehicle_year_range")
+            ?: json.optNullableString("year")
+            ?: transcriptFallback?.yearRange,
+        description = json.optNullableString("description")
+            ?: transcript?.let { extractVoiceSection(it, "description") },
+        notes = json.optNullableString("notes") ?: transcriptFallback?.notes
+    )
+    return VoiceReportGemmaResult(
+        transcript = transcript,
+        draft = draft
+    )
+}
+
+private fun extractFirstJsonObject(text: String): String {
+    val start = text.indexOf('{')
+    val end = text.lastIndexOf('}')
+    if (start < 0 || end <= start) error("Gemma did not return a JSON object.")
+    return text.substring(start, end + 1)
+}
+
+private const val VoicePlateMaxLength = 8
+
+private fun resolveVoiceComplaintId(
+    rawComplaintId: String?,
+    rawComplaint: String?,
+    complaintOptions: List<ComplaintOption>
+): String? {
+    rawComplaintId
+        ?.trim()
+        ?.takeIf { id -> complaintOptions.any { it.id == id } }
+        ?.let { return it }
+    val normalizedComplaint = rawComplaint
+        ?.lowercase(Locale.US)
+        ?.replace(Regex("""[^a-z0-9]+"""), " ")
+        ?.trim()
+        ?: return null
+    if (normalizedComplaint.isBlank()) return null
+    return complaintOptions.firstOrNull { option ->
+        option.id.equals(rawComplaint, ignoreCase = true) ||
+            option.title.lowercase(Locale.US)
+                .replace(Regex("""[^a-z0-9]+"""), " ")
+                .trim() == normalizedComplaint
+    }?.id
+        ?: inferVoiceComplaint(normalizedComplaint, complaintOptions)?.id
+}
+
+private fun sanitizeVoiceOccurredAt(rawValue: String?): String? {
+    val cleaned = rawValue
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        ?: return null
+    val instant = runCatching { Instant.parse(cleaned) }
+        .getOrElse {
+            runCatching { OffsetDateTime.parse(cleaned).toInstant() }.getOrNull()
+        }
+        ?: return cleaned
+    return normalizeVoiceIncidentYear(instant).toString()
+}
+
+private fun normalizeVoiceIncidentYear(instant: Instant): Instant {
+    val zone = ZoneId.systemDefault()
+    val currentDate = LocalDate.now(zone)
+    val currentYear = currentDate.year
+    val zonedDateTime = instant.atZone(zone)
+    val targetYear = if (currentDate.monthValue == 1 && zonedDateTime.monthValue == 12) currentYear - 1 else currentYear
+    return zonedDateTime.withYear(targetYear).toInstant()
+}
+
+private fun JSONObject.optNullableString(key: String): String? {
+    if (!has(key) || isNull(key)) return null
+    return optString(key)
+        .trim()
+        .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+}
+
+private fun inferVoiceComplaint(
+    transcript: String,
+    complaintOptions: List<ComplaintOption>
+): ComplaintOption? {
+    val normalized = transcript.lowercase(Locale.US)
+    val aliases = listOf(
+        listOf("blocked bike lane", "bike lane") to listOf("bike", "lane"),
+        listOf("blocked crosswalk", "crosswalk") to listOf("crosswalk"),
+        listOf("ran red light", "red light", "stop sign") to listOf("red", "light"),
+        listOf("parked illegally", "illegal parking") to listOf("park"),
+        listOf("reckless driving", "reckless") to listOf("reckless")
+    )
+    aliases.forEach { (phrases, optionTerms) ->
+        if (phrases.any { it in normalized }) {
+            complaintOptions.firstOrNull { option ->
+                val haystack = "${option.id} ${option.title}".lowercase(Locale.US)
+                optionTerms.all { it in haystack }
+            }?.let { return it }
+        }
+    }
+    return complaintOptions.firstOrNull { option ->
+        val words = option.title
+            .lowercase(Locale.US)
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.length > 2 }
+        words.isNotEmpty() && words.all { it in normalized }
+    }
+}
+
+private fun inferVoicePlate(transcript: String): String? {
+    val explicit = Regex(
+        """\b(?:license\s+plate|plate|tag)\s*(?:is|number|#|:)?\s*([a-z0-9][a-z0-9 -]{1,12}?)(?=\s+(?:state|address|complaint|description|notes|time|at|near)\b|[.,;]|$)""",
+        RegexOption.IGNORE_CASE
+    ).find(transcript)?.groupValues?.getOrNull(1)
+    val fallback = Regex("""\b[a-z0-9]{5,10}\b""", RegexOption.IGNORE_CASE)
+        .findAll(transcript)
+        .map { it.value }
+        .firstOrNull { token -> token.any(Char::isDigit) && token.any(Char::isLetter) }
+    return PlatePatternClassifier.normalizePlateInput(explicit ?: fallback.orEmpty())
+        .take(VoicePlateMaxLength)
+        .ifBlank { null }
+}
+
+private fun inferVoicePlateRegion(transcript: String): String? {
+    val normalized = transcript.lowercase(Locale.US)
+    val explicit = Regex("""\b(?:state|plate\s+state)\s*(?:is|:)?\s*([a-z]{2}|new york|new jersey|connecticut|pennsylvania)\b""")
+        .find(normalized)
+        ?.groupValues
+        ?.getOrNull(1)
+    val state = explicit ?: when {
+        "new york" in normalized -> "new york"
+        "new jersey" in normalized -> "new jersey"
+        "connecticut" in normalized -> "connecticut"
+        "pennsylvania" in normalized -> "pennsylvania"
+        else -> null
+    }
+    return when (state?.trim()) {
+        "new york", "ny" -> "NY"
+        "new jersey", "nj" -> "NJ"
+        "connecticut", "ct" -> "CT"
+        "pennsylvania", "pa" -> "PA"
+        else -> state?.uppercase(Locale.US)?.takeIf { it.length == 2 }
+    }
+}
+
+private fun inferVoiceAddress(transcript: String): String? {
+    val match = Regex("""\b(?:address\s+is|address|near|at)\s+(.+)$""", RegexOption.IGNORE_CASE)
+        .find(transcript)
+        ?: return null
+    val candidate = match.groupValues[1]
+        .split(Regex("""\b(?:plate|license\s+plate|state|complaint|description|notes|time|when|occurred)\b""", RegexOption.IGNORE_CASE))
+        .firstOrNull()
+        ?.trim(' ', ',', '.', ';')
+        .orEmpty()
+    if (candidate.matches(Regex("""\d{1,2}(:\d{2})?\s*(am|pm).*""", RegexOption.IGNORE_CASE))) return null
+    return candidate.takeIf { it.length >= 4 }
+}
+
+private fun inferVoiceOccurredAt(transcript: String): String? {
+    val normalized = transcript.lowercase(Locale.US)
+    val zone = ZoneId.systemDefault()
+    if ("now" in normalized || "right now" in normalized) {
+        return Instant.now().toString()
+    }
+    var date = LocalDate.now(zone)
+    if ("yesterday" in normalized) {
+        date = date.minusDays(1)
+    }
+    val timeMatch = Regex("""\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b""", RegexOption.IGNORE_CASE)
+        .find(transcript)
+    val time = timeMatch?.let { match ->
+        val rawHour = match.groupValues[1].toIntOrNull() ?: return@let null
+        val minute = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
+        val isPm = match.groupValues.last().lowercase(Locale.US).startsWith("p")
+        val hour = when {
+            isPm && rawHour < 12 -> rawHour + 12
+            !isPm && rawHour == 12 -> 0
+            else -> rawHour
+        }
+        runCatching { LocalTime.of(hour, minute) }.getOrNull()
+    }
+    if (time != null) {
+        return date.atTime(time).atZone(zone).toInstant().toString()
+    }
+    if ("today" in normalized || "yesterday" in normalized) {
+        return date.atStartOfDay(zone).toInstant().toString()
+    }
+    return null
+}
+
+private fun inferVoiceVehicleYearRange(transcript: String): String? {
+    val match = Regex("""\b((?:19|20)\d{2})(?:\s*(?:-|to|through)\s*((?:19|20)\d{2}))?\b""", RegexOption.IGNORE_CASE)
+        .find(transcript)
+        ?: return null
+    val firstYear = match.groupValues.getOrNull(1).orEmpty()
+    val secondYear = match.groupValues.getOrNull(2).orEmpty()
+    if (firstYear.isBlank()) return null
+    return if (secondYear.isBlank()) firstYear else "$firstYear-$secondYear"
+}
+
+private fun inferVoiceVehicleMake(transcript: String): String? {
+    val explicit = Regex(
+        """\b(?:make|vehicle\s+make)\s*(?:is|:)?\s*([A-Za-z][A-Za-z -]{1,28}?)(?=\s+(?:model|year|plate|state|address|complaint|description|notes|time)\b|[.,;]|$)""",
+        RegexOption.IGNORE_CASE
+    ).find(transcript)?.groupValues?.getOrNull(1)
+    return normalizeVoiceVehicleToken(explicit) ?: voiceVehicleMakeModelPhrase(transcript)?.first
+}
+
+private fun inferVoiceVehicleModel(transcript: String): String? {
+    val explicit = Regex(
+        """\b(?:model|vehicle\s+model)\s*(?:is|:)?\s*([A-Za-z0-9][A-Za-z0-9 -]{1,32}?)(?=\s+(?:make|year|plate|state|address|complaint|description|notes|time)\b|[.,;]|$)""",
+        RegexOption.IGNORE_CASE
+    ).find(transcript)?.groupValues?.getOrNull(1)
+    return normalizeVoiceVehicleToken(explicit) ?: voiceVehicleMakeModelPhrase(transcript)?.second
+}
+
+private fun voiceVehicleMakeModelPhrase(transcript: String): Pair<String, String>? {
+    val match = Regex(
+        """\b(?:19|20)\d{2}(?:\s*(?:-|to|through)\s*(?:19|20)\d{2})?\s+([A-Za-z][A-Za-z-]+)\s+([A-Za-z][A-Za-z0-9-]+)\b""",
+        RegexOption.IGNORE_CASE
+    ).find(transcript) ?: return null
+    val make = normalizeVoiceVehicleToken(match.groupValues.getOrNull(1)) ?: return null
+    val model = normalizeVoiceVehicleToken(match.groupValues.getOrNull(2)) ?: return null
+    return make to model
+}
+
+private fun normalizeVoiceVehicleToken(raw: String?): String? {
+    val cleaned = raw
+        ?.trim(' ', ',', '.', ';', ':')
+        ?.replace(Regex("""\s+"""), " ")
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return cleaned
+        .split(" ")
+        .joinToString(" ") { token ->
+            if (token.length <= 4 && token.all { it.isUpperCase() || it.isDigit() }) {
+                token
+            } else {
+                token.lowercase(Locale.US).replaceFirstChar { it.uppercase(Locale.US) }
+            }
+        }
+}
+
+private fun inferVoiceDescription(transcript: String): String? {
+    val explicit = extractVoiceSection(transcript, "description")
+    return (explicit ?: transcript.trim())
+        .take(280)
+        .takeIf { it.isNotBlank() }
+}
+
+private fun inferVoiceNotes(transcript: String): String? =
+    extractVoiceSection(transcript, "notes") ?: extractVoiceSection(transcript, "note")
+
+private fun extractVoiceSection(transcript: String, label: String): String? {
+    val match = Regex("""\b$label\s*(?:are|is|:)?\s+(.+)$""", RegexOption.IGNORE_CASE)
+        .find(transcript)
+        ?: return null
+    return match.groupValues[1]
+        .split(Regex("""\b(?:plate|license\s+plate|state|complaint|description|notes|address|time|when|occurred)\b""", RegexOption.IGNORE_CASE))
+        .firstOrNull()
+        ?.trim(' ', ',', '.', ';')
+        ?.takeIf { it.isNotBlank() }
+}
+
+@Composable
+private fun AddressSearchScreen(
+    state: ComposerUiState,
+    onAction: (ComposerAction) -> Unit,
+    onBack: () -> Unit,
+    onOpenMap: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(state.addressQuery, selection = TextRange.Zero))
+    }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    LaunchedEffect(state.addressQuery) {
+        if (state.addressQuery != fieldValue.text) {
+            fieldValue = TextFieldValue(state.addressQuery, selection = TextRange.Zero)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Address",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center
+            )
+            IconButton(onClick = onOpenMap) {
+                Icon(Icons.Outlined.Map, contentDescription = "Pick address on map")
+            }
+        }
+
+        OutlinedTextField(
+            value = fieldValue,
+            onValueChange = { next ->
+                fieldValue = next
+                onAction(ComposerAction.AddressQueryChanged(next.text))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+            singleLine = true,
+            label = { Text("Search NYC address") },
+            leadingIcon = {
+                Icon(Icons.Outlined.Search, contentDescription = null)
+            },
+            trailingIcon = if (fieldValue.text.isNotEmpty()) {
+                {
+                    IconButton(
+                        onClick = {
+                            fieldValue = TextFieldValue("")
+                            onAction(ComposerAction.AddressQueryChanged(""))
+                        }
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Clear address")
+                    }
+                }
+            } else {
+                null
+            },
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Search
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            )
+        )
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
+            if (state.addressQuery.isBlank() && (state.photoAddressSuggestion != null || state.primaryMedia != null)) {
+                item {
+                    ImageAddressPickerRow(
+                        photoAddressSuggestion = state.photoAddressSuggestion,
+                        hasMedia = state.primaryMedia != null,
+                        onSelected = { suggestion ->
+                            onAction(ComposerAction.AddressChosen(suggestion))
+                            onBack()
+                        }
+                    )
+                }
+            }
+            if (state.lookupInFlight) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("Searching NYC addresses")
+                    }
+                }
+            }
+            items(state.addressSuggestions, key = { it.label }) { suggestion ->
+                AddressSuggestionRow(
+                    suggestion = suggestion,
+                    onClick = {
+                        onAction(ComposerAction.AddressChosen(suggestion))
+                        onBack()
+                    }
+                )
+            }
+            if (
+                !state.lookupInFlight &&
+                state.addressSuggestions.isEmpty() &&
+                state.addressQuery.isNotBlank()
+            ) {
+                item {
+                    Text(
+                        "No NYC address matches found.",
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlateEntryScreen(
+    state: ComposerUiState,
+    onAction: (ComposerAction) -> Unit,
+    onBack: () -> Unit,
+    onCandidateSelected: (PlateCandidate) -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(state.plate, selection = TextRange(state.plate.length)))
+    }
+
+    BackHandler(onBack = onBack)
+
+    LaunchedEffect(Unit) {
+        delay(120)
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    LaunchedEffect(state.plate) {
+        if (state.plate != fieldValue.text) {
+            fieldValue = TextFieldValue(state.plate, selection = TextRange(state.plate.length))
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding()
+            .imePadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Plate",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center
+            )
+            TextButton(
+                onClick = {
+                    focusManager.clearFocus()
+                    onBack()
+                }
+            ) {
+                Text("Done")
+            }
+        }
+
+        OutlinedTextField(
+            value = fieldValue,
+            onValueChange = { next ->
+                val normalized = PlatePatternClassifier.normalizePlateInput(next.text)
+                    .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
+                val selectionEnd = next.selection.end.coerceIn(0, normalized.length)
+                fieldValue = TextFieldValue(normalized, selection = TextRange(selectionEnd))
+                onAction(ComposerAction.FieldsChanged(plate = normalized))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+            singleLine = true,
+            label = { Text("License plate") },
+            trailingIcon = if (fieldValue.text.isNotEmpty()) {
+                {
+                    IconButton(
+                        onClick = {
+                            fieldValue = TextFieldValue("")
+                            onAction(ComposerAction.FieldsChanged(plate = ""))
+                        }
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Clear plate")
+                    }
+                }
+            } else {
+                null
+            },
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    focusManager.clearFocus()
+                    onBack()
+                }
+            )
+        )
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
+            if (state.plateCandidates.isEmpty()) {
+                item {
+                    Text(
+                        "No plate candidates found in the image.",
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                item {
+                    Text(
+                        "Possible plates",
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                items(state.plateCandidates, key = { it.plate }) { candidate ->
+                    PlateCandidateChoiceRow(
+                        candidate = candidate,
+                        selected = candidate.plate == state.selectedPlateCandidate,
+                        onClick = { onCandidateSelected(candidate) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddressSuggestionRow(
+    suggestion: AddressSuggestion,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.LocationOn, contentDescription = null)
+            Text(
+                suggestion.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageAddressPickerRow(
+    photoAddressSuggestion: AddressSuggestion?,
+    hasMedia: Boolean,
+    onSelected: (AddressSuggestion) -> Unit
+) {
+    if (!hasMedia && photoAddressSuggestion == null) return
+    val suggestion = photoAddressSuggestion
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (suggestion != null) Modifier.clickable { onSelected(suggestion) } else Modifier)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.LocationOn, contentDescription = null)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    if (suggestion != null) "Use address from image" else "No image address found",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    suggestion?.label ?: "This photo or video did not include usable GPS metadata.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlateCandidateChoiceRow(
+    candidate: PlateCandidate,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        border = androidx.compose.foundation.BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) Color(0xFF20B15A) else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            PlateCandidateThumbnail(candidate = candidate)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(candidate.plate, style = MaterialTheme.typography.titleMedium)
+                candidate.plateCorrectionText()?.let { correctionText ->
+                    Text(
+                        correctionText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    "${(candidate.confidence * 100).toInt()}% confidence",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                candidate.stateClassifierText()?.let { stateText ->
+                    Text(
+                        stateText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                candidate.plateTypeText()?.let { typeText ->
+                    Text(
+                        typeText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                if (selected) "Selected" else "Use",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) Color(0xFF20B15A) else MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }
 
@@ -1993,6 +4523,7 @@ private fun VerifyFieldsPanel(
     onAction: (ComposerAction) -> Unit,
     onShowComplaintChooser: () -> Unit,
     onShowPlateCandidates: () -> Unit,
+    onShowAddressSearch: () -> Unit,
     onShowAddressMap: () -> Unit
 ) {
     Row(
@@ -2006,13 +4537,13 @@ private fun VerifyFieldsPanel(
             onClick = onShowComplaintChooser,
             isError = state.validationErrors.complaint != null
         )
-        ReportedField(
+        ReportedSelectionField(
             label = "Plate",
-            value = state.plate,
-            onValueChange = { onAction(ComposerAction.FieldsChanged(plate = it.take(8))) },
+            value = state.plate.ifBlank { "Enter plate" },
             modifier = Modifier.weight(if (isLandscape) 0.84f else 0.87f),
             isError = state.validationErrors.plate != null,
-            trailingContent = if (state.plateCandidates.isNotEmpty()) {
+            onClick = onShowPlateCandidates,
+            trailing = if (state.plateCandidates.isNotEmpty()) {
                 {
                     Box(
                         modifier = Modifier
@@ -2050,7 +4581,7 @@ private fun VerifyFieldsPanel(
     if (isLandscape) {
         AddressField(
             state = state,
-            onAction = onAction,
+            onShowAddressSearch = onShowAddressSearch,
             onShowAddressMap = onShowAddressMap
         )
         state.validationErrors.address?.let { ValidationMessage(it) }
@@ -2066,35 +4597,10 @@ private fun VerifyFieldsPanel(
     } else {
         AddressField(
             state = state,
-            onAction = onAction,
+            onShowAddressSearch = onShowAddressSearch,
             onShowAddressMap = onShowAddressMap
         )
         state.validationErrors.address?.let { ValidationMessage(it) }
-    }
-    if (state.lookupInFlight) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text("Searching NYC addresses")
-        }
-    }
-    state.addressSuggestions.forEach { suggestion ->
-        OutlinedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onAction(ComposerAction.AddressChosen(suggestion)) }
-        ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Outlined.LocationOn, contentDescription = null)
-                Text(suggestion.label)
-            }
-        }
     }
     if (!isLandscape) {
         OccurredAtField(
@@ -2144,18 +4650,15 @@ private fun VerifyFieldsPanel(
 @Composable
 private fun AddressField(
     state: ComposerUiState,
-    onAction: (ComposerAction) -> Unit,
+    onShowAddressSearch: () -> Unit,
     onShowAddressMap: () -> Unit
 ) {
-    ReportedField(
-        "Address",
-        state.addressQuery,
-        onValueChange = { onAction(ComposerAction.AddressQueryChanged(it)) },
+    ReportedSelectionField(
+        label = "Address",
+        value = state.addressQuery.ifBlank { "Enter address" },
         isError = state.validationErrors.address != null,
-        onClear = { onAction(ComposerAction.AddressQueryChanged("")) },
-        autoFitText = true,
-        trailingWidth = if (state.addressQuery.isNotEmpty()) 88.dp else 48.dp,
-        trailingContent = {
+        onClick = onShowAddressSearch,
+        trailing = {
             IconButton(onClick = onShowAddressMap) {
                 Icon(Icons.Outlined.Map, contentDescription = "Pick address on map")
             }
@@ -3172,6 +5675,7 @@ private fun FullScreenMediaViewer(
 fun AddressMapSheet(
     initialLatLng: LatLng,
     initialAddress: String,
+    photoAddressSuggestion: AddressSuggestion?,
     onDismiss: () -> Unit,
     onLocationSettled: (AddressSuggestion) -> Unit
 ) {
@@ -3231,6 +5735,14 @@ fun AddressMapSheet(
         resolvedAddress = suggestion.label
         pendingSuggestion = suggestion
         lookupInFlight = false
+    }
+
+    fun usePhotoAddress(suggestion: AddressSuggestion) {
+        val latLng = LatLng(suggestion.latitude, suggestion.longitude)
+        resolvedAddress = suggestion.label
+        pendingSuggestion = suggestion
+        addressCache[addressCacheKey(latLng)] = suggestion
+        cameraPositionState.position = CameraPosition.fromLatLngZoom(latLng, 16f)
     }
 
     LaunchedEffect(Unit) {
@@ -3299,6 +5811,8 @@ fun AddressMapSheet(
                                     resolvedAddress = resolvedAddress,
                                     lookupInFlight = lookupInFlight,
                                     pendingSuggestion = pendingSuggestion,
+                                    photoAddressSuggestion = photoAddressSuggestion,
+                                    onPhotoAddressSelected = ::usePhotoAddress,
                                     onDismiss = onDismiss,
                                     onDone = {
                                         pendingSuggestion?.let(onLocationSettled)
@@ -3323,6 +5837,11 @@ fun AddressMapSheet(
                                     resolvedAddress = resolvedAddress,
                                     lookupInFlight = lookupInFlight,
                                     modifier = Modifier.fillMaxWidth()
+                                )
+                                ImageAddressPickerRow(
+                                    photoAddressSuggestion = photoAddressSuggestion,
+                                    hasMedia = photoAddressSuggestion != null,
+                                    onSelected = ::usePhotoAddress
                                 )
                                 AddressMapCanvas(
                                     cameraPositionState = cameraPositionState,
@@ -3376,6 +5895,8 @@ private fun AddressMapControls(
     resolvedAddress: String,
     lookupInFlight: Boolean,
     pendingSuggestion: AddressSuggestion?,
+    photoAddressSuggestion: AddressSuggestion?,
+    onPhotoAddressSelected: (AddressSuggestion) -> Unit,
     onDismiss: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier
@@ -3397,6 +5918,11 @@ private fun AddressMapControls(
                 resolvedAddress = resolvedAddress,
                 lookupInFlight = lookupInFlight,
                 modifier = Modifier.fillMaxWidth()
+            )
+            ImageAddressPickerRow(
+                photoAddressSuggestion = photoAddressSuggestion,
+                hasMedia = photoAddressSuggestion != null,
+                onSelected = onPhotoAddressSelected
             )
         }
         Row(

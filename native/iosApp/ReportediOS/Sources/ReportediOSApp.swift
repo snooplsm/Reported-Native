@@ -12,6 +12,11 @@ struct ReportediOSApp: App {
         Crashlytics.crashlytics().setCustomValue(Bundle.main.bundleIdentifier ?? "unknown", forKey: "bundle_id")
         Analytics.logEvent(AnalyticsEventAppOpen, parameters: nil)
         IOSMediaScanner.shared.start()
+#if DEBUG
+        Task {
+            await runReportedVoiceSmokeTestIfRequested()
+        }
+#endif
     }
 
     var body: some Scene {

@@ -43,6 +43,8 @@
 	<string>131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois.apps.googleusercontent.com</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Reported may save temporary report media generated while preparing a submission.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Reported uses the microphone when you choose to talk through report fields.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Reported uses your photo library to attach report media, read photo time and location metadata, and run optional on-device infraction detection.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -101,6 +101,7 @@ import com.reported.nativeandroid.live.LiveRollingVideoRecorder
 import com.reported.nativeandroid.live.LiveViewModel
 import com.reported.nativeandroid.screens.AddressMapSheet
 import com.reported.nativeandroid.screens.PrimaryButton
+import com.reported.shared.model.PlatePatternClassifier
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -185,6 +186,7 @@ fun LiveScreen(
         AddressMapSheet(
             initialLatLng = LatLng(state.latitude, state.longitude),
             initialAddress = state.address,
+            photoAddressSuggestion = null,
             onDismiss = { showMap = false },
             onLocationSettled = { suggestion ->
                 vm.onAction(
@@ -1135,7 +1137,7 @@ private fun LiveIncidentDetailSummary(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = plate,
-                    onValueChange = { plate = it.uppercase().take(8) },
+                    onValueChange = { plate = it.uppercase().take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH) },
                     modifier = Modifier.weight(1f),
                     label = { Text("Plate") },
                     singleLine = true

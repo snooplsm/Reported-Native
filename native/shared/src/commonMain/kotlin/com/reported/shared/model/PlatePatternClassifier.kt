@@ -15,7 +15,7 @@ data class PlatePatternMatch(
 )
 
 object PlatePatternClassifier {
-    const val MAX_LICENSE_PLATE_LENGTH = 8
+    const val MAX_LICENSE_PLATE_LENGTH = 10
 
     private val nyTaxiPattern = Regex("^Y\\d{6}C$")
     private val nyTlcPattern = Regex("^T\\d{6}C$")

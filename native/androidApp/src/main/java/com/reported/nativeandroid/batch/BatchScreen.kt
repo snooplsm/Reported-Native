@@ -70,6 +70,7 @@ import com.reported.nativeandroid.screens.buildSubmissionMedia
 import com.reported.nativeandroid.screens.extractSubmissionMetadata
 import com.reported.nativeandroid.screens.reverseGeocodeAddress
 import com.reported.shared.model.Catalogs
+import com.reported.shared.model.PlatePatternClassifier
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -506,7 +507,7 @@ private fun BatchIncidentEditor(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(plate, { plate = it.uppercase().take(8) }, modifier = Modifier.weight(1f), label = { Text("Plate") }, singleLine = true)
+            OutlinedTextField(plate, { plate = it.uppercase().take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH) }, modifier = Modifier.weight(1f), label = { Text("Plate") }, singleLine = true)
             OutlinedTextField(state, { state = it.uppercase().take(2) }, modifier = Modifier.width(108.dp), label = { Text("State") }, singleLine = true)
         }
         OutlinedTextField(address, { address = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Address") }, maxLines = 2)

@@ -754,7 +754,8 @@ class ComposerViewModel : ViewModel() {
                 latitude = action.latitude,
                 longitude = action.longitude,
                 inferredState = action.inferredState,
-                inferredAddress = action.inferredAddress
+                inferredAddress = action.inferredAddress,
+                photoAddressSuggestion = action.photoAddressSuggestion
             )
             is ComposerAction.FieldsChanged -> update(
                 plate = action.plate ?: _state.value.plate,
@@ -844,15 +845,24 @@ class ComposerViewModel : ViewModel() {
             }
             it.copy(
                 pendingMediaSelection = media,
+                primaryMedia = media,
+                stage = SubmissionStage.VERIFY,
+                plateCandidates = emptyList(),
+                selectedPlateCandidate = null,
+                plate = "",
+                detectionResultMessage = null,
+                photoOccurredAtIso = null,
+                photoAddressSuggestion = null,
                 complaintSheetOpen = true,
                 error = null,
                 validationErrors = it.validationErrors.copy(media = null)
             )
         }
+        persistDraft()
     }
 
     fun confirmPendingComplaint(complaintId: String) {
-        val pending = _state.value.pendingMediaSelection ?: return
+        val pending = _state.value.pendingMediaSelection ?: _state.value.primaryMedia ?: return
         _state.update {
             val mediaError = it.mediaLimitErrorFor(pending, replacingPrimary = true)
             if (mediaError != null) {
@@ -901,6 +911,7 @@ class ComposerViewModel : ViewModel() {
                 stage = SubmissionStage.VERIFY,
                 error = null,
                 photoOccurredAtIso = null,
+                photoAddressSuggestion = null,
                 validationErrors = it.validationErrors.copy(media = null, complaint = null)
             )
         }
@@ -928,6 +939,7 @@ class ComposerViewModel : ViewModel() {
                 stage = SubmissionStage.VERIFY,
                 error = null,
                 photoOccurredAtIso = null,
+                photoAddressSuggestion = null,
                 validationErrors = it.validationErrors.copy(media = null)
             )
         }
@@ -985,6 +997,7 @@ class ComposerViewModel : ViewModel() {
                         addressQuery = if (nextPrimary != null) current.addressQuery else "",
                         occurredAtIso = if (nextPrimary != null) current.occurredAtIso else "",
                         photoOccurredAtIso = if (nextPrimary != null) current.photoOccurredAtIso else null,
+                        photoAddressSuggestion = if (nextPrimary != null) current.photoAddressSuggestion else null,
                         latitude = if (nextPrimary != null) current.latitude else null,
                         longitude = if (nextPrimary != null) current.longitude else null,
                         validationErrors = current.validationErrors.copy(media = mediaError)
@@ -1182,7 +1195,8 @@ class ComposerViewModel : ViewModel() {
         latitude: Double? = null,
         longitude: Double? = null,
         inferredState: String? = null,
-        inferredAddress: String? = null
+        inferredAddress: String? = null,
+        photoAddressSuggestion: AddressSuggestion? = null
     ) {
         _state.update {
             it.copy(
@@ -1190,6 +1204,7 @@ class ComposerViewModel : ViewModel() {
                 photoOccurredAtIso = photoOccurredAtIso ?: it.photoOccurredAtIso,
                 latitude = latitude ?: it.latitude,
                 longitude = longitude ?: it.longitude,
+                photoAddressSuggestion = photoAddressSuggestion ?: it.photoAddressSuggestion,
                 plateRegion = inferredState ?: it.plateRegion,
                 address = inferredAddress ?: it.address,
                 addressQuery = inferredAddress ?: it.addressQuery,
@@ -1459,7 +1474,7 @@ class ComposerViewModel : ViewModel() {
             complaint = if (state.selectedComplaintId.isNullOrBlank()) "Choose a complaint type." else null,
             plate = when {
                 state.plate.isBlank() -> "Enter the license plate."
-                !PlatePatternClassifier.isValidForSubmission(state.plate) -> "License plate must be 8 characters or fewer."
+                !PlatePatternClassifier.isValidForSubmission(state.plate) -> "License plate must be ${PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH} characters or fewer."
                 else -> null
             },
             plateRegion = if (state.plateRegion.isBlank()) "Choose a state." else null,

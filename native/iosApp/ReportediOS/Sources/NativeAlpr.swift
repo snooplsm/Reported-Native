@@ -4,7 +4,6 @@ import Foundation
 import OnnxRuntimeBindings
 import SharedCore
 import UIKit
-import Vision
 
 private let detectorModelName = "yolo-v9-t-640-license-plates-end2end"
 private let ocrModelName = "global_mobile_vit_v2_ocr"
@@ -27,12 +26,21 @@ private let plateStateSize = 160
 private let plateSegmentationSize = 160
 private let ocrWidth = 140
 private let ocrHeight = 70
+private let ocrLegacyBatchSize = 8
 private let detectionThreshold: Float = 0.2
 private let complaintDetectionThreshold: Float = 0.9
 private let complaintClassBlockedBikeLane = 0
 private let complaintClassBlockedCrosswalk = 1
 private let segmentationMaskThreshold: Float = 0.5
 private let maxCandidates = 8
+private let deskewTriggerDegrees: CGFloat = 1.5
+private let maxDeskewDegrees = 20
+private let edgeThreshold = 32
+private let plateAxisPadding: CGFloat = 0.45
+private let plateCrossAxisPadding: CGFloat = 0.65
+private let plateLikeMinAspectRatio: CGFloat = 2.0
+private let plateLikeMaxAspectRatio: CGFloat = 6.5
+private let rotatedMatchDistanceMultiplier: CGFloat = 2.5
 private let ocrAlphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_")
 private let plateStateLabels = ["CT", "00", "NJ", "NY", "NY_PD", "NY_TLC", "PA"]
 private let videoFrameStride = 3
@@ -60,6 +68,37 @@ private struct Detection {
     let x2: CGFloat
     let y2: CGFloat
     let score: Float
+}
+
+private struct PlateCrop {
+    let ocrImage: UIImage
+    let previewImage: UIImage
+    let detection: Detection
+    let cornerPoints: [CGPoint]
+    let rotationDegrees: CGFloat
+}
+
+private struct RotatedImage {
+    let image: UIImage
+    let sourceToRotated: CGAffineTransform
+}
+
+private struct RotatedPlateMatch {
+    let rotatedImage: RotatedImage
+    let detection: Detection
+    let appliedRotationDegrees: CGFloat
+    let matchDistanceSquared: CGFloat
+}
+
+private struct OcrResult {
+    let text: String
+    let confidence: Double?
+}
+
+private struct PlateOcrSource {
+    let text: String
+    let confidence: Double?
+    let preferred: Bool
 }
 
 private struct PlateStateClassification {
@@ -173,7 +212,7 @@ final class NativeAlprEngine {
             plateState: plateState,
             complaint: try? session(for: complaintModelName, cached: \.complaintSession),
             expectedComplaintHint: expectedComplaintHint,
-            plateSegmentation: nil,
+            plateSegmentation: sessionIfPresent(for: plateSegmentationModelName, cached: \.plateSegmentationSession),
             vehicleSegmentation: nil,
             vehicleSegmentationNms: nil
         )
@@ -193,6 +232,7 @@ final class NativeAlprEngine {
             return []
         }
         let complaint = try? session(for: complaintModelName, cached: \.complaintSession)
+        let plateSegmentation = sessionIfPresent(for: plateSegmentationModelName, cached: \.plateSegmentationSession)
         let asset = AVAsset(url: media.fileURL)
         let videoTrack = asset.tracks(withMediaType: .video).first
         let durationSeconds = CMTimeGetSeconds(asset.duration)
@@ -262,7 +302,7 @@ final class NativeAlprEngine {
                 plateState: plateState,
                 complaint: complaint,
                 expectedComplaintHint: expectedComplaintHint,
-                plateSegmentation: nil,
+                plateSegmentation: plateSegmentation,
                 vehicleSegmentation: nil,
                 vehicleSegmentationNms: nil
             )
@@ -280,7 +320,7 @@ final class NativeAlprEngine {
                             plateState: plateState,
                             complaint: complaint,
                             expectedComplaintHint: expectedComplaintHint,
-                            plateSegmentation: nil,
+                            plateSegmentation: plateSegmentation,
                             vehicleSegmentation: nil,
                             vehicleSegmentationNms: nil
                         )
@@ -389,51 +429,56 @@ final class NativeAlprEngine {
         vehicleSegmentationNms: ORTSession?
     ) -> [ComposerState.PlateCandidate] {
         let detections = Array(detect(in: image, session: detector).prefix(maxCandidates))
-        let works: [(image: UIImage, detection: Detection, crop: UIImage)] = detections.compactMap { detection in
-            let refinedDetection = detection
-            guard let crop = crop(image: image, detection: refinedDetection) else { return nil }
-            return (image: image, detection: refinedDetection, crop: crop)
+#if DEBUG
+        let detectionSummary = detections.map(\.logDescription).joined(separator: ", ")
+        print("ReportedALPRCrop: detector returned \(detections.count) raw detection(s) for \(Int(image.size.width))x\(Int(image.size.height)): \(detectionSummary)")
+#endif
+        let works: [(image: UIImage, detection: Detection, crop: PlateCrop)] = detections.compactMap { detection in
+            guard let crop = refinedPlateCrop(
+                image: image,
+                detection: detection,
+                detector: detector,
+                plateSegmentation: plateSegmentation
+            ) else { return nil }
+#if DEBUG
+            print("ReportedALPRCrop: prepared source=\(detection.logDescription) refined=\(crop.detection.logDescription) rotation=\(crop.rotationDegrees) crop=\(Int(crop.ocrImage.size.width))x\(Int(crop.ocrImage.size.height)) pixels=\(crop.ocrImage.cgImage?.width ?? 0)x\(crop.ocrImage.cgImage?.height ?? 0)")
+#endif
+            return (image: image, detection: detection, crop: crop)
         }
-        let ocrTexts = runOcrBatched(images: works.map(\.crop), session: ocr)
-        let backupOcrTexts = runBackupTextOcrBatched(
-            images: works.map(\.crop),
-            primaryTexts: ocrTexts,
-            force: true
-        )
-        let classifications = classifyPlateStatesBatched(images: works.map(\.crop), session: plateState)
+        let ocrResults = runOcrBatched(images: works.map(\.crop.ocrImage), session: ocr)
+        let classifications = classifyPlateStatesBatched(images: works.map(\.crop.ocrImage), session: plateState)
+#if DEBUG
+        let ocrSummary = works.indices.map { index in
+            let ocr = ocrResults[safe: index] ?? OcrResult(text: "", confidence: nil)
+            let state = classifications[safe: index] ?? nil
+            return "#\(index) rawOcr='\(ocr.text)' state=\(state?.state ?? "-") stateConfidence=\(state?.confidence ?? -1)"
+        }.joined(separator: ", ")
+        print("ReportedALPRCrop: OCR/state results \(ocrSummary)")
+#endif
         var candidates: [ComposerState.PlateCandidate] = []
         for (index, work) in works.enumerated() {
-            let plate = normalizePlateText(selectPlateOcrText(
-                primaryText: ocrTexts[safe: index] ?? "",
-                backupText: backupOcrTexts[safe: index] ?? ""
-            ))
-            guard !plate.isEmpty else { continue }
+            let ownOcrResult = ocrResults[safe: index] ?? OcrResult(text: "", confidence: nil)
+            let preferredPlate = normalizePlateText(ownOcrResult.text)
             let classification = classifications[safe: index] ?? nil
-            let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
-            let correctedPlate = patternMatch?.normalizedPlate ?? plate
-            let wasPlateCorrected = correctedPlate != plate
-            let state = patternMatch?.state ?? (correctedPlate.hasPrefix("T") && correctedPlate.hasSuffix("C") ? "NY" : classification?.state)
-            guard !candidates.contains(where: { $0.plate == correctedPlate }) else { continue }
-            candidates.append(ComposerState.PlateCandidate(
-                plate: correctedPlate,
-                confidence: Double(min(1, work.detection.score)),
-                rawPlateText: wasPlateCorrected ? plate : nil,
-                wasPlateCorrected: wasPlateCorrected,
-                state: state,
-                stateConfidence: patternMatch.map { Double($0.confidence) } ?? classification?.confidence,
-                plateType: patternMatch?.type.name,
-                plateTypeLabel: patternMatch?.label,
-                bounds: CGRect(
-                    x: work.detection.x1 / image.size.width,
-                    y: work.detection.y1 / image.size.height,
-                    width: (work.detection.x2 - work.detection.x1) / image.size.width,
-                    height: (work.detection.y2 - work.detection.y1) / image.size.height
-                ),
-                plateCropPreview: work.crop,
-                videoFramePreview: nil,
-                videoFramePreviewURL: nil,
-                videoFrameTimeSeconds: nil
-            ))
+            let refinedDetection = work.crop.detection
+            for source in plateCandidateSources(
+                ownOcr: ownOcrResult,
+                preferredPlate: preferredPlate
+            ) {
+                guard let candidate = makePlateCandidate(
+                    plateText: source.text,
+                    ownOcrText: source.text,
+                    ownOcrConfidence: source.confidence,
+                    imageSize: image.size,
+                    sourceDetection: work.detection,
+                    refinedDetection: refinedDetection,
+                    cornerPoints: work.crop.cornerPoints,
+                    cropPreview: work.crop.previewImage,
+                    classification: classification,
+                    preferred: source.preferred
+                ), !candidates.contains(where: { $0.plate == candidate.plate }) else { continue }
+                candidates.append(candidate)
+            }
         }
         let sorted = candidates.sorted { lhs, rhs in
             lhs.confidence > rhs.confidence
@@ -472,62 +517,51 @@ final class NativeAlprEngine {
             )]
         }
         let detectionsByImage = detectBatched(images: images, session: detector)
-        let cropWorkByImage: [[(image: UIImage, detection: Detection, crop: UIImage)]] = images.enumerated().map { imageIndex, image in
+        let cropWorkByImage: [[(image: UIImage, detection: Detection, crop: PlateCrop)]] = images.enumerated().map { imageIndex, image in
             let detections = detectionsByImage[safe: imageIndex] ?? []
             return detections.prefix(maxCandidates).compactMap { detection in
-                let refinedDetection = detection
-                guard let crop = crop(image: image, detection: refinedDetection) else { return nil }
-                return (image: image, detection: refinedDetection, crop: crop)
+                guard let crop = refinedPlateCrop(
+                    image: image,
+                    detection: detection,
+                    detector: detector,
+                    plateSegmentation: plateSegmentation
+                ) else { return nil }
+                return (image: image, detection: detection, crop: crop)
             }
         }
         let allWork = cropWorkByImage.flatMap { $0 }
-        let ocrTexts = runOcrBatched(images: allWork.map(\.crop), session: ocr)
-        let backupOcrTexts = runBackupTextOcrBatched(
-            images: allWork.map(\.crop),
-            primaryTexts: ocrTexts,
-            force: false
-        )
-        let classifications = classifyPlateStatesBatched(images: allWork.map(\.crop), session: plateState)
+        let ocrResults = runOcrBatched(images: allWork.map(\.crop.ocrImage), session: ocr)
+        let classifications = classifyPlateStatesBatched(images: allWork.map(\.crop.ocrImage), session: plateState)
         var ocrIndex = 0
-        var backupOcrIndex = 0
         var classifierIndex = 0
         return cropWorkByImage.map { works in
             let image = works.first?.image
             var candidates: [ComposerState.PlateCandidate] = []
             for work in works {
-                let primaryPlateText = ocrTexts[safe: ocrIndex] ?? ""
+                let primaryOcr = ocrResults[safe: ocrIndex] ?? OcrResult(text: "", confidence: nil)
                 ocrIndex += 1
-                let backupPlateText = backupOcrTexts[safe: backupOcrIndex] ?? ""
-                backupOcrIndex += 1
-                let plate = normalizePlateText(selectPlateOcrText(primaryText: primaryPlateText, backupText: backupPlateText))
+                let preferredPlate = normalizePlateText(primaryOcr.text)
                 let classification = classifications[safe: classifierIndex] ?? nil
                 classifierIndex += 1
-                guard !plate.isEmpty else { continue }
-                let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
-                let correctedPlate = patternMatch?.normalizedPlate ?? plate
-                let wasPlateCorrected = correctedPlate != plate
-                let state = patternMatch?.state ?? (correctedPlate.hasPrefix("T") && correctedPlate.hasSuffix("C") ? "NY" : classification?.state)
-                guard !candidates.contains(where: { $0.plate == correctedPlate }) else { continue }
-                candidates.append(ComposerState.PlateCandidate(
-                    plate: correctedPlate,
-                    confidence: Double(min(1, work.detection.score)),
-                    rawPlateText: wasPlateCorrected ? plate : nil,
-                    wasPlateCorrected: wasPlateCorrected,
-                    state: state,
-                    stateConfidence: patternMatch.map { Double($0.confidence) } ?? classification?.confidence,
-                    plateType: patternMatch?.type.name,
-                    plateTypeLabel: patternMatch?.label,
-                    bounds: CGRect(
-                        x: work.detection.x1 / work.image.size.width,
-                        y: work.detection.y1 / work.image.size.height,
-                        width: (work.detection.x2 - work.detection.x1) / work.image.size.width,
-                        height: (work.detection.y2 - work.detection.y1) / work.image.size.height
-                    ),
-                    plateCropPreview: work.crop,
-                    videoFramePreview: nil,
-                    videoFramePreviewURL: nil,
-                    videoFrameTimeSeconds: nil
-                ))
+                let refinedDetection = work.crop.detection
+                for source in plateCandidateSources(
+                    ownOcr: primaryOcr,
+                    preferredPlate: preferredPlate
+                ) {
+                    guard let candidate = makePlateCandidate(
+                        plateText: source.text,
+                        ownOcrText: source.text,
+                        ownOcrConfidence: source.confidence,
+                        imageSize: work.image.size,
+                        sourceDetection: work.detection,
+                        refinedDetection: refinedDetection,
+                        cornerPoints: work.crop.cornerPoints,
+                        cropPreview: work.crop.previewImage,
+                        classification: classification,
+                        preferred: source.preferred
+                    ), !candidates.contains(where: { $0.plate == candidate.plate }) else { continue }
+                    candidates.append(candidate)
+                }
             }
             let sorted = candidates.sorted { $0.confidence > $1.confidence }
             guard let image else { return sorted }
@@ -536,6 +570,80 @@ final class NativeAlprEngine {
                 image: image,
                 complaint: complaint,
                 expectedComplaintHint: expectedComplaintHint
+            )
+        }
+    }
+
+    private func plateCandidateSources(
+        ownOcr: OcrResult,
+        preferredPlate: String
+    ) -> [PlateOcrSource] {
+        let reported = normalizePlateText(ownOcr.text)
+        var sources: [PlateOcrSource] = []
+        if !reported.isEmpty {
+            sources.append(PlateOcrSource(
+                text: reported,
+                confidence: ownOcr.confidence,
+                preferred: reported == preferredPlate
+            ))
+        }
+        return sources.sorted { lhs, rhs in
+            if lhs.preferred != rhs.preferred { return lhs.preferred }
+            return lhs.text < rhs.text
+        }
+    }
+
+    private func makePlateCandidate(
+        plateText: String,
+        ownOcrText: String?,
+        ownOcrConfidence: Double?,
+        imageSize: CGSize,
+        sourceDetection: Detection,
+        refinedDetection: Detection,
+        cornerPoints: [CGPoint],
+        cropPreview: UIImage,
+        classification: PlateStateClassification?,
+        preferred: Bool
+    ) -> ComposerState.PlateCandidate? {
+        let plate = normalizePlateText(plateText)
+        guard !plate.isEmpty else { return nil }
+        let patternMatch = PlatePatternClassifier.shared.classify(rawPlate: plate)
+        let correctedPlate = patternMatch?.normalizedPlate ?? plate
+        let wasPlateCorrected = correctedPlate != plate
+        let state = patternMatch?.state ?? (correctedPlate.hasPrefix("T") && correctedPlate.hasSuffix("C") ? "NY" : classification?.state)
+        let baseConfidence = Double(min(1, max(sourceDetection.score, refinedDetection.score)))
+        let confidence = min(1, baseConfidence + (preferred ? 0.0001 : 0))
+        return ComposerState.PlateCandidate(
+            plate: correctedPlate,
+            confidence: confidence,
+            rawPlateText: wasPlateCorrected ? plate : nil,
+            wasPlateCorrected: wasPlateCorrected,
+            ownOcrText: ownOcrText.flatMap { normalizePlateText($0).nilIfEmpty },
+            ownOcrConfidence: ownOcrConfidence,
+            state: state,
+            stateConfidence: patternMatch.map { Double($0.confidence) } ?? classification?.confidence,
+            plateType: patternMatch?.type.name,
+            plateTypeLabel: patternMatch?.label,
+            bounds: CGRect(
+                x: refinedDetection.x1 / imageSize.width,
+                y: refinedDetection.y1 / imageSize.height,
+                width: (refinedDetection.x2 - refinedDetection.x1) / imageSize.width,
+                height: (refinedDetection.y2 - refinedDetection.y1) / imageSize.height
+            ),
+            cornerPoints: normalizedCornerPoints(cornerPoints, imageSize: imageSize),
+            plateCropPreview: cropPreview,
+            videoFramePreview: nil,
+            videoFramePreviewURL: nil,
+            videoFrameTimeSeconds: nil
+        )
+    }
+
+    private func normalizedCornerPoints(_ points: [CGPoint], imageSize: CGSize) -> [CGPoint] {
+        guard points.count >= 4, imageSize.width > 0, imageSize.height > 0 else { return [] }
+        return points.prefix(4).map { point in
+            CGPoint(
+                x: (point.x / imageSize.width).clamped(to: 0...1),
+                y: (point.y / imageSize.height).clamped(to: 0...1)
             )
         }
     }
@@ -894,32 +1002,32 @@ final class NativeAlprEngine {
         return grouped.map { $0.sorted { lhs, rhs in lhs.score > rhs.score } }
     }
 
-    private func runOcr(image: UIImage, session: ORTSession) -> String {
-        let bytes = grayscaleBytes(from: image, width: ocrWidth, height: ocrHeight)
-        let data = bytes.withUnsafeBufferPointer { pointer in
-            NSMutableData(bytes: pointer.baseAddress, length: bytes.count)
-        }
-        guard
-            let inputName = try? session.inputNames().first,
-            let outputNames = try? session.outputNames(),
-            let input = try? ORTValue(
-                tensorData: data,
-                elementType: .uInt8,
-                shape: [1, ocrHeight, ocrWidth, 1].map(NSNumber.init(value:))
-            ),
-            let outputs = try? session.run(withInputs: [inputName: input], outputNames: Set(outputNames), runOptions: nil),
-            let output = outputs[outputNames[0]],
-            let raw = try? output.tensorData().asFloatArray()
-        else {
-            return ""
-        }
-        return decodeOcrRow(raw)
+    private func runOcr(image: UIImage, session: ORTSession) -> OcrResult {
+        runOcrBatched(images: [image], session: session).first ?? OcrResult(text: "", confidence: nil)
     }
 
-    private func runOcrBatched(images: [UIImage], session: ORTSession) -> [String] {
+    private func runOcrBatched(images: [UIImage], session: ORTSession) -> [OcrResult] {
         guard !images.isEmpty else { return [] }
-        if images.count == 1 { return [runOcr(image: images[0], session: session)] }
-        let bytes = images.flatMap { grayscaleBytes(from: $0, width: ocrWidth, height: ocrHeight) }
+        var results: [OcrResult] = []
+        var index = 0
+        while index < images.count {
+            let end = min(index + ocrLegacyBatchSize, images.count)
+            let chunk = Array(images[index..<end])
+            results.append(contentsOf: runOcrLegacyChunk(images: chunk, session: session))
+            index = end
+        }
+        return results
+    }
+
+    private func runOcrLegacyChunk(images: [UIImage], session: ORTSession) -> [OcrResult] {
+        guard !images.isEmpty, images.count <= ocrLegacyBatchSize else { return [] }
+        let imageByteCount = ocrWidth * ocrHeight
+        var bytes = [UInt8](repeating: 0, count: ocrLegacyBatchSize * imageByteCount)
+        for (index, image) in images.enumerated() {
+            let imageBytes = grayscaleBytes(from: image, width: ocrWidth, height: ocrHeight)
+            let offset = index * imageByteCount
+            bytes.replaceSubrange(offset..<(offset + imageByteCount), with: imageBytes)
+        }
         let data = bytes.withUnsafeBufferPointer { pointer in
             NSMutableData(bytes: pointer.baseAddress, length: bytes.count)
         }
@@ -929,121 +1037,44 @@ final class NativeAlprEngine {
             let input = try? ORTValue(
                 tensorData: data,
                 elementType: .uInt8,
-                shape: [images.count, ocrHeight, ocrWidth, 1].map(NSNumber.init(value:))
+                shape: [ocrLegacyBatchSize, ocrHeight, ocrWidth, 1].map(NSNumber.init(value:))
             ),
             let outputs = try? session.run(withInputs: [inputName: input], outputNames: Set(outputNames), runOptions: nil),
             let output = outputs[outputNames[0]],
             let raw = try? output.tensorData().asFloatArray(),
             raw.count >= images.count
         else {
-            return images.map { runOcr(image: $0, session: session) }
+            return images.map { _ in OcrResult(text: "", confidence: nil) }
         }
-        let rowSize = raw.count / images.count
+        let rowSize = raw.count / ocrLegacyBatchSize
         guard rowSize > 0 else {
-            return images.map { runOcr(image: $0, session: session) }
+            return images.map { _ in OcrResult(text: "", confidence: nil) }
         }
         return (0..<images.count).map { index in
             let start = index * rowSize
             let end = min(raw.count, start + rowSize)
-            return decodeOcrRow(Array(raw[start..<end]))
+            return decodeOcrResult(Array(raw[start..<end]))
         }
     }
 
-    private func runBackupTextOcrBatched(images: [UIImage], primaryTexts: [String], force: Bool) -> [String] {
-        guard !images.isEmpty else { return [] }
-        return images.enumerated().map { index, image in
-            let primaryText = primaryTexts[safe: index] ?? ""
-            guard force || shouldTryBackupTextOcr(primaryText) else { return "" }
-            return backupPlateText(from: recognizeBackupText(in: image), primaryText: primaryText)
-        }
-    }
-
-    private func recognizeBackupText(in image: UIImage) -> String {
-        guard let cgImage = image.cgImage else { return "" }
-        var recognizedText = ""
-        let request = VNRecognizeTextRequest { request, _ in
-            let observations = request.results as? [VNRecognizedTextObservation] ?? []
-            recognizedText = observations
-                .compactMap { $0.topCandidates(1).first?.string }
-                .joined(separator: " ")
-        }
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        request.recognitionLanguages = ["en-US"]
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
-        return recognizedText
-    }
-
-    private func shouldTryBackupTextOcr(_ primaryText: String) -> Bool {
-        let normalized = normalizePlateText(primaryText)
-        if normalized.isEmpty { return true }
-        if !(5...8).contains(normalized.count) { return true }
-        return PlatePatternClassifier.shared.classify(rawPlate: normalized) == nil && normalized.count >= 7
-    }
-
-    private func selectPlateOcrText(primaryText: String, backupText: String) -> String {
-        let primary = normalizePlateText(primaryText)
-        let backup = normalizePlateText(backupText)
-        if backup.isEmpty { return primaryText }
-        if primary.isEmpty { return backup }
-        let primaryPattern = PlatePatternClassifier.shared.classify(rawPlate: primary)
-        let backupPattern = PlatePatternClassifier.shared.classify(rawPlate: backup)
-        if backupPattern != nil && primaryPattern == nil { return backup }
-        if !(5...8).contains(primary.count), (5...8).contains(backup.count) { return backup }
-        return primaryText
-    }
-
-    private func backupPlateText(from rawText: String, primaryText: String) -> String {
-        let primary = normalizePlateText(primaryText)
-        let tokenCandidates = rawText
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .flatMap { plateLikeWindows(from: $0) }
-        let compactCandidates = plateLikeWindows(from: normalizePlateText(rawText))
-        let candidates = Array(Set(tokenCandidates + compactCandidates))
-        guard !candidates.isEmpty else {
-            let normalized = normalizePlateText(rawText)
-            return (5...8).contains(normalized.count) ? normalized : ""
-        }
-        return candidates.max { lhs, rhs in
-            backupPlateScore(lhs, primary: primary) < backupPlateScore(rhs, primary: primary)
-        } ?? ""
-    }
-
-    private func plateLikeWindows(from rawText: String) -> [String] {
-        let normalized = normalizePlateText(rawText)
-        if (5...8).contains(normalized.count) { return [normalized] }
-        guard normalized.count >= 5 else { return [] }
-        var windows: [String] = []
-        let chars = Array(normalized)
-        for size in stride(from: 8, through: 5, by: -1) where chars.count >= size {
-            for start in 0...(chars.count - size) {
-                windows.append(String(chars[start..<(start + size)]))
-            }
-        }
-        return windows
-    }
-
-    private func backupPlateScore(_ candidate: String, primary: String) -> Double {
-        var score = 0.0
-        if let match = PlatePatternClassifier.shared.classify(rawPlate: candidate) {
-            score += Double(match.confidence) + 3.0
-        }
-        if candidate == primary { score += 1.0 }
-        if (6...8).contains(candidate.count) { score += 0.5 }
-        score += Double(candidate.count) / 100.0
-        return score
-    }
-
-    private func decodeOcrRow(_ raw: [Float]) -> String {
+    private func decodeOcrResult(_ raw: [Float]) -> OcrResult {
         let slotCount = raw.count / ocrAlphabet.count
-        guard slotCount > 0 else { return "" }
-        return (0..<slotCount).map { slotIndex in
+        guard slotCount > 0 else { return OcrResult(text: "", confidence: nil) }
+        var slotConfidences: [Double] = []
+        let text = (0..<slotCount).map { slotIndex in
             let start = slotIndex * ocrAlphabet.count
             let end = start + ocrAlphabet.count
-            let best = raw[start..<end].enumerated().max { $0.element < $1.element }?.offset ?? 0
+            let bestPair = raw[start..<end].enumerated().max { $0.element < $1.element }
+            let best = bestPair?.offset ?? 0
+            slotConfidences.append(Double(bestPair?.element ?? 0))
             return String(ocrAlphabet[best])
         }.joined()
+        let visibleConfidences = zip(Array(text), slotConfidences)
+            .filter { character, _ in character != "_" }
+            .map(\.1)
+        let confidenceSource = visibleConfidences.isEmpty ? slotConfidences : visibleConfidences
+        let averageConfidence = confidenceSource.isEmpty ? nil : confidenceSource.reduce(0, +) / Double(confidenceSource.count)
+        return OcrResult(text: text, confidence: averageConfidence)
     }
 
     private func classifyPlateState(image: UIImage, session: ORTSession) -> PlateStateClassification? {
@@ -1140,12 +1171,13 @@ final class NativeAlprEngine {
         return raw
     }
 
-    private func segmentedDetection(
-        image: UIImage,
-        detection: Detection,
+    private func segmentPlateCrop(
+        source: UIImage,
+        expandedDetection: Detection,
+        expandedCrop: UIImage,
         session: ORTSession?
-    ) -> Detection? {
-        guard let session, let expandedCrop = crop(image: image, detection: detection) else {
+    ) -> PlateCrop? {
+        guard let session else {
             return nil
         }
         let resized = expandedCrop.resized(to: CGSize(width: plateSegmentationSize, height: plateSegmentationSize))
@@ -1160,29 +1192,33 @@ final class NativeAlprEngine {
         guard side > 1, side * side <= raw.count else {
             return nil
         }
-        guard let maskBounds = maskBounds(raw: raw, side: side, cropSize: expandedCrop.size) else {
+        guard let cropPoints = maskToOrientedBox(raw: raw, side: side, cropSize: expandedCrop.size) else {
             return nil
         }
-        let refined = Detection(
-            x1: (detection.x1 + maskBounds.minX).clamped(to: 0...image.size.width),
-            y1: (detection.y1 + maskBounds.minY).clamped(to: 0...image.size.height),
-            x2: (detection.x1 + maskBounds.maxX).clamped(to: 0...image.size.width),
-            y2: (detection.y1 + maskBounds.maxY).clamped(to: 0...image.size.height),
-            score: detection.score
+        let sourcePoints = cropPoints.map { point in
+            CGPoint(
+                x: (point.x + expandedDetection.x1).clamped(to: 0...source.size.width),
+                y: (point.y + expandedDetection.y1).clamped(to: 0...source.size.height)
+            )
+        }
+        let detection = boundingDetection(
+            points: sourcePoints,
+            score: expandedDetection.score,
+            fallback: expandedDetection
         )
-        guard refined.x2 - refined.x1 >= 8, refined.y2 - refined.y1 >= 8 else {
-            return nil
-        }
-        return refined
+        let bitmap = crop(image: source, detection: detection) ?? expandedCrop
+        return PlateCrop(
+            ocrImage: bitmap,
+            previewImage: bitmap,
+            detection: detection,
+            cornerPoints: sourcePoints,
+            rotationDegrees: estimateAngle(from: sourcePoints)
+        )
     }
 
-    private func maskBounds(raw: [Float], side: Int, cropSize: CGSize) -> CGRect? {
+    private func maskToOrientedBox(raw: [Float], side: Int, cropSize: CGSize) -> [CGPoint]? {
+        var points: [CGPoint] = []
         let logitOutput = raw.contains { $0 < 0 || $0 > 1 }
-        var minX = CGFloat.greatestFiniteMagnitude
-        var minY = CGFloat.greatestFiniteMagnitude
-        var maxX = -CGFloat.greatestFiniteMagnitude
-        var maxY = -CGFloat.greatestFiniteMagnitude
-        var count = 0
         for y in 0..<side {
             for x in 0..<side {
                 let rawValue = raw[y * side + x]
@@ -1195,29 +1231,319 @@ final class NativeAlprEngine {
                 guard probability >= segmentationMaskThreshold else { continue }
                 let px = (CGFloat(x) + 0.5) / CGFloat(side) * cropSize.width
                 let py = (CGFloat(y) + 0.5) / CGFloat(side) * cropSize.height
-                minX = min(minX, px)
-                minY = min(minY, py)
-                maxX = max(maxX, px)
-                maxY = max(maxY, py)
-                count += 1
+                points.append(CGPoint(x: px, y: py))
             }
         }
-        guard count >= 8, maxX > minX, maxY > minY else {
+        guard points.count >= 8 else {
             return nil
         }
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+
+        let meanX = points.reduce(CGFloat(0)) { $0 + $1.x } / CGFloat(points.count)
+        let meanY = points.reduce(CGFloat(0)) { $0 + $1.y } / CGFloat(points.count)
+        var xx: CGFloat = 0
+        var yy: CGFloat = 0
+        var xy: CGFloat = 0
+        points.forEach { point in
+            let dx = point.x - meanX
+            let dy = point.y - meanY
+            xx += dx * dx
+            yy += dy * dy
+            xy += dx * dy
+        }
+        let axisAngle = 0.5 * atan2(2 * xy, xx - yy)
+        let axisX = cos(axisAngle)
+        let axisY = sin(axisAngle)
+        let crossX = -axisY
+        let crossY = axisX
+        var minAxis = CGFloat.greatestFiniteMagnitude
+        var maxAxis = -CGFloat.greatestFiniteMagnitude
+        var minCross = CGFloat.greatestFiniteMagnitude
+        var maxCross = -CGFloat.greatestFiniteMagnitude
+        points.forEach { point in
+            let dx = point.x - meanX
+            let dy = point.y - meanY
+            let axis = dx * axisX + dy * axisY
+            let cross = dx * crossX + dy * crossY
+            minAxis = min(minAxis, axis)
+            maxAxis = max(maxAxis, axis)
+            minCross = min(minCross, cross)
+            maxCross = max(maxCross, cross)
+        }
+        guard maxAxis - minAxis >= 4, maxCross - minCross >= 4 else {
+            return nil
+        }
+
+        func corner(axis: CGFloat, cross: CGFloat) -> CGPoint {
+            CGPoint(
+                x: (meanX + axis * axisX + cross * crossX).clamped(to: 0...cropSize.width),
+                y: (meanY + axis * axisY + cross * crossY).clamped(to: 0...cropSize.height)
+            )
+        }
+        return [
+            corner(axis: minAxis, cross: minCross),
+            corner(axis: maxAxis, cross: minCross),
+            corner(axis: maxAxis, cross: maxCross),
+            corner(axis: minAxis, cross: maxCross)
+        ]
+    }
+
+    private func estimateAngle(from points: [CGPoint]) -> CGFloat {
+        guard points.count >= 2 else { return 0 }
+        let dx = points[1].x - points[0].x
+        let dy = points[1].y - points[0].y
+        return normalizePlateAngle(atan2(dy, dx) * 180 / .pi)
+    }
+
+    private func boundingDetection(points: [CGPoint], score: Float, fallback: Detection) -> Detection {
+        guard points.count >= 4 else { return fallback }
+        let minX = points.map(\.x).min() ?? fallback.x1
+        let maxX = points.map(\.x).max() ?? fallback.x2
+        let minY = points.map(\.y).min() ?? fallback.y1
+        let maxY = points.map(\.y).max() ?? fallback.y2
+        guard maxX - minX >= 8, maxY - minY >= 8 else {
+            return fallback
+        }
+        return Detection(x1: minX, y1: minY, x2: maxX, y2: maxY, score: score)
+    }
+
+    private func refinedPlateCrop(
+        image: UIImage,
+        detection: Detection,
+        detector: ORTSession,
+        plateSegmentation: ORTSession?
+    ) -> PlateCrop? {
+        guard let initialPlateCrop = crop(image: image, detection: detection) else {
+            return nil
+        }
+        if detection.hasPlateLikeAspectRatio {
+            return PlateCrop(
+                ocrImage: initialPlateCrop,
+                previewImage: initialPlateCrop,
+                detection: detection,
+                cornerPoints: detection.cornerPoints(),
+                rotationDegrees: 0
+            )
+        }
+
+        let expandedDetection = expandedPlateDetection(image: image, detection: detection)
+        let initialAngle = estimateDeskewAngle(source: initialPlateCrop)
+        guard let expandedCrop = crop(image: image, detection: expandedDetection) else {
+            return PlateCrop(
+                ocrImage: initialPlateCrop,
+                previewImage: initialPlateCrop,
+                detection: detection,
+                cornerPoints: detection.cornerPoints(),
+                rotationDegrees: 0
+            )
+        }
+
+        let angle: CGFloat
+        if abs(initialAngle) >= deskewTriggerDegrees {
+            angle = initialAngle
+        } else {
+            angle = estimateDeskewAngle(source: expandedCrop)
+        }
+        guard abs(angle) >= deskewTriggerDegrees else {
+            return PlateCrop(
+                ocrImage: initialPlateCrop,
+                previewImage: initialPlateCrop,
+                detection: detection,
+                cornerPoints: detection.cornerPoints(),
+                rotationDegrees: 0
+            )
+        }
+
+        guard let rotatedMatch = findBestRotatedPlateMatch(
+            image: image,
+            detection: detection,
+            estimatedAngle: angle,
+            detector: detector
+        ) else {
+            return PlateCrop(
+                ocrImage: initialPlateCrop,
+                previewImage: initialPlateCrop,
+                detection: detection,
+                cornerPoints: detection.cornerPoints(),
+                rotationDegrees: 0
+            )
+        }
+
+        let rotatedExpandedDetection = expandedPlateDetection(
+            image: rotatedMatch.rotatedImage.image,
+            detection: rotatedMatch.detection
+        )
+        let rotatedExpandedCrop = crop(image: rotatedMatch.rotatedImage.image, detection: rotatedExpandedDetection)
+        let segmentedRotatedCrop = rotatedExpandedCrop.flatMap {
+            segmentPlateCrop(
+                source: rotatedMatch.rotatedImage.image,
+                expandedDetection: rotatedExpandedDetection,
+                expandedCrop: $0,
+                session: plateSegmentation
+            )
+        }
+        let ocrDetection = segmentedRotatedCrop?.detection ?? rotatedMatch.detection
+        guard let plateImage = crop(image: rotatedMatch.rotatedImage.image, detection: ocrDetection)
+            ?? crop(image: rotatedMatch.rotatedImage.image, detection: rotatedMatch.detection)
+        else {
+            return nil
+        }
+
+        return PlateCrop(
+            ocrImage: plateImage,
+            previewImage: plateImage,
+            detection: detection.withScore(ocrDetection.score),
+            cornerPoints: ocrDetection.originalImageCornerPoints(
+                rotatedImage: rotatedMatch.rotatedImage,
+                originalDetection: detection
+            ),
+            rotationDegrees: -rotatedMatch.appliedRotationDegrees
+        )
+    }
+
+    private func findBestRotatedPlateMatch(
+        image: UIImage,
+        detection: Detection,
+        estimatedAngle: CGFloat,
+        detector: ORTSession
+    ) -> RotatedPlateMatch? {
+        var rotations: [CGFloat] = []
+        for rotation in [-estimatedAngle, estimatedAngle] {
+            let rounded = Int(rotation.rounded())
+            guard !rotations.contains(where: { Int($0.rounded()) == rounded }) else { continue }
+            rotations.append(rotation)
+        }
+
+        let matches = rotations.compactMap { rotationDegrees -> RotatedPlateMatch? in
+            let rotatedImage = image.rotatedWithTransform(byDegrees: rotationDegrees)
+            let expectedDetection = detection.mapped(with: rotatedImage.sourceToRotated)
+            guard let rotatedDetection = bestMatch(
+                in: detect(in: rotatedImage.image, session: detector),
+                for: expectedDetection
+            ) else {
+                return nil
+            }
+            return RotatedPlateMatch(
+                rotatedImage: rotatedImage,
+                detection: rotatedDetection,
+                appliedRotationDegrees: rotationDegrees,
+                matchDistanceSquared: rotatedDetection.centerDistanceSquared(from: expectedDetection)
+            )
+        }
+
+        return matches.sorted { lhs, rhs in
+            if abs(lhs.detection.score - rhs.detection.score) > 0.0001 {
+                return lhs.detection.score > rhs.detection.score
+            }
+            return lhs.matchDistanceSquared < rhs.matchDistanceSquared
+        }.first
+    }
+
+    private func bestMatch(in detections: [Detection], for expected: Detection) -> Detection? {
+        guard !detections.isEmpty else { return nil }
+        let maxDistance = max(expected.width, expected.height) * rotatedMatchDistanceMultiplier
+        return detections.min { lhs, rhs in
+            lhs.centerDistanceSquared(from: expected) < rhs.centerDistanceSquared(from: expected)
+        }.flatMap { detection in
+            detection.centerDistanceSquared(from: expected) <= maxDistance * maxDistance ? detection : nil
+        }
+    }
+
+    private func expandedPlateDetection(image: UIImage, detection: Detection) -> Detection {
+        let width = detection.width
+        let height = detection.height
+        return Detection(
+            x1: (detection.x1 - width * plateAxisPadding).clamped(to: 0...image.size.width),
+            y1: (detection.y1 - height * plateCrossAxisPadding).clamped(to: 0...image.size.height),
+            x2: (detection.x2 + width * plateAxisPadding).clamped(to: 0...image.size.width),
+            y2: (detection.y2 + height * plateCrossAxisPadding).clamped(to: 0...image.size.height),
+            score: detection.score
+        )
+    }
+
+    private func estimateDeskewAngle(source: UIImage) -> CGFloat {
+        let analysisWidth = 220
+        let scale = CGFloat(analysisWidth) / max(source.size.width, 1)
+        let analysisHeight = max(48, Int((source.size.height * scale).rounded()))
+        let rgba = rgbaBytes(from: source, width: analysisWidth, height: analysisHeight)
+        var grayscale = [Int](repeating: 0, count: analysisWidth * analysisHeight)
+        for index in 0..<(analysisWidth * analysisHeight) {
+            let offset = index * 4
+            let r = Int(rgba[offset])
+            let g = Int(rgba[offset + 1])
+            let b = Int(rgba[offset + 2])
+            grayscale[index] = (r * 30 + g * 59 + b * 11) / 100
+        }
+
+        var allEdgePoints: [(x: Int, y: Int)] = []
+        var horizontalEdgePoints: [(x: Int, y: Int)] = []
+        var orientationVotes: [Int: Int] = [:]
+        for y in 1..<(analysisHeight - 1) {
+            for x in 1..<(analysisWidth - 1) {
+                let index = y * analysisWidth + x
+                let gx = grayscale[index + 1] - grayscale[index - 1]
+                let gy = grayscale[index + analysisWidth] - grayscale[index - analysisWidth]
+                let magnitude = abs(gx) + abs(gy)
+                guard magnitude >= edgeThreshold else { continue }
+
+                allEdgePoints.append((x, y))
+                if CGFloat(abs(gy)) > CGFloat(abs(gx)) * 0.65 {
+                    horizontalEdgePoints.append((x, y))
+                    let edgeAngle = normalizePlateAngle(
+                        CGFloat(atan2(Double(-gx), Double(gy)) * 180 / Double.pi)
+                    )
+                    let angleBin = Int(edgeAngle.rounded()).clamped(to: -maxDeskewDegrees...maxDeskewDegrees)
+                    orientationVotes[angleBin, default: 0] += magnitude
+                }
+            }
+        }
+
+        if let bestOrientation = orientationVotes.max(by: { $0.value < $1.value }),
+           bestOrientation.value >= edgeThreshold * 18 {
+            return CGFloat(bestOrientation.key)
+        }
+
+        let edgePoints = horizontalEdgePoints.count >= 24 ? horizontalEdgePoints : allEdgePoints
+        guard edgePoints.count >= 24 else { return 0 }
+
+        var bestAngle = 0
+        var bestVotes = 0
+        for angle in -maxDeskewDegrees...maxDeskewDegrees {
+            let normalRadians = CGFloat(angle + 90) * .pi / 180
+            let cosTheta = cos(normalRadians)
+            let sinTheta = sin(normalRadians)
+            var rhoVotes: [Int: Int] = [:]
+            for point in edgePoints {
+                let rho = Int((CGFloat(point.x) * cosTheta + CGFloat(point.y) * sinTheta).rounded())
+                let votes = rhoVotes[rho, default: 0] + 1
+                rhoVotes[rho] = votes
+                if votes > bestVotes {
+                    bestVotes = votes
+                    bestAngle = angle
+                }
+            }
+        }
+        return CGFloat(bestAngle)
+    }
+
+    private func normalizePlateAngle(_ degrees: CGFloat) -> CGFloat {
+        var normalized = degrees
+        while normalized > 45 { normalized -= 90 }
+        while normalized < -45 { normalized += 90 }
+        return normalized.clamped(to: -CGFloat(maxDeskewDegrees)...CGFloat(maxDeskewDegrees))
     }
 
     private func crop(image: UIImage, detection: Detection) -> UIImage? {
         guard let cgImage = image.cgImage else { return nil }
         let scaleX = CGFloat(cgImage.width) / image.size.width
         let scaleY = CGFloat(cgImage.height) / image.size.height
-        let rect = CGRect(
-            x: detection.x1 * scaleX,
-            y: detection.y1 * scaleY,
-            width: (detection.x2 - detection.x1) * scaleX,
-            height: (detection.y2 - detection.y1) * scaleY
-        ).integral
+        let left = max(0, Int(detection.x1 * scaleX))
+        let top = max(0, Int(detection.y1 * scaleY))
+        let right = min(cgImage.width, Int(detection.x2 * scaleX))
+        let bottom = min(cgImage.height, Int(detection.y2 * scaleY))
+        let width = right - left
+        let height = bottom - top
+        guard width > 2, height > 2 else { return nil }
+        let rect = CGRect(x: left, y: top, width: width, height: height)
         guard let cropped = cgImage.cropping(to: rect) else { return nil }
         return UIImage(cgImage: cropped)
     }
@@ -1225,11 +1551,14 @@ final class NativeAlprEngine {
     private func letterbox(image: UIImage, targetSize: Int) -> LetterboxedImage {
         let target = CGFloat(targetSize)
         let scale = min(target / image.size.width, target / image.size.height)
-        let scaledWidth = image.size.width * scale
-        let scaledHeight = image.size.height * scale
+        let scaledWidth = max(1, floor(image.size.width * scale))
+        let scaledHeight = max(1, floor(image.size.height * scale))
         let padX = (target - scaledWidth) / 2
         let padY = (target - scaledHeight) / 2
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: target, height: target))
+        let rendererFormat = UIGraphicsImageRendererFormat()
+        rendererFormat.scale = 1
+        rendererFormat.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: target, height: target), format: rendererFormat)
         let rendered = renderer.image { context in
             UIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255, alpha: 1).setFill()
             context.fill(CGRect(x: 0, y: 0, width: target, height: target))
@@ -1242,7 +1571,10 @@ final class NativeAlprEngine {
         let target = CGFloat(vehicleSegmentationSize)
         let scale = target / max(image.size.width, image.size.height)
         let scaledSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: target, height: target))
+        let rendererFormat = UIGraphicsImageRendererFormat()
+        rendererFormat.scale = 1
+        rendererFormat.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: target, height: target), format: rendererFormat)
         let rendered = renderer.image { context in
             UIColor.black.setFill()
             context.fill(CGRect(x: 0, y: 0, width: target, height: target))
@@ -1309,19 +1641,63 @@ private extension UIImage {
         if self.size == size {
             return self
         }
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let rendererFormat = UIGraphicsImageRendererFormat()
+        rendererFormat.scale = 1
+        rendererFormat.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: rendererFormat)
         return renderer.image { _ in
             self.draw(in: CGRect(origin: .zero, size: size))
         }
     }
 
     func rotated(byDegrees degrees: CGFloat) -> UIImage {
+        rotatedWithTransform(byDegrees: degrees).image
+    }
+
+    func rotatedWithinBounds(byDegrees degrees: CGFloat) -> UIImage {
+        if abs(degrees) < 0.0001 {
+            return self
+        }
+        let radians = degrees * .pi / 180
+        let rendererFormat = UIGraphicsImageRendererFormat()
+        rendererFormat.scale = 1
+        rendererFormat.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: rendererFormat)
+        return renderer.image { context in
+            let rect = CGRect(origin: .zero, size: size)
+            self.draw(in: rect)
+            let cgContext = context.cgContext
+            cgContext.translateBy(x: size.width / 2, y: size.height / 2)
+            cgContext.rotate(by: radians)
+            self.draw(in: CGRect(
+                x: -size.width / 2,
+                y: -size.height / 2,
+                width: size.width,
+                height: size.height
+            ))
+        }
+    }
+
+    func rotatedWithTransform(byDegrees degrees: CGFloat) -> RotatedImage {
+        if abs(degrees) < 0.0001 {
+            return RotatedImage(image: self, sourceToRotated: .identity)
+        }
         let radians = degrees * .pi / 180
         let sourceRect = CGRect(origin: .zero, size: size)
         let rotatedRect = sourceRect.applying(CGAffineTransform(rotationAngle: radians))
-        let outputSize = CGSize(width: abs(rotatedRect.width), height: abs(rotatedRect.height))
-        let renderer = UIGraphicsImageRenderer(size: outputSize)
-        return renderer.image { context in
+        let outputSize = CGSize(
+            width: max(1, abs(rotatedRect.width).rounded()),
+            height: max(1, abs(rotatedRect.height).rounded())
+        )
+        var sourceToRotated = CGAffineTransform.identity
+        sourceToRotated = sourceToRotated.translatedBy(x: outputSize.width / 2, y: outputSize.height / 2)
+        sourceToRotated = sourceToRotated.rotated(by: radians)
+        sourceToRotated = sourceToRotated.translatedBy(x: -size.width / 2, y: -size.height / 2)
+        let rendererFormat = UIGraphicsImageRendererFormat()
+        rendererFormat.scale = 1
+        rendererFormat.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: outputSize, format: rendererFormat)
+        let rendered = renderer.image { context in
             let cgContext = context.cgContext
             cgContext.translateBy(x: outputSize.width / 2, y: outputSize.height / 2)
             cgContext.rotate(by: radians)
@@ -1332,12 +1708,31 @@ private extension UIImage {
                 height: size.height
             ))
         }
+        return RotatedImage(image: rendered, sourceToRotated: sourceToRotated)
     }
 }
 
 private extension Detection {
+    var width: CGFloat {
+        max(0, x2 - x1)
+    }
+
+    var height: CGFloat {
+        max(0, y2 - y1)
+    }
+
     var area: CGFloat {
-        max(0, x2 - x1) * max(0, y2 - y1)
+        width * height
+    }
+
+    var hasPlateLikeAspectRatio: Bool {
+        guard width > 0, height > 0 else { return false }
+        let aspectRatio = width / height
+        return aspectRatio >= plateLikeMinAspectRatio && aspectRatio <= plateLikeMaxAspectRatio
+    }
+
+    var logDescription: String {
+        "box=[\(Int(x1)),\(Int(y1)),\(Int(x2)),\(Int(y2))] score=\(score) size=\(Int(width))x\(Int(height))"
     }
 
     func centerDistanceSquared(in imageSize: CGSize) -> CGFloat {
@@ -1356,6 +1751,71 @@ private extension Detection {
         let intersection = max(0, right - left) * max(0, bottom - top)
         let union = area + other.area - intersection
         return union <= 0 ? 0 : intersection / union
+    }
+
+    func centerDistanceSquared(from expected: Detection) -> CGFloat {
+        let centerX = (x1 + x2) / 2
+        let centerY = (y1 + y2) / 2
+        let expectedCenterX = (expected.x1 + expected.x2) / 2
+        let expectedCenterY = (expected.y1 + expected.y2) / 2
+        let dx = centerX - expectedCenterX
+        let dy = centerY - expectedCenterY
+        return dx * dx + dy * dy
+    }
+
+    func mapped(with transform: CGAffineTransform) -> Detection {
+        let points = [
+            CGPoint(x: x1, y: y1),
+            CGPoint(x: x2, y: y1),
+            CGPoint(x: x2, y: y2),
+            CGPoint(x: x1, y: y2)
+        ].map { $0.applying(transform) }
+        let minX = points.map(\.x).min() ?? x1
+        let maxX = points.map(\.x).max() ?? x2
+        let minY = points.map(\.y).min() ?? y1
+        let maxY = points.map(\.y).max() ?? y2
+        guard maxX - minX >= 8, maxY - minY >= 8 else {
+            return self
+        }
+        return Detection(x1: minX, y1: minY, x2: maxX, y2: maxY, score: score)
+    }
+
+    func cornerPoints() -> [CGPoint] {
+        [
+            CGPoint(x: x1, y: y1),
+            CGPoint(x: x2, y: y1),
+            CGPoint(x: x2, y: y2),
+            CGPoint(x: x1, y: y2)
+        ]
+    }
+
+    func originalImageCornerPoints(rotatedImage: RotatedImage, originalDetection: Detection) -> [CGPoint] {
+        let rotatedToSource = rotatedImage.sourceToRotated.inverted()
+        let points = cornerPoints().map { $0.applying(rotatedToSource) }
+        return points.count >= 4 ? points : originalDetection.cornerPoints()
+    }
+
+    func withScore(_ score: Float) -> Detection {
+        Detection(x1: x1, y1: y1, x2: x2, y2: y2, score: score)
+    }
+
+    func clamped(to size: CGSize) -> Detection {
+        Detection(
+            x1: x1.clamped(to: 0...size.width),
+            y1: y1.clamped(to: 0...size.height),
+            x2: x2.clamped(to: 0...size.width),
+            y2: y2.clamped(to: 0...size.height),
+            score: score
+        )
+    }
+}
+
+private extension CGPoint {
+    func clamped(to size: CGSize) -> CGPoint {
+        CGPoint(
+            x: x.clamped(to: 0...size.width),
+            y: y.clamped(to: 0...size.height)
+        )
     }
 }
 
@@ -1444,12 +1904,20 @@ private extension ComposerState.PlateCandidate {
         sourceToRotated = sourceToRotated.translatedBy(x: -sourceSize.width / 2, y: -sourceSize.height / 2)
         let rotatedToSource = sourceToRotated.inverted()
 
-        let points = [
-            CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
-            CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
-            CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.maxY * rotatedSize.height),
-            CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.maxY * rotatedSize.height)
-        ].map { $0.applying(rotatedToSource) }
+        let rotatedPoints: [CGPoint]
+        if cornerPoints.count >= 4 {
+            rotatedPoints = cornerPoints.prefix(4).map {
+                CGPoint(x: $0.x * rotatedSize.width, y: $0.y * rotatedSize.height)
+            }
+        } else {
+            rotatedPoints = [
+                CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
+                CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.minY * rotatedSize.height),
+                CGPoint(x: bounds.maxX * rotatedSize.width, y: bounds.maxY * rotatedSize.height),
+                CGPoint(x: bounds.minX * rotatedSize.width, y: bounds.maxY * rotatedSize.height)
+            ]
+        }
+        let points = rotatedPoints.map { $0.applying(rotatedToSource).clamped(to: sourceSize) }
 
         let minX = points.map(\.x).min() ?? 0
         let maxX = points.map(\.x).max() ?? 0
@@ -1470,12 +1938,20 @@ private extension ComposerState.PlateCandidate {
             confidence: confidence,
             rawPlateText: rawPlateText,
             wasPlateCorrected: wasPlateCorrected,
+            ownOcrText: ownOcrText,
+            ownOcrConfidence: ownOcrConfidence,
             state: state,
             stateConfidence: stateConfidence,
             plateType: plateType,
             plateTypeLabel: plateTypeLabel,
             bounds: mappedBounds,
-            plateCropPreview: sourceImage.cropped(normalizedBounds: mappedBounds) ?? plateCropPreview,
+            cornerPoints: points.map {
+                CGPoint(
+                    x: ($0.x / sourceSize.width).clamped(to: 0...1),
+                    y: ($0.y / sourceSize.height).clamped(to: 0...1)
+                )
+            },
+            plateCropPreview: plateCropPreview ?? sourceImage.cropped(normalizedBounds: mappedBounds),
             videoFramePreview: videoFramePreview,
             videoFramePreviewURL: videoFramePreviewURL,
             videoFrameTimeSeconds: videoFrameTimeSeconds
@@ -1488,11 +1964,14 @@ private extension ComposerState.PlateCandidate {
             confidence: confidence,
             rawPlateText: rawPlateText,
             wasPlateCorrected: wasPlateCorrected,
+            ownOcrText: ownOcrText,
+            ownOcrConfidence: ownOcrConfidence,
             state: state,
             stateConfidence: stateConfidence,
             plateType: plateType,
             plateTypeLabel: plateTypeLabel,
             bounds: bounds,
+            cornerPoints: cornerPoints,
             plateCropPreview: plateCropPreview,
             videoFramePreview: preview,
             videoFramePreviewURL: nil,
@@ -1511,6 +1990,12 @@ private extension Optional where Wrapped == String {
             return complaintClassBlockedCrosswalk
         }
         return nil
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 

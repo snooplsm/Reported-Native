@@ -252,6 +252,7 @@ data class ComposerUiState(
     val longitude: Double? = null,
     val addressQuery: String = "",
     val addressSuggestions: List<AddressSuggestion> = emptyList(),
+    val photoAddressSuggestion: AddressSuggestion? = null,
     val lookupInFlight: Boolean = false,
     val plate: String = "",
     val plateRegion: String = "NY",
@@ -330,7 +331,8 @@ sealed interface ComposerAction {
         val latitude: Double? = null,
         val longitude: Double? = null,
         val inferredState: String? = null,
-        val inferredAddress: String? = null
+        val inferredAddress: String? = null,
+        val photoAddressSuggestion: AddressSuggestion? = null
     ) : ComposerAction
 
     data class FieldsChanged(

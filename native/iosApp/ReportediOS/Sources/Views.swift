@@ -2,6 +2,7 @@ import AVFoundation
 import CoreGraphics
 import FirebaseAnalytics
 import ImageIO
+import LiteRTLM
 import Lottie
 import MapKit
 import PhotosUI
@@ -10,6 +11,23 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 import WebKit
+
+@MainActor
+private func dismissActiveKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+@MainActor
+private func currentInterfaceIsLandscape(fallbackSize: CGSize) -> Bool {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let foregroundScene = scenes.first { $0.activationState == .foregroundActive }
+        ?? scenes.first { $0.activationState == .foregroundInactive }
+        ?? scenes.first
+    if let orientation = foregroundScene?.interfaceOrientation, orientation != .unknown {
+        return orientation.isLandscape
+    }
+    return fallbackSize.width > fallbackSize.height
+}
 
 private let preferredPlateRegions = ["NY", "NJ", "CT", "PA", "FL", "OTHER"]
 private let allPlateRegions = [
@@ -135,8 +153,8 @@ struct AuthFlowView: View {
                                     .frame(maxWidth: .none)
                             }
                         }
-                        PrimaryButton(title: "Login") { path.append(.login) }
-                        SecondaryButton(title: "Register") { path.append(.register) }
+                        PrimaryButton(title: "Login", size: .compact) { path.append(.login) }
+                        SecondaryButton(title: "Register", size: .compact) { path.append(.register) }
                     }
                     if allowSkip {
                         Button {
@@ -249,7 +267,7 @@ enum MainShellDestination: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .report: return "New Report"
+        case .report: return "Report"
         case .reports: return "My Reports"
         case .profile: return "Profile"
         case .settings: return "Settings"
@@ -289,6 +307,7 @@ struct MainShellView: View {
     @State private var isNavigationOpen = false
     @State private var reportHasDraftContent = false
     @State private var reportClearRequest = 0
+    @State private var reportVoiceAssistRequest = 0
     @State private var reportSubmitBarVisible = false
     @State private var submittedSnackbarObjectId: String?
     @State private var pendingOpenReportObjectId: String?
@@ -296,133 +315,7 @@ struct MainShellView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let isLandscape = proxy.size.width > proxy.size.height
-            let reportOwnsToolbar = selection == .report && isLandscape
-            let usesTabletToolbarActions = UIDevice.current.userInterfaceIdiom == .pad || min(proxy.size.width, proxy.size.height) >= 700
-            let profileLogoutUsesToolbar = selection == .profile && usesTabletToolbarActions && sessionViewModel.state.session?.isAuthorized == true
-            let baseOffset = isNavigationOpen ? drawerWidth : 0
-            let currentOffset = min(max(baseOffset + navigationDragTranslation, 0), drawerWidth)
-
-            HStack(spacing: 0) {
-                LeftGliderNavView(selection: selection) { destination in
-                    select(destination)
-                }
-                .frame(width: drawerWidth)
-
-                VStack(spacing: 0) {
-                    if !reportOwnsToolbar {
-                        MainShellToolbar(
-                            title: selection.title,
-                            showClear: selection == .report && reportHasDraftContent,
-                            trailingActionTitle: profileLogoutUsesToolbar ? "Logout" : nil,
-                            trailingAction: profileLogoutUsesToolbar ? { sessionViewModel.onAction(.logout) } : nil,
-                            onMenuTapped: { toggleNavigation() },
-                            onClear: { reportClearRequest += 1 }
-                        )
-                    }
-                    Group {
-                        switch selection {
-                        case .report:
-                            ComposerScreen(
-                                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
-                                onRequireLogin: onRequireLogin,
-                                showEmbeddedLandscapeToolbar: reportOwnsToolbar,
-                                shellHasDraftContent: reportHasDraftContent,
-                                onMenuTapped: { toggleNavigation() },
-                                onClearTapped: { reportClearRequest += 1 },
-                                sharedMediaImportId: $sharedMediaImportId,
-                                clearRequest: $reportClearRequest,
-                                detectedDraftOpenRequest: $detectedDraftOpenRequest,
-                                onDraftContentChanged: { reportHasDraftContent = $0 },
-                                onSubmitBarVisibilityChanged: { reportSubmitBarVisible = $0 },
-                                onReportSubmitted: { objectId in
-                                    submittedSnackbarObjectId = objectId
-                                }
-                            )
-                        case .reports:
-                            ReportsScreen(
-                                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
-                                onRequireLogin: onRequireLogin,
-                                openReportObjectId: pendingOpenReportObjectId,
-                                onOpenedReport: { pendingOpenReportObjectId = nil }
-                            )
-                        case .profile:
-                            ProfileScreen(
-                                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
-                                onRequireLogin: onRequireLogin,
-                                showsLogoutInToolbar: profileLogoutUsesToolbar,
-                                onLogout: { sessionViewModel.onAction(.logout) }
-                            )
-                        case .settings:
-                            SettingsScreen(
-                                onThemeModeSelected: { themeViewModel.onAction(.modeChanged($0)) }
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .background(Color(.systemBackground))
-            }
-            .frame(width: proxy.size.width + drawerWidth, height: proxy.size.height, alignment: .leading)
-            .offset(x: currentOffset - drawerWidth)
-            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isNavigationOpen)
-            .gesture(
-                DragGesture(minimumDistance: 12)
-                    .updating($navigationDragTranslation) { value, state, _ in
-                        let proposedOffset = baseOffset + value.translation.width
-                        if proposedOffset >= 0 && proposedOffset <= drawerWidth {
-                            state = value.translation.width
-                        }
-                    }
-                    .onEnded { value in
-                        settleNavigationDrag(baseOffset: baseOffset, translation: value.predictedEndTranslation.width)
-                    }
-            )
-            .clipped()
-            .background(alignment: .leading) {
-                if currentOffset > 0 {
-                    Color(.secondarySystemBackground)
-                        .opacity(0.7)
-                        .frame(width: drawerWidth)
-                        .offset(x: currentOffset - drawerWidth)
-                        .ignoresSafeArea(.container, edges: [.top, .bottom])
-                }
-            }
-            .background(Color(.systemBackground))
-            .background(alignment: .bottom) {
-                if selection == .report && reportSubmitBarVisible {
-                    Color(.systemBackground)
-                        .frame(height: max(proxy.safeAreaInsets.bottom, 1))
-                        .ignoresSafeArea(.container, edges: .bottom)
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if let objectId = submittedSnackbarObjectId {
-                    SubmittedReportSnackbar(
-                        onView: {
-                            pendingOpenReportObjectId = objectId
-                            submittedSnackbarObjectId = nil
-                            selection = .reports
-                            closeNavigation()
-                        },
-                        onDismiss: {
-                            submittedSnackbarObjectId = nil
-                        }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: submittedSnackbarObjectId)
-            .task(id: submittedSnackbarObjectId) {
-                guard let objectId = submittedSnackbarObjectId else { return }
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-                if submittedSnackbarObjectId == objectId {
-                    submittedSnackbarObjectId = nil
-                }
-            }
+            shellContent(proxy: proxy)
         }
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         .onAppear {
@@ -442,6 +335,171 @@ struct MainShellView: View {
                 selection = .report
                 closeNavigation()
             }
+        }
+    }
+
+    private func shellContent(proxy: GeometryProxy) -> some View {
+        let isLandscape = currentInterfaceIsLandscape(fallbackSize: proxy.size)
+        let reportOwnsToolbar = selection == .report && isLandscape
+        let usesTabletToolbarActions = UIDevice.current.userInterfaceIdiom == .pad || min(proxy.size.width, proxy.size.height) >= 700
+        let profileLogoutUsesToolbar = selection == .profile && usesTabletToolbarActions && sessionViewModel.state.session?.isAuthorized == true
+        let baseOffset = isNavigationOpen ? drawerWidth : 0
+        let currentOffset = min(max(baseOffset + navigationDragTranslation, 0), drawerWidth)
+
+        return HStack(spacing: 0) {
+            LeftGliderNavView(selection: selection) { destination in
+                select(destination)
+            }
+            .frame(width: drawerWidth)
+
+            mainPanel(
+                size: proxy.size,
+                reportOwnsToolbar: reportOwnsToolbar,
+                profileLogoutUsesToolbar: profileLogoutUsesToolbar
+            )
+        }
+        .frame(width: proxy.size.width + drawerWidth, height: proxy.size.height, alignment: .leading)
+        .offset(x: currentOffset - drawerWidth)
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isNavigationOpen)
+        .simultaneousGesture(navigationEdgeDragGesture(baseOffset: baseOffset))
+        .clipped()
+        .background(alignment: .leading) {
+            navigationBackdrop(currentOffset: currentOffset)
+        }
+        .background(Color(.systemBackground))
+        .background(alignment: .bottom) {
+            submitBarSafeAreaFill(proxy: proxy)
+        }
+        .overlay(alignment: .bottom) {
+            submittedSnackbarOverlay
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: submittedSnackbarObjectId)
+        .task(id: submittedSnackbarObjectId) {
+            guard let objectId = submittedSnackbarObjectId else { return }
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            if submittedSnackbarObjectId == objectId {
+                submittedSnackbarObjectId = nil
+            }
+        }
+    }
+
+    private func mainPanel(
+        size: CGSize,
+        reportOwnsToolbar: Bool,
+        profileLogoutUsesToolbar: Bool
+    ) -> some View {
+        VStack(spacing: 0) {
+            shellToolbar(
+                reportOwnsToolbar: reportOwnsToolbar,
+                profileLogoutUsesToolbar: profileLogoutUsesToolbar
+            )
+            destinationContent(
+                reportOwnsToolbar: reportOwnsToolbar,
+                profileLogoutUsesToolbar: profileLogoutUsesToolbar
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: size.width, height: size.height)
+        .background(Color(.systemBackground))
+    }
+
+    @ViewBuilder
+    private func shellToolbar(reportOwnsToolbar: Bool, profileLogoutUsesToolbar: Bool) -> some View {
+        if !reportOwnsToolbar {
+            MainShellToolbar(
+                title: selection.title,
+                showClear: selection == .report && reportHasDraftContent,
+                onVoiceAssist: selection == .report ? { reportVoiceAssistRequest += 1 } : nil,
+                trailingActionTitle: profileLogoutUsesToolbar ? "Logout" : nil,
+                trailingAction: profileLogoutUsesToolbar ? { sessionViewModel.onAction(.logout) } : nil,
+                onMenuTapped: { toggleNavigation() },
+                onClear: { reportClearRequest += 1 }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func destinationContent(
+        reportOwnsToolbar: Bool,
+        profileLogoutUsesToolbar: Bool
+    ) -> some View {
+        switch selection {
+        case .report:
+            ComposerScreen(
+                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
+                onRequireLogin: onRequireLogin,
+                showEmbeddedLandscapeToolbar: reportOwnsToolbar,
+                shellHasDraftContent: reportHasDraftContent,
+                onMenuTapped: { toggleNavigation() },
+                onClearTapped: { reportClearRequest += 1 },
+                sharedMediaImportId: $sharedMediaImportId,
+                clearRequest: $reportClearRequest,
+                voiceAssistRequest: reportVoiceAssistRequest,
+                detectedDraftOpenRequest: $detectedDraftOpenRequest,
+                onDraftContentChanged: { reportHasDraftContent = $0 },
+                onSubmitBarVisibilityChanged: { reportSubmitBarVisible = $0 },
+                onReportSubmitted: { objectId in
+                    submittedSnackbarObjectId = objectId
+                }
+            )
+        case .reports:
+            ReportsScreen(
+                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
+                onRequireLogin: onRequireLogin,
+                openReportObjectId: pendingOpenReportObjectId,
+                onOpenedReport: { pendingOpenReportObjectId = nil }
+            )
+        case .profile:
+            ProfileScreen(
+                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
+                onRequireLogin: onRequireLogin,
+                showsLogoutInToolbar: profileLogoutUsesToolbar,
+                onLogout: { sessionViewModel.onAction(.logout) }
+            )
+        case .settings:
+            SettingsScreen(
+                onThemeModeSelected: { themeViewModel.onAction(.modeChanged($0)) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func navigationBackdrop(currentOffset: CGFloat) -> some View {
+        if currentOffset > 0 {
+            Color(.secondarySystemBackground)
+                .opacity(0.7)
+                .frame(width: drawerWidth)
+                .offset(x: currentOffset - drawerWidth)
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
+        }
+    }
+
+    @ViewBuilder
+    private func submitBarSafeAreaFill(proxy: GeometryProxy) -> some View {
+        if selection == .report && reportSubmitBarVisible {
+            Color(.systemBackground)
+                .frame(height: max(proxy.safeAreaInsets.bottom, 1))
+                .ignoresSafeArea(.container, edges: .bottom)
+        }
+    }
+
+    @ViewBuilder
+    private var submittedSnackbarOverlay: some View {
+        if let objectId = submittedSnackbarObjectId {
+            SubmittedReportSnackbar(
+                onView: {
+                    pendingOpenReportObjectId = objectId
+                    submittedSnackbarObjectId = nil
+                    selection = .reports
+                    closeNavigation()
+                },
+                onDismiss: {
+                    submittedSnackbarObjectId = nil
+                }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 
@@ -467,6 +525,26 @@ struct MainShellView: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             isNavigationOpen = false
         }
+    }
+
+    private func navigationEdgeDragGesture(baseOffset: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .updating($navigationDragTranslation) { value, state, _ in
+                guard shouldHandleNavigationDrag(startX: value.startLocation.x) else { return }
+                let proposedOffset = min(max(baseOffset + value.translation.width, 0), drawerWidth)
+                state = proposedOffset - baseOffset
+            }
+            .onEnded { value in
+                guard shouldHandleNavigationDrag(startX: value.startLocation.x) else { return }
+                settleNavigationDrag(baseOffset: baseOffset, translation: value.predictedEndTranslation.width)
+            }
+    }
+
+    private func shouldHandleNavigationDrag(startX: CGFloat) -> Bool {
+        if isNavigationOpen {
+            return startX <= drawerWidth + 28
+        }
+        return startX <= 28
     }
 
     private func settleNavigationDrag(baseOffset: CGFloat, translation: CGFloat) {
@@ -499,6 +577,7 @@ private struct MainShellToolbar: View {
     let title: String
     var showClear = false
     var compact = false
+    var onVoiceAssist: (() -> Void)? = nil
     var trailingActionTitle: String? = nil
     var trailingAction: (() -> Void)? = nil
     let onMenuTapped: () -> Void
@@ -524,6 +603,19 @@ private struct MainShellToolbar: View {
             Text(title)
                 .font(.system(size: compact ? 20 : 24, weight: .regular))
                 .lineLimit(1)
+                .overlay(alignment: .trailing) {
+                    if let onVoiceAssist {
+                        Button(action: onVoiceAssist) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: compact ? 17 : 19, weight: .semibold))
+                                .frame(width: compact ? 30 : 34, height: compact ? 30 : 34)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.reportedOrange)
+                        .accessibilityLabel("Reported AI")
+                        .offset(x: compact ? 31 : 35)
+                    }
+                }
 
             Spacer()
 
@@ -634,7 +726,7 @@ struct LoginScreen: View {
                     get: { viewModel.state.password },
                     set: { viewModel.onAction(.passwordChanged($0)) }
                 ))
-                PrimaryButton(title: viewModel.state.loading ? "Logging In..." : "Login") {
+                PrimaryButton(title: viewModel.state.loading ? "Logging In..." : "Login", size: .compact) {
                     viewModel.onAction(.loginPressed(onSuccess: onSuccess))
                 }
                 Button("Forgot Password?") {
@@ -709,7 +801,7 @@ struct RegisterScreen: View {
                     get: { viewModel.state.testify },
                     set: { viewModel.onAction(.fieldsChanged(testify: $0)) }
                 ))
-                PrimaryButton(title: viewModel.state.loading ? "Creating..." : "Create Account") {
+                PrimaryButton(title: viewModel.state.loading ? "Creating..." : "Create Account", size: .compact) {
                     viewModel.onAction(.registerPressed(onSuccess: onSuccess))
                 }
                 Button("Already registered? Login", action: onLogin)
@@ -730,7 +822,7 @@ private struct AuthToolbar: View {
     var body: some View {
         ZStack {
             Text(title)
-                .font(.largeTitle)
+                .font(.title2.weight(.semibold))
             HStack {
                 if let onBack {
                     Button(action: onBack) {
@@ -771,6 +863,7 @@ struct ComposerScreen: View {
     let onClearTapped: () -> Void
     @Binding var sharedMediaImportId: String?
     @Binding var clearRequest: Int
+    var voiceAssistRequest: Int = 0
     @Binding var detectedDraftOpenRequest: UUID?
     let onDraftContentChanged: (Bool) -> Void
     let onSubmitBarVisibilityChanged: (Bool) -> Void
@@ -784,19 +877,35 @@ struct ComposerScreen: View {
     @State private var imageTimeRefreshTask: Task<Void, Never>?
     @State private var refreshedPhotoOccurredAtIso: String?
     @State private var imageTimeRefreshInFlight = false
+    @State private var imageAddressRefreshTask: Task<Void, Never>?
+    @State private var refreshedPhotoAddressSuggestion: ComposerState.AddressSuggestion?
+    @State private var imageAddressRefreshInFlight = false
     @State private var videoScanTask: Task<Void, Never>?
     @State private var addressSearchTask: Task<Void, Never>?
     @State private var showPreferredPlateRegions = false
     @State private var showAllPlateRegions = false
     @State private var showPlateRegionSheet = false
     @State private var showAddressMapSheet = false
+    @State private var showAddressSearchScreen = false
+    @State private var showPlateEntryScreen = false
+    @State private var showVoiceAssistSheet = false
     @State private var showComplaintChooser = false
-    @State private var showPlateCandidatesChooser = false
+    @StateObject private var voiceAudio = VoiceReportAudioController()
+    @State private var voiceTranscript = ""
+    @State private var voiceDraft: VoiceReportDraft?
+    @State private var voiceError: String?
+    @State private var voiceProcessing = false
+    @State private var voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+    @State private var voiceModelDownloading = false
+    @State private var voiceModelDownloadProgress: Double?
+    @State private var voiceImageContext: String?
+    @State private var voiceImageContextTask: Task<Void, Never>?
     @State private var pendingPlateCandidate: ComposerState.PlateCandidate?
     @State private var pendingPlatePreviewImage: UIImage?
     @State private var showOccurredAtPicker = false
     @State private var showDiscardConfirmation = false
     @State private var handledClearRequest = 0
+    @State private var handledVoiceAssistRequest = 0
     @State private var detectionProgressMinimized = false
     @State private var videoScanPaused = false
     @State private var videoScanGeneration = 0
@@ -807,6 +916,10 @@ struct ComposerScreen: View {
     @State private var tutorialScannerEnabled = true
     @State private var tutorialNotificationsEnabled = true
     @State private var isLandscapeComposer = false
+    @State private var isKeyboardVisible = false
+#if DEBUG
+    @State private var debugMediaImportConsumed = false
+#endif
     private let previewScrollId = "composer-primary-media-preview"
 
     private func complaintPickerColumns(for width: CGFloat) -> [GridItem] {
@@ -835,6 +948,13 @@ struct ComposerScreen: View {
     }
     private var animatedComplaintIds: [String] {
         complaintOptions.compactMap { $0.lottieName == nil ? nil : $0.id }
+    }
+    private var primaryPlateSourceImage: UIImage? {
+        guard let media = viewModel.state.primaryMedia, !media.isVideo else { return nil }
+        return UIImage(contentsOfFile: media.fileURL.path)
+    }
+    private var hasImageAddressSource: Bool {
+        viewModel.state.primaryMedia?.isVideo == false
     }
     private var selectedComplaintDetectionHint: String? {
         guard let selectedId = viewModel.state.selectedComplaintId else { return nil }
@@ -909,6 +1029,9 @@ struct ComposerScreen: View {
                 initialLatitude: viewModel.state.latitude,
                 initialLongitude: viewModel.state.longitude,
                 initialAddress: viewModel.state.addressQuery.isEmpty ? viewModel.state.address : viewModel.state.addressQuery,
+                imageAddressSuggestion: refreshedPhotoAddressSuggestion,
+                hasImageAddressSource: hasImageAddressSource,
+                isRefreshingImageAddress: imageAddressRefreshInFlight,
                 onCancel: { showAddressMapSheet = false },
                 onDone: { suggestion in
                     viewModel.onAction(.addressChosen(suggestion))
@@ -917,6 +1040,122 @@ struct ComposerScreen: View {
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.hidden)
+        })
+        view = AnyView(view.fullScreenCover(isPresented: $showAddressSearchScreen) {
+            AddressSearchScreen(
+                query: Binding(
+                    get: { viewModel.state.addressQuery },
+                    set: { viewModel.onAction(.addressQueryChanged($0)) }
+                ),
+                suggestions: viewModel.state.addressSuggestions,
+                isLoading: viewModel.state.lookupInFlight,
+                isError: viewModel.state.validationErrors.address != nil,
+                imageAddressSuggestion: refreshedPhotoAddressSuggestion,
+                hasImageAddressSource: hasImageAddressSource,
+                isRefreshingImageAddress: imageAddressRefreshInFlight,
+                onCancel: {
+                    showAddressSearchScreen = false
+                },
+                onClear: {
+                    viewModel.onAction(.addressQueryChanged(""))
+                },
+                onOpenMap: {
+                    showAddressSearchScreen = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        openAddressMapSheet()
+                    }
+                },
+                onSelect: { suggestion in
+                    viewModel.onAction(.addressChosen(suggestion))
+                    showAddressSearchScreen = false
+                },
+                onUseImageAddress: { suggestion in
+                    viewModel.onAction(.addressChosen(suggestion))
+                    showAddressSearchScreen = false
+                }
+            )
+        })
+        view = AnyView(view.fullScreenCover(isPresented: $showPlateEntryScreen) {
+            PlateEntryScreen(
+                plate: Binding(
+                    get: { viewModel.state.plate },
+                    set: { viewModel.onAction(.fieldsChanged(plate: $0)) }
+                ),
+                candidates: viewModel.state.plateCandidates,
+                selectedPlate: viewModel.state.selectedPlateCandidate,
+                sourceImage: primaryPlateSourceImage,
+                isError: viewModel.state.validationErrors.plate != nil,
+                onCancel: {
+                    showPlateEntryScreen = false
+                },
+                onClear: {
+                    viewModel.onAction(.fieldsChanged(plate: ""))
+                },
+                onCandidateSelected: { candidate in
+                    viewModel.onAction(.plateCandidateChosen(candidate))
+                    showPlateEntryScreen = false
+                }
+            )
+        })
+        view = AnyView(view.sheet(isPresented: $showVoiceAssistSheet, onDismiss: {
+            voiceImageContextTask?.cancel()
+            voiceImageContextTask = nil
+            _ = voiceAudio.stopRecording()
+        }) {
+            VoiceReportAssistantSheet(
+                audio: voiceAudio,
+                transcript: voiceTranscript,
+                draft: voiceDraft,
+                changeRows: voiceDraft?.changeRows(currentState: viewModel.state, complaintOptions: complaintOptions) ?? [],
+                isProcessing: voiceProcessing,
+                modelInstalled: voiceModelInstalled,
+                modelDownloading: voiceModelDownloading,
+                modelDownloadProgress: voiceModelDownloadProgress,
+                modelDownloadSizeLabel: OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel,
+                error: voiceError,
+                onRequestPermission: {
+                    Task {
+                        let granted = await voiceAudio.requestPermissions()
+                        if !granted {
+                            voiceError = voiceAudio.errorMessage ?? "Microphone access is needed to talk through report fields."
+                        } else {
+                            voiceError = nil
+                        }
+                    }
+                },
+                onDownloadModel: {
+                    Task {
+                        await downloadVoiceModel()
+                    }
+                },
+                onTalk: {
+                    Task {
+                        await startVoiceAssistantCapture()
+                    }
+                },
+                onStop: {
+                    Task {
+                        await stopVoiceAssistantCapture()
+                    }
+                },
+                onClear: {
+                    resetVoiceAssistant()
+                },
+                onApply: { draft in
+                    applyVoiceDraft(draft)
+                },
+                onDismiss: {
+                    voiceImageContextTask?.cancel()
+                    voiceImageContextTask = nil
+                    _ = voiceAudio.stopRecording()
+                    showVoiceAssistSheet = false
+                }
+            )
+            .presentationDetents([.height(voiceAssistantCompactSheetHeight), .large])
+            .presentationContentInteraction(.resizes)
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
+            .presentationBackgroundInteraction(.enabled)
         })
         view = AnyView(view.sheet(isPresented: $showReportTutorial) {
             NewReportTutorialSheet(
@@ -948,6 +1187,12 @@ struct ComposerScreen: View {
         })
         view = AnyView(view.onChange(of: showsBottomSubmitBar) { _, isVisible in
             onSubmitBarVisibilityChanged(isVisible)
+        })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        })
+        view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            isKeyboardVisible = false
         })
         view = AnyView(view.overlay { detectionProgressModal })
         view = AnyView(view.alert("Clear report?", isPresented: $showDiscardConfirmation) {
@@ -996,6 +1241,9 @@ struct ComposerScreen: View {
             imageTimeRefreshTask?.cancel()
             refreshedPhotoOccurredAtIso = nil
             imageTimeRefreshInFlight = false
+            imageAddressRefreshTask?.cancel()
+            refreshedPhotoAddressSuggestion = nil
+            imageAddressRefreshInFlight = false
         })
         view = AnyView(view.onChange(of: clearRequest) { _, token in
             guard token != handledClearRequest else { return }
@@ -1003,6 +1251,11 @@ struct ComposerScreen: View {
             if hasDraftContent {
                 showDiscardConfirmation = true
             }
+        })
+        view = AnyView(view.onChange(of: voiceAssistRequest) { _, token in
+            guard token != handledVoiceAssistRequest else { return }
+            handledVoiceAssistRequest = token
+            openVoiceAssistant()
         })
         view = AnyView(view.task(id: animatedComplaintIds.joined(separator: "|")) {
             await cycleComplaintAnimations()
@@ -1022,6 +1275,11 @@ struct ComposerScreen: View {
             await handleSharedMediaImport(id: importId)
             sharedMediaImportId = nil
         })
+#if DEBUG
+        view = AnyView(view.task(id: viewModel.state.draftLoaded) {
+            await handleDebugMediaImportIfNeeded()
+        })
+#endif
         view = AnyView(view.onChange(of: detectedDraftOpenRequest) { _, request in
             guard request != nil else { return }
             viewModel.onAction(.reloadDraft)
@@ -1056,21 +1314,7 @@ struct ComposerScreen: View {
                 viewModel.onAction(.selectedComplaintChanged(option.id))
                 showComplaintChooser = false
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Color(.systemBackground))
-        })
-        view = AnyView(view.sheet(isPresented: $showPlateCandidatesChooser) {
-            PlateCandidatePickerSheet(
-                candidates: viewModel.state.plateCandidates,
-                selectedPlate: viewModel.state.selectedPlateCandidate,
-                onSelected: { candidate in
-                    viewModel.onAction(.plateCandidateChosen(candidate))
-                    showPlateCandidatesChooser = false
-                },
-                onDismiss: { showPlateCandidatesChooser = false }
-            )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.height(complaintChooserSheetDetentHeight(optionCount: complaintOptions.count))])
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(.systemBackground))
         })
@@ -1115,6 +1359,155 @@ struct ComposerScreen: View {
         return view
     }
 
+    private func openVoiceAssistant() {
+        voiceError = nil
+        voiceImageContext = nil
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        voiceAudio.refreshPermissionState()
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+        showVoiceAssistSheet = true
+        startVoiceImageContextWarmup()
+    }
+
+    @MainActor
+    private func startVoiceAssistantCapture() async {
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+        guard voiceModelInstalled else {
+            voiceError = nil
+            return
+        }
+        voiceError = nil
+        voiceTranscript = ""
+        voiceDraft = nil
+        voiceProcessing = false
+        let started = await voiceAudio.startRecording()
+        if !started {
+            voiceImageContextTask?.cancel()
+            voiceImageContextTask = nil
+            voiceError = voiceAudio.errorMessage ?? "Microphone recording could not start."
+        }
+    }
+
+    @MainActor
+    private func stopVoiceAssistantCapture() async {
+        guard let audioURL = voiceAudio.stopRecording() else {
+            voiceError = voiceAudio.errorMessage ?? "I couldn't capture enough audio to process."
+            return
+        }
+        await processVoiceAudio(audioURL)
+    }
+
+    @MainActor
+    private func processVoiceAudio(_ audioURL: URL) async {
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+        guard voiceModelInstalled else {
+            voiceError = "Install REPORTED AI before using Talk."
+            try? FileManager.default.removeItem(at: audioURL)
+            return
+        }
+        voiceError = nil
+        voiceDraft = nil
+        voiceProcessing = true
+        defer {
+            voiceProcessing = false
+            try? FileManager.default.removeItem(at: audioURL)
+        }
+        do {
+            await voiceImageContextTask?.value
+            voiceImageContextTask = nil
+            let voiceContext = await VoiceReportContext.build(
+                state: viewModel.state,
+                complaintOptions: complaintOptions,
+                imageAddressSuggestion: refreshedPhotoAddressSuggestion,
+                imageVisualContext: voiceImageContext
+            )
+            let result = try await OnDeviceGemmaVoiceDraftEngine.generateDraft(
+                audioURL: audioURL,
+                complaintOptions: complaintOptions,
+                voiceContext: voiceContext
+            )
+            voiceTranscript = result.transcript ?? ""
+            voiceDraft = result.draft
+        } catch {
+            voiceError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func startVoiceImageContextWarmup() {
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        guard let imageURL = viewModel.state.primaryMedia?.fileURL,
+              viewModel.state.primaryMedia?.isVideo == false else {
+            return
+        }
+        voiceImageContextTask = Task {
+            let context = await OnDeviceGemmaVoiceDraftEngine.generateImageContext(imageURL: imageURL)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                voiceImageContext = context
+            }
+        }
+    }
+
+    @MainActor
+    private func downloadVoiceModel() async {
+        guard !voiceModelDownloading else { return }
+        voiceError = nil
+        voiceModelDownloading = true
+        voiceModelDownloadProgress = nil
+        do {
+            try await OnDeviceGemmaVoiceDraftEngine.downloadModel { downloadedBytes, totalBytes in
+                Task { @MainActor in
+                    if totalBytes > 0 {
+                        voiceModelDownloadProgress = min(1, max(0, Double(downloadedBytes) / Double(totalBytes)))
+                    } else {
+                        voiceModelDownloadProgress = nil
+                    }
+                }
+            }
+            voiceModelInstalled = true
+            voiceModelDownloadProgress = 1
+            voiceError = nil
+        } catch {
+            voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+            voiceError = error.localizedDescription
+        }
+        voiceModelDownloading = false
+    }
+
+    private func resetVoiceAssistant() {
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        voiceImageContext = nil
+        voiceAudio.reset()
+        voiceAudio.refreshPermissionState()
+        voiceTranscript = ""
+        voiceDraft = nil
+        voiceError = nil
+        voiceProcessing = false
+        voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+    }
+
+    private func applyVoiceDraft(_ draft: VoiceReportDraft) {
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        if let complaintId = draft.complaintId {
+            viewModel.onAction(.selectedComplaintChanged(complaintId))
+        }
+        viewModel.onAction(.fieldsChanged(
+            plate: draft.plate,
+            plateRegion: draft.plateRegion,
+            address: draft.address,
+            description: draft.description,
+            notes: draft.notes,
+            occurredAtIso: draft.occurredAtIso
+        ))
+        _ = voiceAudio.stopRecording()
+        showVoiceAssistSheet = false
+    }
+
     @MainActor
     private func completeReportTutorialFromButton() async {
         await completeReportTutorial()
@@ -1129,18 +1522,17 @@ struct ComposerScreen: View {
 
     private var isDetectionSheetVisible: Bool {
         viewModel.state.detectingPlates &&
-        viewModel.state.primaryMedia?.isVideo == true &&
         !viewModel.state.awaitingVideoProcessingDecision &&
         !detectionProgressMinimized
     }
 
     private var showsBottomSubmitBar: Bool {
-        viewModel.state.stage == .verify && !isDetectionSheetVisible && !isLandscapeComposer
+        viewModel.state.stage == .verify && !isDetectionSheetVisible && !isLandscapeComposer && !isKeyboardVisible
     }
 
     private var composerContent: some View {
         GeometryReader { geometry in
-            let isLandscape = geometry.size.width > geometry.size.height
+            let isLandscape = currentInterfaceIsLandscape(fallbackSize: geometry.size)
             ScrollViewReader { proxy in
                 let verticalPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 20 : 0) : 16
                 let horizontalPadding: CGFloat = isLandscape ? 8 : 16
@@ -1170,6 +1562,7 @@ struct ComposerScreen: View {
                     .padding(.vertical, verticalPadding)
                     .padding(.bottom, bottomPadding)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 ZStack(alignment: .bottom) {
                     content
                         .task {
@@ -1179,7 +1572,7 @@ struct ComposerScreen: View {
                             isLandscapeComposer = isLandscape
                         }
                         .onChange(of: geometry.size) { _, newSize in
-                            isLandscapeComposer = newSize.width > newSize.height
+                            isLandscapeComposer = currentInterfaceIsLandscape(fallbackSize: newSize)
                         }
                         .onChange(of: viewModel.state.primaryMedia?.fileURL.path) { _, newValue in
                             guard viewModel.state.stage == .verify, newValue != nil, !isLandscape else { return }
@@ -1219,7 +1612,7 @@ struct ComposerScreen: View {
             viewModel.onAction(.pendingComplaintConfirmed(option.id))
         }
         .interactiveDismissDisabled()
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.height(complaintChooserSheetDetentHeight(optionCount: complaintOptions.count))])
         .presentationDragIndicator(.hidden)
         .presentationBackground(Color(.systemBackground))
     }
@@ -1368,12 +1761,16 @@ struct ComposerScreen: View {
     @ViewBuilder
     private var detectionProgressModal: some View {
         if isDetectionSheetVisible {
+            let isVideoScan = viewModel.state.primaryMedia?.isVideo == true
+            let hasCurrentFrameContent = isVideoScan ||
+                viewModel.state.detectionFramePreview != nil ||
+                !viewModel.state.detectionFrameCandidates.isEmpty
             ZStack(alignment: .bottom) {
                 Color.black.opacity(0.18)
                     .ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Scanning video")
+                    Text(isVideoScan ? "Scanning video" : "Scanning photo")
                         .font(.title2.bold())
                     Spacer()
                     Button("Cancel") {
@@ -1396,7 +1793,7 @@ struct ComposerScreen: View {
                         Text(viewModel.state.detectionMessage ?? "Detecting plates")
                             .font(.body)
                             .foregroundStyle(.secondary)
-                        if let media = viewModel.state.primaryMedia {
+                        if let media = viewModel.state.primaryMedia, media.isVideo {
                             VideoFrameScrubberPreview(
                                 url: media.fileURL,
                                 timeSeconds: videoScanPaused ? videoPreviewScrubSeconds : viewModel.state.detectionFrameTimeSeconds,
@@ -1414,57 +1811,59 @@ struct ComposerScreen: View {
                                 .frame(maxWidth: .infinity)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        Text("Current frame")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 10) {
-                            Button(videoScanPaused ? "Resume" : "Pause") {
-                                if videoScanPaused {
-                                    let resumeSeconds = videoPreviewScrubSeconds
-                                    let shouldResumeFromScrubPosition = abs(resumeSeconds - viewModel.state.detectionFrameTimeSeconds) > 0.25
-                                    videoScanPaused = false
-                                    if shouldResumeFromScrubPosition {
-                                        startVideoScan(from: resumeSeconds, resetProgress: false)
-                                    }
-                                } else {
-                                    videoScanPaused = true
-                                    videoPreviewScrubSeconds = viewModel.state.detectionFrameTimeSeconds
-                                }
-                            }
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(Color.reportedOrange)
-                            Text(formatVideoDuration(videoScanPaused ? videoPreviewScrubSeconds : viewModel.state.detectionFrameTimeSeconds))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Slider(
-                                value: Binding(
-                                    get: { videoScanPaused ? videoPreviewScrubSeconds : viewModel.state.detectionFrameTimeSeconds },
-                                    set: { videoPreviewScrubSeconds = $0 }
-                                ),
-                                in: 0...max(viewModel.state.detectionVideoDurationSeconds, 1)
-                            )
-                            .disabled(!videoScanPaused)
-                            Text(formatVideoDuration(viewModel.state.detectionVideoDurationSeconds))
+                        if hasCurrentFrameContent {
+                            Text(isVideoScan ? "Current frame" : "Scan preview")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
-                        ZStack(alignment: .leading) {
-                            if !viewModel.state.detectionFrameCandidates.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(viewModel.state.detectionFrameCandidates) { candidate in
-                                            DetectionCandidatePill(
-                                                candidate: candidate,
-                                                isSelected: viewModel.state.selectedPlateCandidate == candidate.plate
-                                            ) {
-                                                selectVideoCandidate(candidate)
-                                            }
+                        if isVideoScan {
+                            HStack(spacing: 10) {
+                                Button(videoScanPaused ? "Resume" : "Pause") {
+                                    if videoScanPaused {
+                                        let resumeSeconds = videoPreviewScrubSeconds
+                                        let shouldResumeFromScrubPosition = abs(resumeSeconds - viewModel.state.detectionFrameTimeSeconds) > 0.25
+                                        videoScanPaused = false
+                                        if shouldResumeFromScrubPosition {
+                                            startVideoScan(from: resumeSeconds, resetProgress: false)
+                                        }
+                                    } else {
+                                        videoScanPaused = true
+                                        videoPreviewScrubSeconds = viewModel.state.detectionFrameTimeSeconds
+                                    }
+                                }
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Color.reportedOrange)
+                                Text(formatVideoDuration(videoScanPaused ? videoPreviewScrubSeconds : viewModel.state.detectionFrameTimeSeconds))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Slider(
+                                    value: Binding(
+                                        get: { videoScanPaused ? videoPreviewScrubSeconds : viewModel.state.detectionFrameTimeSeconds },
+                                        set: { videoPreviewScrubSeconds = $0 }
+                                    ),
+                                    in: 0...max(viewModel.state.detectionVideoDurationSeconds, 1)
+                                )
+                                .disabled(!videoScanPaused)
+                                Text(formatVideoDuration(viewModel.state.detectionVideoDurationSeconds))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if !viewModel.state.detectionFrameCandidates.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(viewModel.state.detectionFrameCandidates) { candidate in
+                                        DetectionCandidatePill(
+                                            candidate: candidate,
+                                            isSelected: viewModel.state.selectedPlateCandidate == candidate.plate
+                                        ) {
+                                            selectVideoCandidate(candidate)
                                         }
                                     }
                                 }
                             }
+                            .frame(height: 44)
                         }
-                        .frame(height: 44)
                         if !viewModel.state.plateCandidates.isEmpty {
                             Text("Possible plates")
                                 .font(.caption.weight(.semibold))
@@ -1492,6 +1891,7 @@ struct ComposerScreen: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 18)
                 }
+                .frame(maxHeight: isVideoScan ? nil : 190)
 
                 VStack(alignment: .leading, spacing: 8) {
                     ProgressView(value: viewModel.state.detectionProgress)
@@ -1512,10 +1912,13 @@ struct ComposerScreen: View {
                 .background(Color(.systemBackground).shadow(.drop(radius: 8)))
             }
                 .frame(maxWidth: .infinity)
-                .frame(maxHeight: .infinity)
+                .frame(maxHeight: isVideoScan ? CGFloat.infinity : nil, alignment: .bottom)
+                .fixedSize(horizontal: false, vertical: !isVideoScan)
                 .background(Color(.systemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .padding(.top, 10)
+                .padding(.horizontal, isVideoScan ? 0 : 12)
+                .padding(.top, isVideoScan ? 10 : 0)
+                .padding(.bottom, isVideoScan ? 0 : 12)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .ignoresSafeArea(.container, edges: .bottom)
@@ -1524,6 +1927,7 @@ struct ComposerScreen: View {
     }
 
     private func selectVideoCandidate(_ candidate: ComposerState.PlateCandidate) {
+        metadataTask?.cancel()
         videoScanGeneration += 1
         videoScanTask?.cancel()
         videoScanTask = nil
@@ -1632,7 +2036,7 @@ struct ComposerScreen: View {
     ) -> some View {
         if let media = viewModel.state.primaryMedia {
             PrimarySubmissionPreview(
-                media: media,
+                mediaItems: [media] + viewModel.state.extraMedia,
                 selectedCandidate: selectedCandidate,
                 candidates: viewModel.state.plateCandidates,
                 selectedPlate: viewModel.state.selectedPlateCandidate,
@@ -1644,7 +2048,7 @@ struct ComposerScreen: View {
                 onCandidateConfirmedFromFullScreen: { candidate in
                     viewModel.onAction(.plateCandidateChosen(candidate))
                 },
-                onRemove: { viewModel.onAction(.mediaRemoved(media)) }
+                onRemove: { media in viewModel.onAction(.mediaRemoved(media)) }
             )
             .frame(maxHeight: expandPreview ? .infinity : nil)
             .id(previewScrollId)
@@ -1662,10 +2066,23 @@ struct ComposerScreen: View {
 
     private var embeddedLandscapeToolbar: some View {
         ZStack {
-            Text("New Report")
+            Text("Report")
                 .font(.system(size: 20, weight: .regular))
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .center)
+                .overlay(alignment: .trailing) {
+                    Button {
+                        openVoiceAssistant()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.reportedOrange)
+                    .accessibilityLabel("Reported AI")
+                    .offset(x: 31)
+                }
+            .frame(maxWidth: .infinity, alignment: .center)
 
             HStack {
                 Button(action: onMenuTapped) {
@@ -1818,10 +2235,10 @@ struct ComposerScreen: View {
             }
             .frame(minWidth: complaintMinWidth, maxWidth: complaintMaxWidth)
             PlateInputField(
-                text: Binding(get: { viewModel.state.plate }, set: { viewModel.onAction(.fieldsChanged(plate: String($0.prefix(8)))) }),
+                text: viewModel.state.plate,
                 isError: viewModel.state.validationErrors.plate != nil,
-                showCandidateButton: !viewModel.state.plateCandidates.isEmpty,
-                onShowCandidates: { showPlateCandidatesChooser = true }
+                candidateCount: viewModel.state.plateCandidates.count,
+                onEdit: { showPlateEntryScreen = true }
             )
             .frame(width: plateWidth)
             PickerField(
@@ -1843,48 +2260,12 @@ struct ComposerScreen: View {
         ])
         if isLandscape {
             HStack(alignment: .top, spacing: 12) {
-                addressField
+                addressPickerField
                 occurredAtField
             }
         } else {
-            addressField
-        }
-        if viewModel.state.lookupInFlight {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Searching NYC addresses")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        ForEach(viewModel.state.addressSuggestions) { suggestion in
-            Button {
-                viewModel.onAction(.addressChosen(suggestion))
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "location")
-                    Text(suggestion.label)
-                        .multilineTextAlignment(.leading)
-                    Spacer(minLength: 0)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-        }
-        if !isLandscape {
+            addressPickerField
             occurredAtField
-        }
-        if !viewModel.state.extraMedia.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(viewModel.state.extraMedia) { media in
-                        MediaAttachmentChip(media: media)
-                    }
-                }
-            }
         }
         if isLandscape {
             HStack(alignment: .top, spacing: 12) {
@@ -1901,22 +2282,67 @@ struct ComposerScreen: View {
         }
     }
 
-    private var addressField: some View {
-        InputField(
-            title: "Address",
-            text: Binding(
-                get: { viewModel.state.addressQuery },
-                set: { viewModel.onAction(.addressQueryChanged($0)) }
-            ),
-            isError: viewModel.state.validationErrors.address != nil,
-            onClear: {
-                viewModel.onAction(.addressQueryChanged(""))
-            },
-            trailingIconSystemName: "map",
-            onTrailingIcon: {
-                showAddressMapSheet = true
+    private var addressPickerField: some View {
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: "Address", isError: viewModel.state.validationErrors.address != nil)
+            HStack(spacing: 10) {
+                Button {
+                    openAddressSearchScreen()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(viewModel.state.addressQuery.isEmpty ? "Search address" : viewModel.state.addressQuery)
+                            .foregroundStyle(viewModel.state.addressQuery.isEmpty ? Color(.placeholderText) : .primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if !viewModel.state.addressQuery.isEmpty {
+                    Button {
+                        viewModel.onAction(.addressQueryChanged(""))
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear address")
+                }
+                Button {
+                    openAddressMapSheet()
+                } label: {
+                    Image(systemName: "map")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show Map")
             }
-        )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(minHeight: 46)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(viewModel.state.validationErrors.address != nil ? Color.red : Color(.separator), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private func openAddressSearchScreen() {
+        refreshAddressImageLocation()
+        showAddressSearchScreen = true
+    }
+
+    private func openAddressMapSheet() {
+        refreshAddressImageLocation()
+        showAddressMapSheet = true
     }
 
     private var occurredAtField: some View {
@@ -1927,6 +2353,26 @@ struct ComposerScreen: View {
         ) {
             refreshOccurredAtImageTime()
             showOccurredAtPicker = true
+        }
+    }
+
+    private func refreshAddressImageLocation() {
+        guard let media = viewModel.state.primaryMedia, !media.isVideo else {
+            refreshedPhotoAddressSuggestion = nil
+            imageAddressRefreshInFlight = false
+            imageAddressRefreshTask?.cancel()
+            return
+        }
+        imageAddressRefreshTask?.cancel()
+        imageAddressRefreshInFlight = true
+        imageAddressRefreshTask = Task {
+            let metadata = await extractSubmissionMetadata(from: media)
+            let suggestion = await addressSuggestionFromImageMetadata(metadata)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                imageAddressRefreshInFlight = false
+                refreshedPhotoAddressSuggestion = suggestion
+            }
         }
     }
 
@@ -2032,6 +2478,66 @@ struct ComposerScreen: View {
         await processMetadataAndDetection(for: primary)
     }
 
+#if DEBUG
+    private func handleDebugMediaImportIfNeeded() async {
+        guard !debugMediaImportConsumed else { return }
+        guard viewModel.state.draftLoaded else { return }
+        let sourcePaths = debugMediaImportPaths()
+        guard !sourcePaths.isEmpty else { return }
+
+        debugMediaImportConsumed = true
+        let mediaItems = sourcePaths.compactMap { sourcePath -> ComposerState.SubmissionMedia? in
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+                print("ReportedDebugImport: missing media at \(sourceURL.path)")
+                return nil
+            }
+
+            do {
+                let data = try Data(contentsOf: sourceURL)
+                let fileURL = try PersistentMediaStore.save(
+                    data: data,
+                    preferredName: sourceURL.deletingPathExtension().lastPathComponent,
+                    fileExtension: sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
+                )
+                print("ReportedDebugImport: importing \(fileURL.path)")
+                return ComposerState.SubmissionMedia(
+                    fileURL: fileURL,
+                    displayName: fileURL.lastPathComponent,
+                    isVideo: false
+                )
+            } catch {
+                print("ReportedDebugImport: failed to import \(sourceURL.path): \(error)")
+                return nil
+            }
+        }
+        guard let primary = mediaItems.first else { return }
+        viewModel.onAction(.uploadMediaChosen(primary))
+        mediaItems.dropFirst().forEach { viewModel.onAction(.extraMediaAdded($0)) }
+        await processMetadataAndDetection(for: primary)
+    }
+
+    private func debugMediaImportPaths() -> [String] {
+        let arguments = ProcessInfo.processInfo.arguments
+        var paths: [String] = []
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            if arguments[index] == "--reported-debug-import-media" {
+                let nextIndex = arguments.index(after: index)
+                if nextIndex < arguments.endIndex {
+                    paths.append(arguments[nextIndex])
+                    index = nextIndex
+                }
+            }
+            index = arguments.index(after: index)
+        }
+        if let environmentValue = ProcessInfo.processInfo.environment["REPORTED_DEBUG_IMPORT_MEDIA"] {
+            paths.append(contentsOf: environmentValue.split(separator: "|").map(String.init))
+        }
+        return paths.filter { !$0.isEmpty }
+    }
+#endif
+
     private func processMetadataAndDetection(for media: ComposerState.SubmissionMedia) async {
         metadataTask?.cancel()
         metadataTask = Task {
@@ -2060,6 +2566,12 @@ struct ComposerScreen: View {
                     media: media,
                     expectedComplaintHint: selectedComplaintDetectionHint
                 )
+#if DEBUG
+                let summary = candidates.map { candidate in
+                    "\(candidate.plate)/\(candidate.state ?? "-") conf=\(candidate.confidence) raw=\(candidate.rawPlateText ?? "-")"
+                }.joined(separator: ", ")
+                print("ReportedALPR: candidates=\(candidates.count) [\(summary)]")
+#endif
                 if !Task.isCancelled {
                     viewModel.onAction(.detectionFinished(
                         candidates: candidates,
@@ -2086,7 +2598,7 @@ private struct ComposerPickerModifier: ViewModifier {
     let handlePickedItem: (PhotosPickerItem) async -> Void
     let handleAdditionalPickedItem: (PhotosPickerItem) async -> Void
 
-    func body(content: Content) -> some View {
+    func body(content: Self.Content) -> some View {
         content
             .photosPicker(
                 isPresented: $singlePickerPresented,
@@ -2201,40 +2713,40 @@ private struct ComplaintChooserSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: isTabletLayout ? 20 : 16) {
-                        Text(title)
-                            .font(isTabletLayout ? .largeTitle.bold() : .title2.bold())
-                        LazyVGrid(columns: columns(for: geometry.size.width), spacing: isTabletLayout ? 16 : 12) {
-                            ForEach(options) { option in
-                                ZStack(alignment: .topTrailing) {
-                                    ComplaintMediaTile(
-                                        option: option,
-                                        animate: option.id == activeAnimatedComplaintId,
-                                        showImage: true,
-                                        imageHeight: tileMetrics(for: geometry.size.width).imageHeight,
-                                        minHeight: tileMetrics(for: geometry.size.width).minHeight,
-                                        titleFont: isTabletLayout ? .title3.weight(.semibold) : .subheadline.weight(.semibold)
-                                    ) {
-                                        onSelected(option)
-                                    }
-                                    if option.id == selectedComplaintId {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.title3.weight(.semibold))
-                                            .foregroundStyle(Color.green)
-                                            .background(Color(.systemBackground), in: Circle())
-                                            .padding(10)
-                                    }
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: isTabletLayout ? 20 : 16) {
+                    Text(title)
+                        .font(isTabletLayout ? .largeTitle.bold() : .title2.bold())
+                    LazyVGrid(columns: columns(for: geometry.size.width), spacing: isTabletLayout ? 16 : 12) {
+                        ForEach(options) { option in
+                            ZStack(alignment: .topTrailing) {
+                                ComplaintMediaTile(
+                                    option: option,
+                                    animate: option.id == activeAnimatedComplaintId,
+                                    showImage: true,
+                                    imageHeight: tileMetrics(for: geometry.size.width).imageHeight,
+                                    minHeight: tileMetrics(for: geometry.size.width).minHeight,
+                                    titleFont: isTabletLayout ? .title3.weight(.semibold) : .subheadline.weight(.semibold)
+                                ) {
+                                    onSelected(option)
+                                }
+                                if option.id == selectedComplaintId {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(Color.green)
+                                        .background(Color(.systemBackground), in: Circle())
+                                        .padding(10)
                                 }
                             }
                         }
                     }
-                    .frame(maxWidth: maxContentWidth(for: geometry.size.width), alignment: .leading)
-                    .frame(maxWidth: .infinity)
-                    .padding()
                 }
+                .frame(maxWidth: maxContentWidth(for: geometry.size.width), alignment: .leading)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
             }
         }
     }
@@ -2500,83 +3012,250 @@ private struct UploadMediaTile: View {
 }
 
 private struct PrimarySubmissionPreview: View {
-    let media: ComposerState.SubmissionMedia
+    let mediaItems: [ComposerState.SubmissionMedia]
     let selectedCandidate: ComposerState.PlateCandidate?
     let candidates: [ComposerState.PlateCandidate]
     let selectedPlate: String?
     let previewHeight: CGFloat
     let onCandidateTapped: (ComposerState.PlateCandidate, UIImage?) -> Void
     let onCandidateConfirmedFromFullScreen: (ComposerState.PlateCandidate) -> Void
-    let onRemove: () -> Void
-    @State private var showVideoPlayer = false
-    @State private var showImageViewer = false
+    let onRemove: (ComposerState.SubmissionMedia) -> Void
+    @State private var selectedMediaURL: URL?
+    @State private var videoPlayerMedia: ComposerState.SubmissionMedia?
+    @State private var imageViewerMedia: ComposerState.SubmissionMedia?
+    @GestureState private var carouselDragOffset: CGFloat = 0
+
+    private var selectedIndex: Int {
+        if let selectedMediaURL,
+           let index = mediaItems.firstIndex(where: { $0.fileURL == selectedMediaURL }) {
+            return index
+        }
+        return 0
+    }
+
+    private var selectedMedia: ComposerState.SubmissionMedia? {
+        guard !mediaItems.isEmpty else { return nil }
+        return mediaItems[min(selectedIndex, mediaItems.count - 1)]
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            if media.isVideo {
-                Button {
-                    showVideoPlayer = true
-                } label: {
-                    ZStack(alignment: .bottomLeading) {
-                        if let preview = selectedCandidate?.videoFramePreview {
-                            ZStack {
-                                Color.black
-                                Image(uiImage: preview)
-                                    .resizable()
-                                    .scaledToFit()
-                                StillImagePlateOverlay(
-                                    imageSize: preview.size,
-                                    candidates: [selectedCandidate].compactMap { $0 },
-                                    selectedPlate: selectedCandidate?.plate,
-                                    focalPoint: nil,
-                                    contentMode: .fit
-                                )
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: previewHeight)
-                        } else {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.secondarySystemBackground))
-                                .frame(height: previewHeight)
-                                .overlay(
-                                    VStack(spacing: 10) {
-                                        Image(systemName: "video")
-                                            .font(.system(size: 36))
-                                            .foregroundStyle(Color.reportedOrange)
-                                        Text(media.displayName)
-                                            .foregroundStyle(.primary)
-                                    }
-                                )
-                        }
-                        if let seconds = selectedCandidate?.videoFrameTimeSeconds {
-                            Text("Video frame \(formatVideoDuration(seconds))")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color.black.opacity(0.72))
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .padding(10)
+            ZStack(alignment: .bottom) {
+                GeometryReader { proxy in
+                    HStack(spacing: 0) {
+                        ForEach(mediaItems.indices, id: \.self) { index in
+                            mediaPreviewPage(media: mediaItems[index], isPrimary: index == 0)
+                                .frame(width: proxy.size.width, height: previewHeight)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(
+                        width: proxy.size.width * CGFloat(max(mediaItems.count, 1)),
+                        height: previewHeight,
+                        alignment: .leading
+                    )
+                    .offset(x: -CGFloat(selectedIndex) * proxy.size.width + carouselDragOffset)
+                    .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.86), value: selectedMediaURL)
+                    .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.86), value: mediaItems.map(\.fileURL))
+                    .contentShape(Rectangle())
+                }
+                carouselControls
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: previewHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .simultaneousGesture(carouselDragGesture)
+            .onAppear {
+                if selectedMediaURL == nil {
+                    selectedMediaURL = mediaItems.first?.fileURL
+                }
+            }
+            .onChange(of: mediaItems.map(\.fileURL)) { _, urls in
+                if let selectedMediaURL, urls.contains(selectedMediaURL) {
+                    return
+                }
+                selectedMediaURL = urls.first
+            }
+
+            if let selectedMedia {
+                Button(action: { onRemove(selectedMedia) }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 52, height: 52)
+                        .background(Color(.systemBackground).opacity(0.94))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                 }
                 .buttonStyle(.plain)
-                .fullScreenCover(isPresented: $showVideoPlayer) {
-                    if let candidate = selectedCandidate {
-                        VideoPlaybackCandidateView(
-                            media: media,
-                            candidate: candidate,
-                            onDismiss: { showVideoPlayer = false }
-                        )
+                .offset(x: 12, y: 8)
+            }
+        }
+        .padding(.trailing, 12)
+        .fullScreenCover(item: $imageViewerMedia) { media in
+            if let image = UIImage(contentsOfFile: media.fileURL.path) {
+                let isPrimary = media.fileURL == mediaItems.first?.fileURL
+                FullScreenImageViewer(
+                    image: image,
+                    candidates: isPrimary ? candidates : [],
+                    selectedPlate: isPrimary ? selectedPlate : nil,
+                    focalPoint: isPrimary ? stillImageFocalPoint : nil,
+                    onDismiss: { imageViewerMedia = nil },
+                    onCandidateConfirmed: onCandidateConfirmedFromFullScreen
+                )
+            }
+        }
+        .fullScreenCover(item: $videoPlayerMedia) { media in
+            if media.fileURL == mediaItems.first?.fileURL, let candidate = selectedCandidate {
+                VideoPlaybackCandidateView(
+                    media: media,
+                    candidate: candidate,
+                    onDismiss: { videoPlayerMedia = nil }
+                )
+            } else {
+                BasicVideoPlaybackView(
+                    media: media,
+                    onDismiss: { videoPlayerMedia = nil }
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var carouselControls: some View {
+        if mediaItems.count > 1 {
+            ZStack {
+                HStack {
+                    mediaPageDots
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 10)
+                .padding(.leading, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                HStack {
+                    carouselControlButton(
+                        systemImage: "chevron.left",
+                        accessibilityLabel: "Previous media",
+                        isEnabled: selectedIndex > 0
+                    ) {
+                        selectMedia(at: selectedIndex - 1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    carouselControlButton(
+                        systemImage: "chevron.right",
+                        accessibilityLabel: "Next media",
+                        isEnabled: selectedIndex < mediaItems.count - 1
+                    ) {
+                        selectMedia(at: selectedIndex + 1)
                     }
                 }
-            } else if let image = UIImage(contentsOfFile: media.fileURL.path) {
-                ZStack {
-                    PlateAwareImage(
-                        image: image,
-                        focalPoint: stillImageFocalPoint
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var mediaPageDots: some View {
+        HStack(spacing: 6) {
+            ForEach(mediaItems.indices, id: \.self) { index in
+                Circle()
+                    .fill(index == selectedIndex ? Color.white : Color.white.opacity(0.48))
+                    .frame(width: index == selectedIndex ? 8 : 6, height: index == selectedIndex ? 8 : 6)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.black.opacity(0.24), lineWidth: 0.5)
                     )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.34))
+        .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Media \(selectedIndex + 1) of \(mediaItems.count)")
+    }
+
+    private var carouselDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .updating($carouselDragOffset) { value, state, _ in
+                guard mediaItems.count > 1 else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = boundedCarouselDragOffset(value.translation.width)
+            }
+            .onEnded { value in
+                guard mediaItems.count > 1 else { return }
+                guard abs(value.translation.width) > abs(value.translation.height),
+                      abs(value.translation.width) > 42 || abs(value.predictedEndTranslation.width) > 72 else { return }
+                let horizontalTravel = abs(value.predictedEndTranslation.width) > abs(value.translation.width)
+                    ? value.predictedEndTranslation.width
+                    : value.translation.width
+                if horizontalTravel < 0 {
+                    selectMedia(at: selectedIndex + 1)
+                } else {
+                    selectMedia(at: selectedIndex - 1)
+                }
+            }
+    }
+
+    private func carouselControlButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Color.black.opacity(0.46))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func boundedCarouselDragOffset(_ translation: CGFloat) -> CGFloat {
+        let draggingPastFirst = selectedIndex == 0 && translation > 0
+        let draggingPastLast = selectedIndex == mediaItems.count - 1 && translation < 0
+        return draggingPastFirst || draggingPastLast ? translation * 0.28 : translation
+    }
+
+    private func selectMedia(at index: Int) {
+        guard !mediaItems.isEmpty else { return }
+        let clampedIndex = min(max(index, 0), mediaItems.count - 1)
+        guard selectedIndex != clampedIndex else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            selectedMediaURL = mediaItems[clampedIndex].fileURL
+        }
+    }
+
+    @ViewBuilder
+    private func mediaPreviewPage(media: ComposerState.SubmissionMedia, isPrimary: Bool) -> some View {
+        if media.isVideo {
+            Button {
+                videoPlayerMedia = media
+            } label: {
+                videoPreview(media: media, isPrimary: isPrimary)
+            }
+            .buttonStyle(.plain)
+        } else if let image = UIImage(contentsOfFile: media.fileURL.path) {
+            ZStack {
+                PlateAwareImage(
+                    image: image,
+                    focalPoint: isPrimary ? stillImageFocalPoint : nil
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    imageViewerMedia = media
+                }
+                if isPrimary {
                     StillImagePlateOverlay(
                         imageSize: image.size,
                         candidates: candidates,
@@ -2588,37 +3267,64 @@ private struct PrimarySubmissionPreview: View {
                         }
                     )
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: previewHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .contentShape(RoundedRectangle(cornerRadius: 12))
-                .onTapGesture {
-                    showImageViewer = true
-                }
-                .fullScreenCover(isPresented: $showImageViewer) {
-                    FullScreenImageViewer(
-                        image: image,
-                        candidates: candidates,
-                        selectedPlate: selectedPlate,
-                        focalPoint: stillImageFocalPoint,
-                        onDismiss: { showImageViewer = false },
-                        onCandidateConfirmed: onCandidateConfirmedFromFullScreen
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: previewHeight)
+        } else {
+            missingMediaPreview(media: media)
+        }
+    }
+
+    @ViewBuilder
+    private func videoPreview(media: ComposerState.SubmissionMedia, isPrimary: Bool) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            if isPrimary, let preview = selectedCandidate?.videoFramePreview {
+                ZStack {
+                    Color.black
+                    Image(uiImage: preview)
+                        .resizable()
+                        .scaledToFit()
+                    StillImagePlateOverlay(
+                        imageSize: preview.size,
+                        candidates: [selectedCandidate].compactMap { $0 },
+                        selectedPlate: selectedCandidate?.plate,
+                        focalPoint: nil,
+                        contentMode: .fit
                     )
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: previewHeight)
+            } else {
+                missingMediaPreview(media: media, systemImage: "video")
             }
-            Button(action: onRemove) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 52, height: 52)
-                    .background(Color(.systemBackground).opacity(0.94))
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            if isPrimary, let seconds = selectedCandidate?.videoFrameTimeSeconds {
+                Text("Video frame \(formatVideoDuration(seconds))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.72))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(10)
             }
-            .buttonStyle(.plain)
-            .offset(x: 12, y: 8)
         }
-        .padding(.trailing, 12)
+    }
+
+    private func missingMediaPreview(media: ComposerState.SubmissionMedia, systemImage: String = "photo") -> some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color(.secondarySystemBackground))
+            .frame(height: previewHeight)
+            .overlay(
+                VStack(spacing: 10) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 36))
+                        .foregroundStyle(Color.reportedOrange)
+                    Text(media.displayName)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 16)
+            )
     }
 
     private var stillImageFocalPoint: CGPoint? {
@@ -2725,22 +3431,14 @@ private struct StillImagePlateOverlay: View {
             )
             ZStack(alignment: .topLeading) {
                 ForEach(candidates) { candidate in
-                    if let bounds = candidate.bounds, bounds.width > 0, bounds.height > 0 {
-                        let rect = CGRect(
-                            x: layout.offset.x + bounds.minX * layout.displayedSize.width,
-                            y: layout.offset.y + bounds.minY * layout.displayedSize.height,
-                            width: bounds.width * layout.displayedSize.width,
-                            height: bounds.height * layout.displayedSize.height
-                        )
-                        Rectangle()
+                    if let overlay = candidate.overlayShape(in: layout) {
+                        overlay.path
                             .stroke(candidate.plate == selectedPlate ? Color.green : Color.reportedOrange, lineWidth: 3)
-                            .frame(width: max(1, rect.width), height: max(1, rect.height))
-                            .position(x: rect.midX, y: rect.midY)
                         if let onCandidateTapped {
                             Rectangle()
                                 .fill(Color.black.opacity(0.001))
-                                .frame(width: max(44, rect.width + 20), height: max(44, rect.height + 20))
-                                .position(x: rect.midX, y: rect.midY)
+                                .frame(width: max(44, overlay.bounds.width + 20), height: max(44, overlay.bounds.height + 20))
+                                .position(x: overlay.bounds.midX, y: overlay.bounds.midY)
                                 .onTapGesture {
                                     onCandidateTapped(candidate)
                                 }
@@ -2864,7 +3562,40 @@ private struct FullScreenImageViewer: View {
 }
 
 private var plateCandidateSheetDetentHeight: CGFloat {
-    UIDevice.current.userInterfaceIdiom == .pad ? 420 : 260
+    UIDevice.current.userInterfaceIdiom == .pad ? 470 : 320
+}
+
+@MainActor
+private func complaintChooserSheetDetentHeight(optionCount: Int) -> CGFloat {
+    let screenBounds = UIScreen.main.bounds
+    let shortSide = min(screenBounds.width, screenBounds.height)
+    let longSide = max(screenBounds.width, screenBounds.height)
+    let isTabletLayout = UIDevice.current.userInterfaceIdiom == .pad || shortSide >= 700
+    let columnCount = shortSide >= 700 ? 3 : 2
+    let rowCount = max(1, Int(ceil(Double(max(optionCount, 1)) / Double(columnCount))))
+    let tileHeight: CGFloat = isTabletLayout ? 218 : 150
+    let gridSpacing: CGFloat = isTabletLayout ? 16 : 12
+    let titleHeight: CGFloat = isTabletLayout ? 44 : 32
+    let titleGridSpacing: CGFloat = isTabletLayout ? 20 : 16
+    let outerVerticalPadding: CGFloat = 24
+    let gridHeight = CGFloat(rowCount) * tileHeight + CGFloat(max(rowCount - 1, 0)) * gridSpacing
+    let contentHeight = titleHeight + titleGridSpacing + gridHeight + outerVerticalPadding
+    let bottomSafeArea = currentBottomSafeAreaInset(fallbackLongSide: longSide)
+    let requestedHeight = contentHeight - bottomSafeArea
+    let maximumHeight = (longSide * (isTabletLayout ? 0.72 : 0.86)) - bottomSafeArea
+    return min(max(requestedHeight, 220), maximumHeight)
+}
+
+@MainActor
+private func currentBottomSafeAreaInset(fallbackLongSide: CGFloat) -> CGFloat {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let foregroundScene = scenes.first { $0.activationState == .foregroundActive }
+        ?? scenes.first { $0.activationState == .foregroundInactive }
+        ?? scenes.first
+    if let bottomInset = foregroundScene?.windows.first(where: \.isKeyWindow)?.safeAreaInsets.bottom {
+        return bottomInset
+    }
+    return fallbackLongSide >= 780 ? 34 : 0
 }
 
 private struct PlateCandidateChip: View {
@@ -2882,7 +3613,12 @@ private struct PlateCandidateChip: View {
                         .font(.caption)
                         .foregroundStyle(isSelected ? .white.opacity(0.9) : Color.reportedOrange)
                 }
-                Text("\(Int(candidate.confidence * 100))% confidence")
+                ForEach(candidate.ocrSourceTexts, id: \.self) { sourceText in
+                    Text(sourceText)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+                }
+                Text(candidate.detectorConfidenceText)
                     .font(.caption)
                 if let detectedState = candidate.state {
                     if let confidence = candidate.stateConfidence {
@@ -2951,7 +3687,12 @@ private struct UsePlateCandidateSheet: View {
                             .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(Color.reportedOrange)
                     }
-                    Text("\(Int(candidate.confidence * 100))% confidence")
+                    ForEach(candidate.ocrSourceTexts, id: \.self) { sourceText in
+                        Text(sourceText)
+                            .font(isTabletLayout ? .callout : .caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(candidate.detectorConfidenceText)
                         .font(isTabletLayout ? .body : .subheadline)
                         .foregroundStyle(.secondary)
                     if let classifierText = candidate.stateClassifierText {
@@ -3026,6 +3767,7 @@ private struct PlateCandidatePickerSheet: View {
 
 private struct PlateCandidatePickerRow: View {
     let candidate: ComposerState.PlateCandidate
+    var sourceImage: UIImage? = nil
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -3035,6 +3777,7 @@ private struct PlateCandidatePickerRow: View {
             HStack(spacing: isTabletLayout ? 16 : 12) {
                 PlateCandidateCropPreview(
                     candidate: candidate,
+                    sourceImage: sourceImage,
                     size: isTabletLayout ? CGSize(width: 160, height: 82) : CGSize(width: 96, height: 48),
                     cornerRadius: isTabletLayout ? 8 : 6
                 )
@@ -3049,7 +3792,12 @@ private struct PlateCandidatePickerRow: View {
                             .font(isTabletLayout ? .callout : .caption)
                             .foregroundStyle(Color.reportedOrange)
                     }
-                    Text("\(Int(candidate.confidence * 100))% detection confidence")
+                    ForEach(candidate.ocrSourceTexts, id: \.self) { sourceText in
+                        Text(sourceText)
+                            .font(isTabletLayout ? .callout : .caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(candidate.detectorConfidenceText)
                         .font(isTabletLayout ? .callout : .caption)
                         .foregroundStyle(.secondary)
                     if let stateText = candidate.stateClassifierText {
@@ -3099,11 +3847,11 @@ private struct PlateCandidateCropPreview: View {
             if let crop = candidate.plateCropPreview ?? sourceImage?.croppedPlatePreview(for: candidate) {
                 Image(uiImage: crop)
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
             } else if let frame = candidate.videoFramePreview {
                 Image(uiImage: frame)
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
             } else {
                 Text("No image")
                     .font(.caption2)
@@ -3341,6 +4089,29 @@ private func reverseGeocodeNyc(latitude: Double, longitude: Double) async -> Com
     return ComposerState.AddressSuggestion(label: label, latitude: latitude, longitude: longitude)
 }
 
+private func addressSuggestionFromImageMetadata(_ metadata: ExtractedSubmissionMetadata) async -> ComposerState.AddressSuggestion? {
+    guard let latitude = metadata.latitude, let longitude = metadata.longitude else { return nil }
+    guard latitude.isFinite, longitude.isFinite else { return nil }
+    guard abs(latitude) <= 90, abs(longitude) <= 180 else { return nil }
+    guard abs(latitude) > 0.000001 || abs(longitude) > 0.000001 else { return nil }
+    let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
+    return await reverseGeocodeNyc(latitude: latitude, longitude: longitude)
+        ?? coordinateAddressSuggestion(latitude: latitude, longitude: longitude)
+}
+
+private func coordinateAddressSuggestion(latitude: Double, longitude: Double) -> ComposerState.AddressSuggestion {
+    ComposerState.AddressSuggestion(
+        label: formattedCoordinateText(latitude: latitude, longitude: longitude),
+        latitude: latitude,
+        longitude: longitude
+    )
+}
+
+private func formattedCoordinateText(latitude: Double, longitude: Double) -> String {
+    String(format: "%.5f, %.5f", latitude, longitude)
+}
+
 private func searchNycAddresses(query: String) async -> [ComposerState.AddressSuggestion] {
     var components = URLComponents(string: "https://geosearch.planninglabs.nyc/v2/search")
     components?.queryItems = [
@@ -3503,15 +4274,18 @@ private struct ReportsSearchSection: View {
 
     var body: some View {
         Section("Search Filters") {
-            StableSingleLineTextInput(
+            TextField(
+                "License plate",
                 text: Binding(
                     get: { viewModel.licenseQuery },
                     set: { viewModel.onAction(.licenseChanged($0)) }
-                ),
-                placeholder: "License plate",
-                autocapitalizationType: .allCharacters,
-                autocorrectionDisabled: true
+                )
             )
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled(true)
+            .textFieldStyle(.plain)
+            .submitLabel(.done)
+            .onSubmit { dismissActiveKeyboard() }
             .frame(height: 24)
             Toggle("Use start date", isOn: Binding(
                 get: { viewModel.usesStartDate },
@@ -3812,7 +4586,7 @@ struct ProfileScreen: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let isLandscape = geometry.size.width > geometry.size.height
+            let isLandscape = currentInterfaceIsLandscape(fallbackSize: geometry.size)
             Group {
                 if !isAuthorized {
                     ScrollView {
@@ -3886,7 +4660,7 @@ struct SettingsScreen: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let isLandscape = geometry.size.width > geometry.size.height
+            let isLandscape = currentInterfaceIsLandscape(fallbackSize: geometry.size)
             ScrollView {
                 ScreenCard {
                     VStack(alignment: .leading, spacing: 12) {
@@ -4248,7 +5022,7 @@ private struct DetectionCandidatePill: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(candidate.plate)
                     .font(.callout.weight(.bold))
-                Text([candidate.state, "\(Int(candidate.confidence * 100))%"].compactMap { $0 }.joined(separator: "  "))
+                Text([candidate.state, candidate.shortDetectorConfidenceText].compactMap { $0 }.joined(separator: "  "))
                     .font(.caption)
             }
             .foregroundStyle(isSelected ? .white : .primary)
@@ -4311,6 +5085,32 @@ private struct VideoPlaybackCandidateView: View {
                 )
                 .ignoresSafeArea()
             }
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.62))
+                    .clipShape(Circle())
+            }
+            .padding(16)
+        }
+    }
+}
+
+private struct BasicVideoPlaybackView: View {
+    let media: ComposerState.SubmissionMedia
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            VideoPlaybackView(
+                url: media.fileURL,
+                startSeconds: 0,
+                onTimeChanged: { _ in }
+            )
+            .ignoresSafeArea()
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 20, weight: .semibold))
@@ -4447,21 +5247,13 @@ private struct VideoPlateOverlay: View {
             let mediaRect = aspectFitRect(sourceSize: sourceSize, viewportSize: proxy.size)
             ZStack(alignment: .topLeading) {
                 ForEach(candidates) { candidate in
-                    if let bounds = candidate.bounds, bounds.width > 0, bounds.height > 0 {
-                        let rect = CGRect(
-                            x: mediaRect.minX + bounds.minX * mediaRect.width,
-                            y: mediaRect.minY + bounds.minY * mediaRect.height,
-                            width: bounds.width * mediaRect.width,
-                            height: bounds.height * mediaRect.height
-                        )
-                        Rectangle()
+                    if let overlay = candidate.overlayShape(in: mediaRect) {
+                        overlay.path
                             .stroke(candidate.plate == selectedPlate ? Color.green : Color.reportedOrange, lineWidth: 3)
-                            .frame(width: max(1, rect.width), height: max(1, rect.height))
-                            .position(x: rect.midX, y: rect.midY)
                         Button {
                             onCandidateSelected(candidate)
                         } label: {
-                            Text([candidate.plate, candidate.state, "\(Int(candidate.confidence * 100))%"].compactMap { $0 }.joined(separator: "  "))
+                            Text([candidate.plate, candidate.state, candidate.shortDetectorConfidenceText].compactMap { $0 }.joined(separator: "  "))
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 8)
@@ -4470,7 +5262,7 @@ private struct VideoPlateOverlay: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .position(x: min(proxy.size.width - 70, max(70, rect.midX)), y: max(18, rect.minY - 16))
+                        .position(x: min(proxy.size.width - 70, max(70, overlay.bounds.midX)), y: max(18, overlay.bounds.minY - 16))
                     }
                 }
             }
@@ -4502,6 +5294,23 @@ private struct VideoPlateOverlay: View {
 private let reportedFieldLabelSpacing: CGFloat = 10
 private let reportedFieldLabelHorizontalInset: CGFloat = 2
 
+private extension UITextAutocapitalizationType {
+    var swiftUIValue: TextInputAutocapitalization {
+        switch self {
+        case .none:
+            return .never
+        case .words:
+            return .words
+        case .sentences:
+            return .sentences
+        case .allCharacters:
+            return .characters
+        @unknown default:
+            return .sentences
+        }
+    }
+}
+
 private struct ReportedFieldLabel: View {
     let title: String
     var isError = false
@@ -4514,193 +5323,6 @@ private struct ReportedFieldLabel: View {
             .minimumScaleFactor(0.68)
             .allowsTightening(true)
             .padding(.horizontal, reportedFieldLabelHorizontalInset)
-    }
-}
-
-private struct StableSingleLineTextInput: UIViewRepresentable {
-    @Binding var text: String
-    var placeholder: String
-    var disabled = false
-    var keyboardType: UIKeyboardType = .default
-    var textContentType: UITextContentType? = nil
-    var autocapitalizationType: UITextAutocapitalizationType = .sentences
-    var autocorrectionDisabled = false
-
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField(frame: .zero)
-        field.borderStyle = .none
-        field.backgroundColor = .clear
-        field.delegate = context.coordinator
-        field.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
-        field.adjustsFontForContentSizeCategory = true
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        applyTraits(to: field)
-        applyAppearance(to: field)
-        return field
-    }
-
-    func updateUIView(_ uiView: UITextField, context: Context) {
-        context.coordinator.text = $text
-        let isComposingMarkedText = uiView.markedTextRange != nil
-        if uiView.text != text && (!uiView.isFirstResponder || !isComposingMarkedText) {
-            uiView.text = text
-        }
-        if uiView.placeholder != placeholder { uiView.placeholder = placeholder }
-        if uiView.isEnabled == disabled { uiView.isEnabled = !disabled }
-        if !uiView.isFirstResponder {
-            applyTraits(to: uiView)
-        }
-        applyAppearance(to: uiView)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    private func applyTraits(to field: UITextField) {
-        if field.keyboardType != keyboardType { field.keyboardType = keyboardType }
-        if field.textContentType != textContentType { field.textContentType = textContentType }
-        if field.autocapitalizationType != autocapitalizationType { field.autocapitalizationType = autocapitalizationType }
-        let autocorrectionType: UITextAutocorrectionType = autocorrectionDisabled ? .no : .default
-        if field.autocorrectionType != autocorrectionType { field.autocorrectionType = autocorrectionType }
-        let spellCheckingType: UITextSpellCheckingType = autocorrectionDisabled ? .no : .default
-        if field.spellCheckingType != spellCheckingType { field.spellCheckingType = spellCheckingType }
-    }
-
-    private func applyAppearance(to field: UITextField) {
-        let preferredFont = UIFont.preferredFont(forTextStyle: .body)
-        if field.font != preferredFont { field.font = preferredFont }
-        if field.textColor != .label { field.textColor = .label }
-        if field.tintColor != .label { field.tintColor = .label }
-    }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var text: Binding<String>
-        private var beganEditingAt: Date?
-
-        init(text: Binding<String>) {
-            self.text = text
-        }
-
-        @objc func textDidChange(_ sender: UITextField) {
-            guard sender.markedTextRange == nil else { return }
-            let value = sender.text ?? ""
-            if text.wrappedValue != value {
-                text.wrappedValue = value
-            }
-        }
-
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            beganEditingAt = Date()
-        }
-
-        func textFieldShouldEndEditing(_ textField: UITextField) -> Bool {
-            guard let beganEditingAt else { return true }
-            return Date().timeIntervalSince(beganEditingAt) > 0.2
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            beganEditingAt = nil
-            let value = textField.text ?? ""
-            if text.wrappedValue != value {
-                text.wrappedValue = value
-            }
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            textField.resignFirstResponder()
-            return true
-        }
-    }
-}
-
-private struct StableMultilineTextInput: UIViewRepresentable {
-    @Binding var text: String
-    var disabled = false
-    var autocapitalizationType: UITextAutocapitalizationType = .sentences
-    var autocorrectionDisabled = false
-
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView(frame: .zero)
-        textView.backgroundColor = .clear
-        textView.delegate = context.coordinator
-        textView.isScrollEnabled = true
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.adjustsFontForContentSizeCategory = true
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        applyTraits(to: textView)
-        applyAppearance(to: textView)
-        return textView
-    }
-
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        context.coordinator.text = $text
-        let isComposingMarkedText = uiView.markedTextRange != nil
-        if uiView.text != text && (!uiView.isFirstResponder || !isComposingMarkedText) {
-            uiView.text = text
-        }
-        if uiView.isEditable == disabled { uiView.isEditable = !disabled }
-        if uiView.isSelectable == disabled { uiView.isSelectable = !disabled }
-        if !uiView.isFirstResponder {
-            applyTraits(to: uiView)
-        }
-        applyAppearance(to: uiView)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    private func applyTraits(to textView: UITextView) {
-        if textView.autocapitalizationType != autocapitalizationType { textView.autocapitalizationType = autocapitalizationType }
-        let autocorrectionType: UITextAutocorrectionType = autocorrectionDisabled ? .no : .default
-        if textView.autocorrectionType != autocorrectionType { textView.autocorrectionType = autocorrectionType }
-        let spellCheckingType: UITextSpellCheckingType = autocorrectionDisabled ? .no : .default
-        if textView.spellCheckingType != spellCheckingType { textView.spellCheckingType = spellCheckingType }
-    }
-
-    private func applyAppearance(to textView: UITextView) {
-        let preferredFont = UIFont.preferredFont(forTextStyle: .body)
-        if textView.font != preferredFont { textView.font = preferredFont }
-        if textView.textColor != .label { textView.textColor = .label }
-        if textView.tintColor != .label { textView.tintColor = .label }
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var text: Binding<String>
-        private var beganEditingAt: Date?
-
-        init(text: Binding<String>) {
-            self.text = text
-        }
-
-        func textViewDidChange(_ textView: UITextView) {
-            guard textView.markedTextRange == nil else { return }
-            let value = textView.text ?? ""
-            if text.wrappedValue != value {
-                text.wrappedValue = value
-            }
-        }
-
-        func textViewDidBeginEditing(_ textView: UITextView) {
-            beganEditingAt = Date()
-        }
-
-        func textViewShouldEndEditing(_ textView: UITextView) -> Bool {
-            guard let beganEditingAt else { return true }
-            return Date().timeIntervalSince(beganEditingAt) > 0.2
-        }
-
-        func textViewDidEndEditing(_ textView: UITextView) {
-            beganEditingAt = nil
-            let value = textView.text ?? ""
-            if text.wrappedValue != value {
-                text.wrappedValue = value
-            }
-        }
     }
 }
 
@@ -4760,25 +5382,29 @@ struct InputField: View {
                         .foregroundStyle(Color(.placeholderText))
                         .allowsHitTesting(false)
                 }
-                StableMultilineTextInput(
-                    text: $text,
-                    disabled: disabled,
-                    autocapitalizationType: autocapitalizationType,
-                    autocorrectionDisabled: autocorrectionDisabled
-                )
+                TextEditor(text: $text)
+                    .disabled(disabled)
+                    .textInputAutocapitalization(autocapitalizationType.swiftUIValue)
+                    .autocorrectionDisabled(autocorrectionDisabled)
+                    .foregroundStyle(.primary)
+                    .tint(.primary)
+                    .scrollContentBackground(.hidden)
+                    .frame(maxWidth: .infinity, minHeight: max(24, (fieldMinHeight ?? 68) - 22), alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
         } else {
-            StableSingleLineTextInput(
-                text: $text,
-                placeholder: title,
-                disabled: disabled,
-                keyboardType: keyboardType,
-                textContentType: textContentType,
-                autocapitalizationType: autocapitalizationType,
-                autocorrectionDisabled: autocorrectionDisabled
-            )
-            .frame(height: 24)
+            TextField(title, text: $text)
+                .disabled(disabled)
+                .keyboardType(keyboardType)
+                .textContentType(textContentType)
+                .textInputAutocapitalization(autocapitalizationType.swiftUIValue)
+                .autocorrectionDisabled(autocorrectionDisabled)
+                .foregroundStyle(.primary)
+                .tint(.primary)
+                .textFieldStyle(.plain)
+                .submitLabel(.done)
+                .onSubmit { dismissActiveKeyboard() }
+                .frame(height: 24)
         }
     }
 }
@@ -4860,42 +5486,41 @@ private struct ComplaintPickerField: View {
 }
 
 private struct PlateInputField: View {
-    @Binding var text: String
+    let text: String
     var isError = false
-    let showCandidateButton: Bool
-    let onShowCandidates: () -> Void
+    let candidateCount: Int
+    let onEdit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
             ReportedFieldLabel(title: "Plate", isError: isError)
-            HStack(spacing: 6) {
-                StableSingleLineTextInput(
-                    text: $text,
-                    placeholder: "Plate",
-                    keyboardType: .default,
-                    autocapitalizationType: .allCharacters,
-                    autocorrectionDisabled: true
-                )
-                .frame(height: 24)
-                if showCandidateButton {
-                    Button(action: onShowCandidates) {
-                        Text("?")
-                            .font(.headline.bold())
+            Button(action: onEdit) {
+                HStack(spacing: 6) {
+                    Text(text.isEmpty ? "Plate" : text)
+                        .foregroundStyle(text.isEmpty ? Color(.placeholderText) : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if candidateCount > 0 {
+                        Image(systemName: "text.viewfinder")
+                            .font(.callout.weight(.semibold))
                             .foregroundStyle(Color.reportedOrange)
-                            .frame(width: 12, height: 24)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .frame(minHeight: 44)
+                .background(isError ? Color.reportedFieldErrorBackground : Color(.systemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isError ? Color.red : Color(.separator), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(minHeight: 44)
-            .background(isError ? Color.reportedFieldErrorBackground : Color(.systemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isError ? Color.red : Color(.separator), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+            .accessibilityLabel("Plate")
+            .accessibilityValue(text.isEmpty ? "Empty" : text)
         }
     }
 }
@@ -4933,6 +5558,11 @@ private struct FieldErrorGroup: View {
 }
 
 private extension ComposerState.PlateCandidate {
+    struct OverlayShape {
+        let path: Path
+        let bounds: CGRect
+    }
+
     var normalizedFocalPoint: CGPoint? {
         guard let bounds else { return nil }
         return CGPoint(
@@ -4944,9 +5574,17 @@ private extension ComposerState.PlateCandidate {
     var candidateSummary: String {
         var parts = [plate]
         if let state { parts.append(state) }
-        parts.append("\(Int(confidence * 100))%")
+        parts.append(shortDetectorConfidenceText)
         if let plateTypeLabel { parts.append(plateTypeLabel) }
         return parts.joined(separator: "  ")
+    }
+
+    var detectorConfidenceText: String {
+        "Plate detector: \(Int(confidence * 100))%"
+    }
+
+    var shortDetectorConfidenceText: String {
+        "det \(Int(confidence * 100))%"
     }
 
     var stateClassifierText: String? {
@@ -4966,12 +5604,76 @@ private extension ComposerState.PlateCandidate {
         guard wasPlateCorrected, let rawPlateText, rawPlateText != plate else { return nil }
         return "Corrected from OCR: \(rawPlateText)"
     }
+
+    var ocrSourceTexts: [String] {
+        let own = normalizedOcrDisplayText(ownOcrText)
+        var rows: [String] = []
+        if let own {
+            rows.append(ocrSourceText(label: "Reported OCR", text: own, confidence: ownOcrConfidence))
+        }
+        return rows
+    }
+
+    private func ocrSourceText(label: String, text: String, confidence: Double?) -> String {
+        if let confidence {
+            return "\(label): \(text) (\(Int(max(0, min(confidence, 1)) * 100))%)"
+        }
+        return "\(label): \(text)"
+    }
+
+    private func normalizedOcrDisplayText(_ text: String?) -> String? {
+        guard let normalized = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty
+        else {
+            return nil
+        }
+        return normalized
+    }
+
+    func overlayShape(in layout: PlateImageLayout) -> OverlayShape? {
+        overlayShape(in: CGRect(origin: layout.offset, size: layout.displayedSize))
+    }
+
+    func overlayShape(in mediaRect: CGRect) -> OverlayShape? {
+        if cornerPoints.count >= 4 {
+            let points = cornerPoints.prefix(4).map { point in
+                CGPoint(
+                    x: mediaRect.minX + min(1, max(0, point.x)) * mediaRect.width,
+                    y: mediaRect.minY + min(1, max(0, point.y)) * mediaRect.height
+                )
+            }
+            let minX = points.map(\.x).min() ?? 0
+            let maxX = points.map(\.x).max() ?? 0
+            let minY = points.map(\.y).min() ?? 0
+            let maxY = points.map(\.y).max() ?? 0
+            guard maxX > minX, maxY > minY else { return nil }
+            var path = Path()
+            path.move(to: points[0])
+            path.addLine(to: points[1])
+            path.addLine(to: points[2])
+            path.addLine(to: points[3])
+            path.closeSubpath()
+            return OverlayShape(
+                path: path,
+                bounds: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            )
+        }
+
+        guard let bounds, bounds.width > 0, bounds.height > 0 else { return nil }
+        let rect = CGRect(
+            x: mediaRect.minX + bounds.minX * mediaRect.width,
+            y: mediaRect.minY + bounds.minY * mediaRect.height,
+            width: bounds.width * mediaRect.width,
+            height: bounds.height * mediaRect.height
+        )
+        return OverlayShape(path: Path(rect), bounds: rect)
+    }
 }
 
 private extension UIImage {
     func croppedPlatePreview(for candidate: ComposerState.PlateCandidate) -> UIImage? {
         guard let bounds = candidate.bounds, let cgImage else { return nil }
-        let paddedBounds = bounds.insetBy(dx: -bounds.width * 0.35, dy: -bounds.height * 0.65)
+        let paddedBounds = bounds.insetBy(dx: -bounds.width * 0.08, dy: -bounds.height * 0.18)
         let clampedBounds = CGRect(
             x: min(1, max(0, paddedBounds.minX)),
             y: min(1, max(0, paddedBounds.minY)),
@@ -4987,7 +5689,7 @@ private extension UIImage {
         guard pixelRect.width > 0, pixelRect.height > 0, let cropped = cgImage.cropping(to: pixelRect) else {
             return nil
         }
-        return UIImage(cgImage: cropped, scale: scale, orientation: imageOrientation)
+        return UIImage(cgImage: cropped, scale: scale, orientation: .up)
     }
 }
 
@@ -5032,6 +5734,2475 @@ private struct PlateRegionSheet: View {
     }
 }
 
+private struct PlateEntryScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var plate: String
+    let candidates: [ComposerState.PlateCandidate]
+    let selectedPlate: String?
+    let sourceImage: UIImage?
+    let isError: Bool
+    let onCancel: () -> Void
+    let onClear: () -> Void
+    let onCandidateSelected: (ComposerState.PlateCandidate) -> Void
+    @FocusState private var isPlateFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            plateEntryHeader
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if candidates.isEmpty {
+                        plateEmptyState
+                    } else {
+                        ForEach(candidates) { candidate in
+                            PlateCandidatePickerRow(
+                                candidate: candidate,
+                                sourceImage: sourceImage,
+                                isSelected: candidate.plate == selectedPlate
+                            ) {
+                                onCandidateSelected(candidate)
+                                dismissActiveKeyboard()
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .background(Color(.systemBackground))
+        .onAppear {
+            isPlateFocused = true
+        }
+    }
+
+    private var plateEntryHeader: some View {
+        HStack(spacing: 10) {
+            Button {
+                onCancel()
+                dismissActiveKeyboard()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 34, height: 58)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+
+            HStack(spacing: 10) {
+                Image(systemName: "text.viewfinder")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextField("Plate", text: $plate)
+                    .focused($isPlateFocused)
+                    .keyboardType(.asciiCapable)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled(true)
+                    .foregroundStyle(.primary)
+                    .tint(.primary)
+                    .textFieldStyle(.plain)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        dismissActiveKeyboard()
+                        dismiss()
+                    }
+                if !plate.isEmpty {
+                    Button {
+                        onClear()
+                        isPlateFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear plate")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 46)
+            .background(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isError ? Color.red : Color.clear, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Button {
+                dismissActiveKeyboard()
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.reportedOrange)
+                    .frame(height: 42)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(Color(.systemBackground))
+    }
+
+    private var plateEmptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "text.viewfinder")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(Color.reportedOrange)
+                .frame(width: 48, height: 48)
+                .background(Color.reportedOrange.opacity(0.12))
+                .clipShape(Circle())
+            Text("No plate candidates")
+                .font(.headline.weight(.semibold))
+            Text("Enter the plate manually.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 34)
+    }
+}
+
+private enum VoiceReportPermissionState {
+    case unknown
+    case authorized
+    case denied
+
+    var isAuthorized: Bool {
+        self == .authorized
+    }
+}
+
+@MainActor
+private final class VoiceReportAudioController: ObservableObject {
+    @Published var isRecording = false
+    @Published var amplitude: Double = 0
+    @Published var permissionState: VoiceReportPermissionState = .unknown
+    @Published var errorMessage: String?
+
+    private var recorder: AVAudioRecorder?
+    private var recordingURL: URL?
+    private var meterTimer: Timer?
+
+    init() {
+        refreshPermissionState()
+    }
+
+    var hasPermission: Bool {
+        permissionState.isAuthorized
+    }
+
+    func requestPermissions() async -> Bool {
+        let microphoneGranted = await requestMicrophonePermission()
+        permissionState = microphoneGranted ? .authorized : .denied
+        if !microphoneGranted {
+            errorMessage = "Microphone access is needed to talk through report fields."
+        } else {
+            errorMessage = nil
+        }
+        return microphoneGranted
+    }
+
+    func startRecording() async -> Bool {
+        errorMessage = nil
+        guard await requestPermissions() else { return false }
+
+        _ = stopRecording()
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reported-voice-report-\(UUID().uuidString)")
+            .appendingPathExtension("wav")
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.record, mode: .measurement, options: [])
+            try session.setActive(true)
+
+            let recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder.isMeteringEnabled = true
+            recorder.prepareToRecord()
+            guard recorder.record() else {
+                errorMessage = "Microphone recording could not start."
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+                return false
+            }
+            self.recorder = recorder
+            recordingURL = url
+            isRecording = true
+            startMetering()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            _ = stopRecording()
+            return false
+        }
+    }
+
+    func stopRecording() -> URL? {
+        recorder?.stop()
+        stopMetering()
+        recorder = nil
+        isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        let url = recordingURL
+        recordingURL = nil
+        guard let url else { return nil }
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+        if fileSize <= 44 {
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+        return url
+    }
+
+    func reset() {
+        if let url = stopRecording() {
+            try? FileManager.default.removeItem(at: url)
+        }
+        errorMessage = nil
+    }
+
+    private func startMetering() {
+        stopMetering(resetAmplitude: false)
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateMeter()
+            }
+        }
+    }
+
+    private func stopMetering(resetAmplitude: Bool = true) {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        if resetAmplitude {
+            amplitude = 0
+        }
+    }
+
+    private func updateMeter() {
+        guard let recorder else { return }
+        recorder.updateMeters()
+        let averagePower = max(-60.0, Double(recorder.averagePower(forChannel: 0)))
+        let peakPower = max(-60.0, Double(recorder.peakPower(forChannel: 0)))
+        let normalizedAverage = (averagePower + 60.0) / 60.0
+        let normalizedPeak = (peakPower + 60.0) / 60.0
+        let blendedLevel = max(normalizedPeak, normalizedAverage * 1.18)
+        amplitude = min(1.0, max(0.0, pow(blendedLevel, 1.35)))
+    }
+
+    func refreshPermissionState() {
+        let microphoneAuthorized = AVAudioApplication.shared.recordPermission == .granted
+        permissionState = microphoneAuthorized ? .authorized : .unknown
+    }
+
+    private func requestMicrophonePermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+}
+
+private struct VoiceReportGemmaResult {
+    let transcript: String?
+    let draft: VoiceReportDraft
+}
+
+private enum OnDeviceGemmaVoiceDraftEngine {
+    static let modelDownloadSizeLabel = "2.6 GB"
+    private static let modelDownloadFileName = "gemma-4-E2B-it.litertlm"
+    private static let modelDownloadEstimatedBytes: Int64 = 2_590_000_000
+    private static let modelDownloadMinimumBytes: Int64 = 512 * 1024 * 1024
+    private static let modelDownloadURL = URL(
+        string: "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true"
+    )!
+    private static let modelFileNames = [
+        "gemma-voice-report.litertlm",
+        "gemma-4-E2B-it.litertlm",
+        "gemma-4-E4B-it.litertlm"
+    ]
+
+    static func isModelInstalled() -> Bool {
+        resolveModelURL() != nil
+    }
+
+    static func downloadModel(onProgress: @escaping (Int64, Int64) -> Void) async throws {
+        if resolveModelURL() != nil { return }
+        let destinationURL = try modelStorageDirectory()
+            .appendingPathComponent(modelDownloadFileName)
+        let partialURL = destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(modelDownloadFileName).part")
+        try? FileManager.default.removeItem(at: partialURL)
+        let downloader = GemmaModelDownloader(
+            destinationURL: partialURL,
+            estimatedTotalBytes: modelDownloadEstimatedBytes,
+            onProgress: onProgress
+        )
+        do {
+            let downloadedURL = try await downloader.download(from: modelDownloadURL)
+            try? FileManager.default.removeItem(at: destinationURL)
+            try FileManager.default.moveItem(at: downloadedURL, to: destinationURL)
+            guard usableModelFile(at: destinationURL) else {
+                throw VoiceReportGemmaError.message("REPORTED AI did not finish installing correctly.")
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: partialURL)
+            throw error
+        }
+    }
+
+    static func generateDraft(
+        audioURL: URL,
+        imageURL: URL? = nil,
+        complaintOptions: [ComplaintOption],
+        voiceContext: VoiceReportContext
+    ) async throws -> VoiceReportGemmaResult {
+        try await Task.detached(priority: .userInitiated) {
+            let attributes = try FileManager.default.attributesOfItem(atPath: audioURL.path)
+            let fileSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            guard fileSize > 44 else {
+                throw VoiceReportGemmaError.message("The recording was too short to process.")
+            }
+            guard let modelURL = resolveModelURL() else {
+                throw VoiceReportGemmaError.message("REPORTED AI is not installed. Install REPORTED AI (\(installSizeLabel(from: modelDownloadSizeLabel))) before voice drafting can run.")
+            }
+            let prompt = buildVoiceReportGemmaPrompt(
+                complaintOptions: complaintOptions,
+                voiceContext: voiceContext
+            )
+            let cacheURL = try resolveCacheURL()
+
+            do {
+                return try await generateDraftResponse(
+                    audioURL: audioURL,
+                    imageURL: imageURL,
+                    modelURL: modelURL,
+                    prompt: prompt,
+                    cacheURL: cacheURL,
+                    complaintOptions: complaintOptions
+                )
+            } catch {
+                guard imageURL != nil else { throw error }
+                return try await generateDraftResponse(
+                    audioURL: audioURL,
+                    imageURL: nil,
+                    modelURL: modelURL,
+                    prompt: prompt,
+                    cacheURL: cacheURL,
+                    complaintOptions: complaintOptions
+                )
+            }
+        }.value
+    }
+
+    static func generateImageContext(imageURL: URL) async -> String? {
+        await Task.detached(priority: .utility) {
+            guard FileManager.default.fileExists(atPath: imageURL.path),
+                  let modelURL = resolveModelURL(),
+                  let cacheURL = try? resolveCacheURL() else {
+                return nil
+            }
+            do {
+                let engineConfig = try LiteRTLM.EngineConfig(
+                    modelPath: modelURL.path,
+                    backend: .cpu(),
+                    visionBackend: .cpu(),
+                    cacheDir: cacheURL.path
+                )
+                let engine = LiteRTLM.Engine(engineConfig: engineConfig)
+                try await engine.initialize()
+                let samplerConfig = try LiteRTLM.SamplerConfig(
+                    topK: 1,
+                    topP: 0.1,
+                    temperature: 0.0
+                )
+                let conversation = try await engine.createConversation(
+                    with: LiteRTLM.ConversationConfig(samplerConfig: samplerConfig)
+                )
+                let response = try await conversation.sendMessage(
+                    LiteRTLM.Message(contents: [
+                        .imageFile(imageURL.path),
+                        .text("""
+                        Briefly inspect this report photo for form-filling context. Return one concise sentence with only clearly visible facts: possible complaint type, vehicle make/model/color/type, visible license plate text, location clues, and scene details. If uncertain, say uncertain rather than guessing.
+                        """)
+                    ])
+                )
+                let cleaned = response.toString
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                return cleaned.isEmpty ? nil : String(cleaned.prefix(1200))
+            } catch {
+                return nil
+            }
+        }.value
+    }
+
+    private static func generateDraftResponse(
+        audioURL: URL,
+        imageURL: URL?,
+        modelURL: URL,
+        prompt: String,
+        cacheURL: URL,
+        complaintOptions: [ComplaintOption]
+    ) async throws -> VoiceReportGemmaResult {
+            let engineConfig = try LiteRTLM.EngineConfig(
+                modelPath: modelURL.path,
+                backend: .cpu(),
+                visionBackend: imageURL == nil ? nil : .cpu(),
+                audioBackend: .cpu(),
+                cacheDir: cacheURL.path
+            )
+            let engine = LiteRTLM.Engine(engineConfig: engineConfig)
+            try await engine.initialize()
+            let samplerConfig = try LiteRTLM.SamplerConfig(
+                topK: 1,
+                topP: 0.1,
+                temperature: 0.0
+            )
+            let conversationConfig = LiteRTLM.ConversationConfig(samplerConfig: samplerConfig)
+            let conversation = try await engine.createConversation(with: conversationConfig)
+            var contents: [LiteRTLM.Content] = []
+            if let imagePath = imageURL?.path {
+                contents.append(.imageFile(imagePath))
+            }
+            contents.append(.audioFile(audioURL.path))
+            contents.append(.text(prompt))
+            let response = try await conversation.sendMessage(
+                LiteRTLM.Message(contents: contents)
+            )
+            let parsed = try parseVoiceReportGemmaJson(response.toString, complaintOptions: complaintOptions)
+            return await resolveVoiceReportAddress(parsed)
+    }
+
+    private static func resolveModelURL() -> URL? {
+        let fileManager = FileManager.default
+        for directory in modelSearchDirectories() {
+            for modelFileName in modelFileNames {
+                let url = directory.appendingPathComponent(modelFileName)
+                if fileManager.fileExists(atPath: url.path), usableModelFile(at: url) {
+                    return url
+                }
+            }
+        }
+
+        for modelFileName in modelFileNames {
+            let name = URL(fileURLWithPath: modelFileName).deletingPathExtension().lastPathComponent
+            let ext = URL(fileURLWithPath: modelFileName).pathExtension
+            if let bundledURL = Bundle.main.url(forResource: name, withExtension: ext),
+               usableModelFile(at: bundledURL) {
+                return bundledURL
+            }
+        }
+        return nil
+    }
+
+    private static func modelSearchDirectories() -> [URL] {
+        let fileManager = FileManager.default
+        var directories: [URL] = []
+        if let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            directories.append(applicationSupport.appendingPathComponent("models", isDirectory: true))
+            directories.append(applicationSupport)
+        }
+        if let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first {
+            directories.append(documents.appendingPathComponent("models", isDirectory: true))
+            directories.append(documents)
+        }
+        return directories
+    }
+
+    private static func resolveCacheURL() throws -> URL {
+        guard let cachesURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            throw VoiceReportGemmaError.message("No writable cache directory is available for Gemma.")
+        }
+        let fallbackURL = cachesURL.appendingPathComponent("litertlm", isDirectory: true)
+        try FileManager.default.createDirectory(at: fallbackURL, withIntermediateDirectories: true)
+        return fallbackURL
+    }
+
+    private static func modelStorageDirectory() throws -> URL {
+        guard let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            throw VoiceReportGemmaError.message("No writable storage directory is available for the Gemma model.")
+        }
+        let modelsURL = applicationSupport.appendingPathComponent("models", isDirectory: true)
+        try FileManager.default.createDirectory(at: modelsURL, withIntermediateDirectories: true)
+        return modelsURL
+    }
+
+    private static func usableModelFile(at url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else {
+            return false
+        }
+        return size.int64Value >= modelDownloadMinimumBytes
+    }
+}
+
+private final class GemmaModelDownloader: NSObject, URLSessionDownloadDelegate {
+    private let destinationURL: URL
+    private let estimatedTotalBytes: Int64
+    private let onProgress: (Int64, Int64) -> Void
+    private var continuation: CheckedContinuation<URL, Error>?
+    private var session: URLSession?
+
+    init(
+        destinationURL: URL,
+        estimatedTotalBytes: Int64,
+        onProgress: @escaping (Int64, Int64) -> Void
+    ) {
+        self.destinationURL = destinationURL
+        self.estimatedTotalBytes = estimatedTotalBytes
+        self.onProgress = onProgress
+    }
+
+    func download(from url: URL) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            let configuration = URLSessionConfiguration.default
+            configuration.timeoutIntervalForRequest = 60
+            configuration.timeoutIntervalForResource = 60 * 60
+            let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            self.session = session
+            var request = URLRequest(url: url)
+            request.setValue("Reported iOS", forHTTPHeaderField: "User-Agent")
+            session.downloadTask(with: request).resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let totalBytes = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : estimatedTotalBytes
+        DispatchQueue.main.async {
+            self.onProgress(totalBytesWritten, totalBytes)
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        do {
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try? FileManager.default.removeItem(at: destinationURL)
+            try FileManager.default.moveItem(at: location, to: destinationURL)
+            continuation?.resume(returning: destinationURL)
+            continuation = nil
+            session.finishTasksAndInvalidate()
+        } catch {
+            continuation?.resume(throwing: error)
+            continuation = nil
+            session.invalidateAndCancel()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let error, let continuation else { return }
+        continuation.resume(throwing: error)
+        self.continuation = nil
+        session.invalidateAndCancel()
+    }
+}
+
+private enum VoiceReportGemmaError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .message(let message):
+            return message
+        }
+    }
+}
+
+private struct VoiceDraftChangeRow {
+    let field: VoiceDraftField
+    let label: String
+    let currentValue: String
+    let nextValue: String
+}
+
+private enum VoiceDraftField: String, CaseIterable, Hashable {
+    case complaint
+    case plate
+    case state
+    case address
+    case occurredAt
+    case description
+    case notes
+}
+
+private enum VoiceDraftSource: String, Identifiable {
+    case current
+    case reportedAI
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .current:
+            return "Current"
+        case .reportedAI:
+            return "Reported AI"
+        }
+    }
+}
+
+private struct VoiceReportDraft {
+    let complaintId: String?
+    let complaintTitle: String?
+    let plate: String?
+    let plateRegion: String?
+    let address: String?
+    let occurredAtIso: String?
+    let make: String?
+    let model: String?
+    let yearRange: String?
+    let description: String?
+    let notes: String?
+
+    var hasAnyFillableField: Bool {
+        [complaintId, plate, plateRegion, address, occurredAtIso, description, notes]
+            .contains { value in
+                !(value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+    }
+
+    func keepingReportedFields(_ reportedFields: Set<VoiceDraftField>) -> VoiceReportDraft {
+        VoiceReportDraft(
+            complaintId: reportedFields.contains(.complaint) ? complaintId : nil,
+            complaintTitle: reportedFields.contains(.complaint) ? complaintTitle : nil,
+            plate: reportedFields.contains(.plate) ? plate : nil,
+            plateRegion: reportedFields.contains(.state) ? plateRegion : nil,
+            address: reportedFields.contains(.address) ? address : nil,
+            occurredAtIso: reportedFields.contains(.occurredAt) ? occurredAtIso : nil,
+            make: make,
+            model: model,
+            yearRange: yearRange,
+            description: reportedFields.contains(.description) ? description : nil,
+            notes: reportedFields.contains(.notes) ? notes : nil
+        )
+    }
+
+    func changeRows(
+        currentState: ComposerState,
+        complaintOptions: [ComplaintOption]
+    ) -> [VoiceDraftChangeRow] {
+        var rows: [VoiceDraftChangeRow] = []
+        let currentComplaint = complaintOptions.first { $0.id == currentState.selectedComplaintId }?.title
+        addChangeRow(&rows, field: .complaint, label: "Complaint", currentValue: currentComplaint, nextValue: complaintTitle)
+        addChangeRow(&rows, field: .plate, label: "Plate", currentValue: currentState.plate, nextValue: plate)
+        addChangeRow(&rows, field: .state, label: "State", currentValue: currentState.plateRegion, nextValue: plateRegion)
+        addChangeRow(
+            &rows,
+            field: .address,
+            label: "Address",
+            currentValue: currentState.addressQuery.isEmpty ? currentState.address : currentState.addressQuery,
+            nextValue: address
+        )
+        addChangeRow(&rows, field: .occurredAt, label: "Occurred At", currentValue: currentState.occurredAtIso, nextValue: occurredAtIso)
+        addChangeRow(&rows, field: .description, label: "Description", currentValue: currentState.description, nextValue: description)
+        addChangeRow(&rows, field: .notes, label: "Notes", currentValue: currentState.notes, nextValue: notes)
+        return rows
+    }
+
+    func replacingAddress(_ nextAddress: String?) -> VoiceReportDraft {
+        VoiceReportDraft(
+            complaintId: complaintId,
+            complaintTitle: complaintTitle,
+            plate: plate,
+            plateRegion: plateRegion,
+            address: nextAddress,
+            occurredAtIso: occurredAtIso,
+            make: make,
+            model: model,
+            yearRange: yearRange,
+            description: description,
+            notes: notes
+        )
+    }
+}
+
+private func addChangeRow(
+    _ rows: inout [VoiceDraftChangeRow],
+    field: VoiceDraftField,
+    label: String,
+    currentValue: String?,
+    nextValue: String?
+) {
+    guard let cleanedNext = cleanedVoicePreviewValue(nextValue) else { return }
+    rows.append(VoiceDraftChangeRow(
+        field: field,
+        label: label,
+        currentValue: cleanedVoicePreviewValue(currentValue) ?? "Empty",
+        nextValue: cleanedNext
+    ))
+}
+
+private func cleanedVoicePreviewValue(_ value: String?) -> String? {
+    let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return cleaned.isEmpty ? nil : cleaned
+}
+
+private struct VoiceReportContext {
+    let currentDeviceTimeIso: String
+    let currentAddress: String?
+    let currentLatitude: Double?
+    let currentLongitude: Double?
+    let imageAddress: String?
+    let imageOccurredAtIso: String?
+    let imageVisualContext: String?
+    let currentOccurredAtIso: String?
+    let currentComplaintTitle: String?
+    let currentPlate: String?
+    let currentPlateRegion: String?
+    let currentDescription: String?
+    let currentNotes: String?
+
+    init(
+        state: ComposerState,
+        complaintOptions: [ComplaintOption],
+        imageAddressSuggestion: ComposerState.AddressSuggestion?,
+        imageVisualContext: String? = nil,
+        resolvedCurrentAddress: String? = nil
+    ) {
+        let formatter = ISO8601DateFormatter()
+        let currentAddress = Self.cleaned(state.addressQuery.isEmpty ? state.address : state.addressQuery)
+            ?? Self.cleaned(resolvedCurrentAddress)
+        let usableCoordinate = Self.usableCoordinate(latitude: state.latitude, longitude: state.longitude)
+        let selectedComplaint = complaintOptions.first { $0.id == state.selectedComplaintId }
+
+        self.currentDeviceTimeIso = formatter.string(from: Date())
+        self.currentAddress = currentAddress
+        self.currentLatitude = usableCoordinate ? state.latitude : nil
+        self.currentLongitude = usableCoordinate ? state.longitude : nil
+        self.imageAddress = Self.cleaned(imageAddressSuggestion?.label)
+        self.imageOccurredAtIso = Self.cleaned(state.photoOccurredAtIso)
+        self.imageVisualContext = Self.cleaned(imageVisualContext)
+        self.currentOccurredAtIso = Self.cleaned(state.occurredAtIso)
+        self.currentComplaintTitle = Self.cleaned(selectedComplaint?.title)
+        self.currentPlate = Self.cleaned(state.plate)
+        self.currentPlateRegion = Self.cleaned(state.plateRegion)
+        self.currentDescription = Self.cleaned(state.description)
+        self.currentNotes = Self.cleaned(state.notes)
+    }
+
+    var promptBlock: String {
+        var lines = ["- currentDeviceTimeIso: \(currentDeviceTimeIso)"]
+        if let currentAddress { lines.append("- currentAddress: \(currentAddress)") }
+        if let currentLatitude, let currentLongitude {
+            lines.append(String(format: "- currentCoordinates: %.6f, %.6f", currentLatitude, currentLongitude))
+        }
+        if let imageAddress { lines.append("- imageAddress: \(imageAddress)") }
+        if let imageOccurredAtIso { lines.append("- imageOccurredAtIso: \(imageOccurredAtIso)") }
+        if let imageVisualContext { lines.append("- imageVisualContext: \(imageVisualContext)") }
+        if let currentOccurredAtIso { lines.append("- currentOccurredAtIso: \(currentOccurredAtIso)") }
+        if let currentComplaintTitle { lines.append("- currentComplaint: \(currentComplaintTitle)") }
+        if let currentPlate { lines.append("- currentPlate: \(currentPlate)") }
+        if let currentPlateRegion { lines.append("- currentPlateState: \(currentPlateRegion)") }
+        if let currentDescription { lines.append("- currentDescription: \(currentDescription)") }
+        if let currentNotes { lines.append("- currentNotes: \(currentNotes)") }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func cleaned(_ value: String?) -> String? {
+        let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private static func usableCoordinate(latitude: Double?, longitude: Double?) -> Bool {
+        guard let latitude, let longitude else { return false }
+        guard latitude.isFinite, longitude.isFinite else { return false }
+        guard abs(latitude) <= 90, abs(longitude) <= 180 else { return false }
+        return abs(latitude) > 0.000001 || abs(longitude) > 0.000001
+    }
+
+    static func build(
+        state: ComposerState,
+        complaintOptions: [ComplaintOption],
+        imageAddressSuggestion: ComposerState.AddressSuggestion?,
+        imageVisualContext: String? = nil
+    ) async -> VoiceReportContext {
+        let resolvedCurrentAddress = await resolveVoiceCurrentAddress(state: state)
+        return VoiceReportContext(
+            state: state,
+            complaintOptions: complaintOptions,
+            imageAddressSuggestion: imageAddressSuggestion,
+            imageVisualContext: imageVisualContext,
+            resolvedCurrentAddress: resolvedCurrentAddress
+        )
+    }
+}
+
+private func resolveVoiceCurrentAddress(state: ComposerState) async -> String? {
+    let existingAddress = (state.addressQuery.isEmpty ? state.address : state.addressQuery)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    if !existingAddress.isEmpty { return nil }
+    guard let latitude = state.latitude, let longitude = state.longitude else { return nil }
+    guard latitude.isFinite, longitude.isFinite else { return nil }
+    guard abs(latitude) <= 90, abs(longitude) <= 180 else { return nil }
+    guard abs(latitude) > 0.000001 || abs(longitude) > 0.000001 else { return nil }
+    return await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
+        ?? formattedCoordinateText(latitude: latitude, longitude: longitude)
+}
+
+private var voiceAssistantCompactSheetHeight: CGFloat {
+    UIDevice.current.userInterfaceIdiom == .pad ? 430 : 390
+}
+
+private struct VoiceReportAssistantSheet: View {
+    @ObservedObject var audio: VoiceReportAudioController
+    let transcript: String
+    let draft: VoiceReportDraft?
+    let changeRows: [VoiceDraftChangeRow]
+    let isProcessing: Bool
+    let modelInstalled: Bool
+    let modelDownloading: Bool
+    let modelDownloadProgress: Double?
+    let modelDownloadSizeLabel: String
+    let error: String?
+    let onRequestPermission: () -> Void
+    let onDownloadModel: () -> Void
+    let onTalk: () -> Void
+    let onStop: () -> Void
+    let onClear: () -> Void
+    let onApply: (VoiceReportDraft) -> Void
+    let onDismiss: () -> Void
+    @State private var elapsedSeconds: TimeInterval = 0
+    @State private var currentSourceFields: Set<VoiceDraftField> = []
+    @State private var undoCurrentSourceFields: Set<VoiceDraftField>?
+    @State private var pendingBulkSource: VoiceDraftSource?
+
+    private let maxRecordingSeconds: TimeInterval = 29.9
+
+    var body: some View {
+        let rowFields = Set(changeRows.map(\.field))
+        let reportedFields = rowFields.subtracting(currentSourceFields)
+
+        ScrollView {
+            VStack(alignment: .center, spacing: 14) {
+                Capsule()
+                    .fill(Color(.separator).opacity(0.45))
+                    .frame(width: 40, height: 4)
+                    .padding(.top, 2)
+
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reported AI")
+                            .font(.title3.weight(.semibold))
+                        Text("Dictate the complaint, plate, state, time, address, description, and notes, and we'll fill in the fields.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close voice assistant")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !modelInstalled {
+                    if modelDownloading {
+                        if let modelDownloadProgress {
+                            ProgressView(value: modelDownloadProgress)
+                                .progressViewStyle(.linear)
+                        } else {
+                            ProgressView()
+                        }
+                        Text("Installing REPORTED AI...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VoicePrimaryAction(title: "Install REPORTED AI (\(installSizeLabel(from: modelDownloadSizeLabel)))", action: onDownloadModel)
+                    }
+                } else if !audio.hasPermission {
+                    VoiceReportMessage(
+                        title: "Microphone access needed",
+                        message: "Reported needs microphone access before you can talk through report fields."
+                    )
+                    VoicePrimaryAction(title: "Allow microphone", action: onRequestPermission)
+                } else if isProcessing {
+                    VoiceProcessingPanel()
+                } else {
+                    VoiceCaptureControl(
+                        isRecording: audio.isRecording,
+                        amplitude: audio.amplitude,
+                        elapsedSeconds: elapsedSeconds,
+                        maxSeconds: maxRecordingSeconds,
+                        action: audio.isRecording ? onStop : onTalk
+                    )
+                }
+
+                if let displayedError = error ?? audio.errorMessage {
+                    ValidationMessage(text: displayedError)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VoiceReportBlock(title: "Transcript", message: transcript)
+                }
+
+                if let draft {
+                    if !changeRows.isEmpty {
+                        VoiceReportBlockHeader(title: "Changes to apply")
+                        VoiceDraftSourceHeader(
+                            activeSource: activeHeaderSource(for: rowFields),
+                            canUndo: undoCurrentSourceFields != nil,
+                            onSelect: { pendingBulkSource = $0 },
+                            onUndo: undoBulkSelection
+                        )
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(changeRows.enumerated()), id: \.offset) { item in
+                                VoiceDraftDataRow(
+                                    row: item.element,
+                                    selectedSource: currentSourceFields.contains(item.element.field) ? .current : .reportedAI,
+                                    onSelect: { source in
+                                        selectField(item.element.field, source: source)
+                                    }
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if draft.make != nil || draft.model != nil || draft.yearRange != nil {
+                        VoiceReportBlockHeader(title: "Extracted vehicle")
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let yearRange = draft.yearRange {
+                                VoiceDraftMetadataRow(label: "Vehicle Year", value: yearRange)
+                            }
+                            if let make = draft.make {
+                                VoiceDraftMetadataRow(label: "Make", value: make)
+                            }
+                            if let model = draft.model {
+                                VoiceDraftMetadataRow(label: "Model", value: model)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if changeRows.isEmpty && draft.make == nil && draft.model == nil && draft.yearRange == nil {
+                        VoiceReportMessage(title: "Nothing to change", message: "Reported AI did not find any form fields to update.")
+                    }
+
+                    HStack(spacing: 10) {
+                        VoiceSecondaryAction(title: "Clear", action: onClear)
+                        VoicePrimaryAction(title: "Fill form") {
+                            onApply(draft.keepingReportedFields(reportedFields))
+                        }
+                        .disabled(!draft.keepingReportedFields(reportedFields).hasAnyFillableField)
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 0)
+        }
+        .task(id: audio.isRecording) {
+            guard audio.isRecording else {
+                elapsedSeconds = 0
+                return
+            }
+            let startDate = Date()
+            while audio.isRecording {
+                elapsedSeconds = min(maxRecordingSeconds, max(0, Date().timeIntervalSince(startDate)))
+                if elapsedSeconds >= maxRecordingSeconds {
+                    onStop()
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        .onChange(of: changeRows.map(\.field)) { _, _ in
+            currentSourceFields = []
+            undoCurrentSourceFields = nil
+            pendingBulkSource = nil
+        }
+        .alert(item: $pendingBulkSource) { source in
+            Alert(
+                title: Text("Use \(source.title) for all fields?"),
+                message: Text("This changes every field in this Reported AI draft."),
+                primaryButton: .default(Text("Use \(source.title)")) {
+                    applyBulkSelection(source, fields: rowFields)
+                },
+                secondaryButton: .cancel {
+                    pendingBulkSource = nil
+                }
+            )
+        }
+    }
+
+    private func activeHeaderSource(for fields: Set<VoiceDraftField>) -> VoiceDraftSource? {
+        guard !fields.isEmpty else { return nil }
+        if fields.isSubset(of: currentSourceFields) {
+            return .current
+        }
+        if currentSourceFields.isDisjoint(with: fields) {
+            return .reportedAI
+        }
+        return nil
+    }
+
+    private func applyBulkSelection(_ source: VoiceDraftSource, fields: Set<VoiceDraftField>) {
+        undoCurrentSourceFields = currentSourceFields
+        switch source {
+        case .current:
+            currentSourceFields = fields
+        case .reportedAI:
+            currentSourceFields = []
+        }
+        pendingBulkSource = nil
+    }
+
+    private func undoBulkSelection() {
+        guard let undoCurrentSourceFields else { return }
+        currentSourceFields = undoCurrentSourceFields
+        self.undoCurrentSourceFields = nil
+    }
+
+    private func selectField(_ field: VoiceDraftField, source: VoiceDraftSource) {
+        undoCurrentSourceFields = nil
+        switch source {
+        case .current:
+            currentSourceFields.insert(field)
+        case .reportedAI:
+            currentSourceFields.remove(field)
+        }
+    }
+}
+
+private struct VoiceCaptureControl: View {
+    let isRecording: Bool
+    let amplitude: Double
+    let elapsedSeconds: TimeInterval
+    let maxSeconds: TimeInterval
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 2) {
+            VStack(spacing: 4) {
+                VoiceLevelMeter(amplitude: amplitude, isActive: isRecording)
+                    .frame(width: 170, height: 26)
+                    .opacity(isRecording ? 1 : 0)
+
+                HStack(spacing: 8) {
+                    Text(formatVoiceElapsedTenths(elapsedSeconds))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                    Text("/ \(formatVoiceElapsedTenths(maxSeconds))")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .opacity(isRecording ? 1 : 0)
+                .accessibilityHidden(!isRecording)
+            }
+            .frame(height: 48)
+
+            Button(action: action) {
+                VStack(spacing: 10) {
+                    Text(isRecording ? "STOP" : "TALK")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(Color(.systemBackground))
+                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Color(.systemBackground))
+                        .accessibilityHidden(true)
+                }
+                .frame(width: 112, height: 112)
+                .background(isRecording ? Color.red : Color.primary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isRecording ? "Stop" : "Talk")
+            .padding(8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct VoiceLevelMeter: View {
+    let amplitude: Double
+    let isActive: Bool
+
+    var body: some View {
+        let level = CGFloat(min(1, max(0, amplitude)))
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(0..<18, id: \.self) { index in
+                let pattern = CGFloat((index * 7) % 11) / 10
+                let liveHeight = 5 + (8 + pattern * 15) * max(0.08, level)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(isActive ? Color.primary.opacity(0.72) : Color.secondary.opacity(0.22))
+                    .frame(width: 4, height: isActive ? liveHeight : 5)
+                    .animation(.easeOut(duration: 0.08), value: level)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+}
+
+private struct VoiceProcessingPanel: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Processing audio")
+                    .font(.headline.weight(.semibold))
+            }
+            VoiceProcessingStep(text: "Recording captured", state: .complete)
+            VoiceProcessingStep(text: "Transcribing", state: .active)
+            VoiceProcessingStep(text: "Generating form fields", state: .pending)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground).opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+private struct VoiceProcessingStep: View {
+    enum State {
+        case complete
+        case active
+        case pending
+    }
+
+    let text: String
+    let state: State
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(indicatorFill)
+                    .frame(width: 18, height: 18)
+                if state != .pending {
+                    Circle()
+                        .fill(state == .complete ? Color(.systemBackground) : Color.primary)
+                        .frame(width: 7, height: 7)
+                }
+            }
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(state == .pending ? Color.secondary.opacity(0.55) : Color.primary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var indicatorFill: Color {
+        switch state {
+        case .complete:
+            return .primary
+        case .active:
+            return Color.primary.opacity(0.18)
+        case .pending:
+            return Color(.separator).opacity(0.35)
+        }
+    }
+}
+
+private struct VoiceDraftDataRow: View {
+    let row: VoiceDraftChangeRow
+    let selectedSource: VoiceDraftSource
+    let onSelect: (VoiceDraftSource) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(row.label.uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 8) {
+                VoiceDraftValueColumn(
+                    value: row.currentValue,
+                    isSelected: selectedSource == .current
+                ) {
+                    onSelect(.current)
+                }
+                VoiceDraftValueColumn(
+                    value: row.nextValue,
+                    isSelected: selectedSource == .reportedAI
+                ) {
+                    onSelect(.reportedAI)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+private struct VoiceDraftSourceHeader: View {
+    let activeSource: VoiceDraftSource?
+    let canUndo: Bool
+    let onSelect: (VoiceDraftSource) -> Void
+    let onUndo: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                VoiceDraftSourceHeaderButton(
+                    title: VoiceDraftSource.current.title,
+                    isSelected: activeSource == .current
+                ) {
+                    onSelect(.current)
+                }
+                VoiceDraftSourceHeaderButton(
+                    title: VoiceDraftSource.reportedAI.title,
+                    isSelected: activeSource == .reportedAI
+                ) {
+                    onSelect(.reportedAI)
+                }
+                if canUndo {
+                    Button("Undo", action: onUndo)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.reportedOrange)
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                }
+            }
+            if activeSource == nil {
+                Text("Mixed field sources")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct VoiceDraftSourceHeaderButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.green : Color.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Color.green.opacity(0.16) : Color(.secondarySystemBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isSelected ? Color.green.opacity(0.45) : Color(.separator).opacity(0.3), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct VoiceDraftValueColumn: View {
+    let value: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Color.green.opacity(0.16) : Color(.secondarySystemBackground).opacity(0.45))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isSelected ? Color.green.opacity(0.45) : Color(.separator).opacity(0.24), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct VoiceReportBlockHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct VoiceDraftMetadataRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(label.uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 98, alignment: .leading)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+private struct VoicePrimaryAction: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color(.systemBackground))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .background(Color.primary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct VoiceSecondaryAction: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.5), lineWidth: 1)
+        )
+    }
+}
+
+private func formatVoiceElapsedTenths(_ seconds: TimeInterval) -> String {
+    String(format: "%.1fs", min(29.9, max(0, seconds)))
+}
+
+private func installSizeLabel(from value: String) -> String {
+    value.replacingOccurrences(of: " ", with: "").lowercased()
+}
+
+private struct VoiceReportMessage: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground).opacity(0.68), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+private struct VoiceReportBlock: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color(.secondarySystemBackground).opacity(0.68), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private func generateVoiceReportDraft(
+    transcript: String,
+    complaintOptions: [ComplaintOption]
+) -> VoiceReportDraft {
+    let cleaned = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    let complaint = inferVoiceComplaint(cleaned, complaintOptions: complaintOptions)
+    return VoiceReportDraft(
+        complaintId: complaint?.id,
+        complaintTitle: complaint?.title,
+        plate: inferVoicePlate(cleaned),
+        plateRegion: inferVoicePlateRegion(cleaned),
+        address: inferVoiceAddress(cleaned),
+        occurredAtIso: inferVoiceOccurredAt(cleaned),
+        make: inferVoiceVehicleMake(cleaned),
+        model: inferVoiceVehicleModel(cleaned),
+        yearRange: inferVoiceVehicleYearRange(cleaned),
+        description: inferVoiceDescription(cleaned),
+        notes: inferVoiceNotes(cleaned)
+    )
+}
+
+private func buildVoiceReportGemmaPrompt(
+    complaintOptions: [ComplaintOption],
+    voiceContext: VoiceReportContext
+) -> String {
+    let complaints = complaintOptions
+        .map { "- \($0.id): \($0.title)" }
+        .joined(separator: "\n")
+    let contextBlock = voiceContext.promptBlock
+    let now = Date()
+    let currentYear = Calendar.current.component(.year, from: now)
+    let currentDateFormatter = DateFormatter()
+    currentDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+    currentDateFormatter.dateFormat = "yyyy-MM-dd"
+    let currentDate = currentDateFormatter.string(from: now)
+    return """
+    You are filling a Reported traffic complaint form from one spoken audio recording and an optional attached report photo.
+    Transcribe the speech, then return only one strict JSON object.
+    Do not include markdown or prose.
+
+    Available complaints:
+    \(complaints)
+
+    Current form and device context:
+    \(contextBlock)
+
+    JSON keys:
+    {
+      "transcript": string or null,
+      "complaint": one available complaint title or null,
+      "complaintId": one available complaint ID or null,
+      "timeofincident": ISO-8601 incident datetime with timezone or null,
+      "occurredAtIso": same value as timeofincident or null,
+      "plate": uppercase license plate letters/numbers only, max 8 characters, or null,
+      "state": two-letter US plate state, default "NY" only when the speaker implies New York or says no state,
+      "address": incident address or null,
+      "make": vehicle make, for example "Honda" from "2024 Honda Acura", or null,
+      "model": vehicle model, for example "Acura" from "2024 Honda Acura", or null,
+      "yearRange": vehicle year or spoken year range, for example "2024" or "2021-2024", or null,
+      "description": vehicle description and public-facing incident details or null,
+      "notes": extra private details that do not fit another field or null
+    }
+
+    Rules:
+    - Prefer exact spoken values over guesses.
+    - If a report photo is attached, use it as supporting visual context for visible plate text, vehicle details, location clues, and complaint type before producing JSON.
+    - If imageVisualContext is present, treat it as a pre-read summary of the attached photo.
+    - Spoken values win when audio conflicts with the photo. Do not invent fields from the photo unless they are clearly visible.
+    - The current date is \(currentDate) and the current year is \(currentYear). For spoken dates without an explicit year: if the current month is January and the spoken incident month is December, use \(currentYear - 1). Otherwise, use \(currentYear).
+    - timeofincident and occurredAtIso must use that month/year rule; do not roll non-December dates back to a previous year.
+    - Use current context only when the speaker explicitly refers to it, such as "here", "this location", "current address", "same address", "now", "today", "same time as the photo", "the image time", "same plate", or "keep the state".
+    - If the speaker says "here" or "current address", use currentAddress when present; otherwise use imageAddress when present; otherwise use currentCoordinates when present; otherwise use null.
+    - If the speaker says "now" or gives a relative time, resolve it against currentDeviceTimeIso.
+    - If the speaker says "time from the photo" or "same time as the photo", use imageOccurredAtIso when present.
+    - If a field was not spoken, use null.
+    - Extract vehicle make, model, and yearRange only when the speaker says them. Do not infer trim, color, or vehicle type into these keys.
+    - If the speaker says a phrase like "2024 Honda Acura", set yearRange to "2024", make to "Honda", and model to "Acura".
+    - Put any extra information in notes.
+    - Pick complaintId only from the available IDs and complaint only from the available titles.
+    """
+}
+
+private func parseVoiceReportGemmaJson(
+    _ jsonText: String,
+    complaintOptions: [ComplaintOption]
+) throws -> VoiceReportGemmaResult {
+    let objectText = try extractFirstJsonObject(from: jsonText)
+    let data = Data(objectText.utf8)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        throw VoiceReportGemmaError.message("Gemma did not return a JSON object.")
+    }
+    let transcript = nullableVoiceString(object["transcript"])
+    let transcriptFallback = transcript.map {
+        generateVoiceReportDraft(transcript: $0, complaintOptions: complaintOptions)
+    }
+    let complaintId = resolveVoiceComplaintId(
+        rawComplaintId: nullableVoiceString(object["complaintId"]),
+        rawComplaint: nullableVoiceString(object["complaint"]),
+        complaintOptions: complaintOptions
+    )
+        ?? transcriptFallback?.complaintId
+    let complaintTitle = complaintOptions.first(where: { $0.id == complaintId })?.title
+    let plate = nullableVoiceString(object["plate"])
+        .map(normalizeVoicePlateText)
+        .flatMap { $0.isEmpty ? nil : $0 }
+        ?? transcriptFallback?.plate
+    let draft = VoiceReportDraft(
+        complaintId: complaintId,
+        complaintTitle: complaintTitle,
+        plate: plate,
+        plateRegion: nullableVoiceString(object["state"]).map { String($0.uppercased().prefix(2)) } ?? transcriptFallback?.plateRegion,
+        address: nullableVoiceString(object["address"]) ?? transcriptFallback?.address,
+        occurredAtIso: sanitizeVoiceOccurredAt(
+            nullableVoiceString(object["occurredAtIso"])
+                ?? nullableVoiceString(object["timeofincident"])
+                ?? nullableVoiceString(object["timeOfIncident"])
+                ?? nullableVoiceString(object["time_of_incident"])
+        ) ?? transcriptFallback?.occurredAtIso,
+        make: nullableVoiceString(object["make"])
+            ?? nullableVoiceString(object["vehicleMake"])
+            ?? nullableVoiceString(object["vehicle_make"])
+            ?? transcriptFallback?.make,
+        model: nullableVoiceString(object["model"])
+            ?? nullableVoiceString(object["vehicleModel"])
+            ?? nullableVoiceString(object["vehicle_model"])
+            ?? transcriptFallback?.model,
+        yearRange: nullableVoiceString(object["yearRange"])
+            ?? nullableVoiceString(object["vehicleYearRange"])
+            ?? nullableVoiceString(object["vehicle_year_range"])
+            ?? nullableVoiceString(object["year"])
+            ?? transcriptFallback?.yearRange,
+        description: nullableVoiceString(object["description"])
+            ?? transcript.flatMap { extractVoiceSection($0, label: "description") },
+        notes: nullableVoiceString(object["notes"]) ?? transcriptFallback?.notes
+    )
+    return VoiceReportGemmaResult(
+        transcript: transcript,
+        draft: draft
+    )
+}
+
+private func resolveVoiceReportAddress(_ result: VoiceReportGemmaResult) async -> VoiceReportGemmaResult {
+    guard let rawAddress = result.draft.address?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !rawAddress.isEmpty else {
+        return result
+    }
+    guard let resolvedAddress = await resolveVoiceAddressLabel(rawAddress),
+          resolvedAddress.caseInsensitiveCompare(rawAddress) != .orderedSame else {
+        return result
+    }
+    return VoiceReportGemmaResult(
+        transcript: result.transcript,
+        draft: result.draft.replacingAddress(resolvedAddress)
+    )
+}
+
+private func resolveVoiceAddressLabel(_ rawAddress: String) async -> String? {
+    if let coordinate = parseVoiceCoordinate(rawAddress) {
+        return await reverseGeocodeNyc(latitude: coordinate.latitude, longitude: coordinate.longitude)?.label
+            ?? formattedCoordinateText(latitude: coordinate.latitude, longitude: coordinate.longitude)
+    }
+    for query in voiceAddressSearchQueries(rawAddress) {
+        let suggestions = await searchNycAddresses(query: query)
+        if let chosen = chooseVoiceAddressSuggestion(rawAddress: rawAddress, suggestions: suggestions) {
+            return chosen.label
+        }
+    }
+    return nil
+}
+
+private func parseVoiceCoordinate(_ rawAddress: String) -> (latitude: Double, longitude: Double)? {
+    guard let match = firstVoiceRegexMatch(
+        in: rawAddress,
+        pattern: #"^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$"#
+    ),
+          let latitudeText = voiceRegexGroup(in: rawAddress, match: match, group: 1),
+          let longitudeText = voiceRegexGroup(in: rawAddress, match: match, group: 2),
+          let latitude = Double(latitudeText),
+          let longitude = Double(longitudeText),
+          abs(latitude) <= 90,
+          abs(longitude) <= 180 else {
+        return nil
+    }
+    return (latitude, longitude)
+}
+
+private func voiceAddressSearchQueries(_ rawAddress: String) -> [String] {
+    let cleaned = cleanVoiceAddressQuery(rawAddress)
+    var variants: [String] = []
+    func add(_ value: String?) {
+        guard let value else { return }
+        let normalized = value
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;"))
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        guard normalized.count >= 4 else { return }
+        if !variants.contains(where: { $0.caseInsensitiveCompare(normalized) == .orderedSame }) {
+            variants.append(normalized)
+        }
+    }
+    add(cleaned)
+    if let match = firstVoiceRegexMatch(
+        in: cleaned,
+        pattern: #"\b(\d{1,6}(?:-\d{1,6})?[A-Za-z]?)\s+(.+)$"#
+    ),
+       let houseNumber = voiceRegexGroup(in: cleaned, match: match, group: 1),
+       let streetText = voiceRegexGroup(in: cleaned, match: match, group: 2) {
+        let street = voiceAddressPrefixBeforeStopWords(streetText)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;"))
+        add("\(houseNumber) \(street)")
+    }
+    return variants
+}
+
+private func cleanVoiceAddressQuery(_ rawAddress: String) -> String {
+    rawAddress
+        .replacingOccurrences(
+            of: #"\b(?:address\s+is|address|near|at)\b"#,
+            with: " ",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        .replacingOccurrences(
+            of: #"\b(?:new\s+york|nyc|ny|usa|united\s+states)\b"#,
+            with: " ",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        .replacingOccurrences(of: #"[^A-Za-z0-9\s-]"#, with: " ", options: .regularExpression)
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+private func voiceAddressPrefixBeforeStopWords(_ value: String) -> String {
+    guard let range = value.range(
+        of: #"\b(?:new\s+york|ny|usa|united\s+states|apt|apartment|unit|floor|fl)\b"#,
+        options: [.regularExpression, .caseInsensitive]
+    ) else {
+        return value
+    }
+    return String(value[..<range.lowerBound])
+}
+
+private func chooseVoiceAddressSuggestion(
+    rawAddress: String,
+    suggestions: [ComposerState.AddressSuggestion]
+) -> ComposerState.AddressSuggestion? {
+    guard !suggestions.isEmpty else { return nil }
+    let expectedHouse = firstVoiceRegexGroup(
+        in: rawAddress,
+        pattern: #"\b(\d{1,6}(?:-\d{1,6})?[A-Za-z]?)\b"#
+    )?.lowercased()
+    let rawTokens = cleanVoiceAddressQuery(rawAddress)
+        .lowercased()
+        .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { $0.count >= 3 && !$0.allSatisfy(\.isNumber) }
+
+    func score(_ suggestion: ComposerState.AddressSuggestion) -> Int {
+        let label = suggestion.label.lowercased()
+        var value = 0
+        if let expectedHouse, label.contains(expectedHouse) { value += 6 }
+        value += rawTokens.filter { label.contains($0) }.count
+        return value
+    }
+    let chosen = suggestions.max { score($0) < score($1) }
+    guard let chosen else { return nil }
+    return score(chosen) >= (expectedHouse == nil ? 1 : 6) ? chosen : nil
+}
+
+private func extractFirstJsonObject(from text: String) throws -> String {
+    guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end else {
+        throw VoiceReportGemmaError.message("Gemma did not return a JSON object.")
+    }
+    return String(text[start...end])
+}
+
+private func nullableVoiceString(_ value: Any?) -> String? {
+    guard let string = value as? String else { return nil }
+    let cleaned = string.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleaned.isEmpty, cleaned.lowercased() != "null" else { return nil }
+    return cleaned
+}
+
+private let voicePlateMaxLength = 8
+
+private func resolveVoiceComplaintId(
+    rawComplaintId: String?,
+    rawComplaint: String?,
+    complaintOptions: [ComplaintOption]
+) -> String? {
+    if let rawComplaintId,
+       complaintOptions.contains(where: { $0.id == rawComplaintId }) {
+        return rawComplaintId
+    }
+    guard let rawComplaint else { return nil }
+    let normalizedComplaint = normalizeVoiceComplaintText(rawComplaint)
+    guard !normalizedComplaint.isEmpty else { return nil }
+    return complaintOptions.first { option in
+        option.id.caseInsensitiveCompare(rawComplaint) == .orderedSame ||
+            normalizeVoiceComplaintText(option.title) == normalizedComplaint
+    }?.id
+        ?? inferVoiceComplaint(normalizedComplaint, complaintOptions: complaintOptions)?.id
+}
+
+private func normalizeVoiceComplaintText(_ value: String) -> String {
+    value
+        .lowercased()
+        .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+}
+
+private func sanitizeVoiceOccurredAt(_ rawValue: String?) -> String? {
+    guard let cleaned = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !cleaned.isEmpty,
+          cleaned.lowercased() != "null" else {
+        return nil
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let date = formatter.date(from: cleaned) ?? ISO8601DateFormatter().date(from: cleaned)
+    guard let date else { return cleaned }
+    return voiceIsoString(from: normalizeVoiceIncidentYear(for: date))
+}
+
+private func normalizeVoiceIncidentYear(for date: Date) -> Date {
+    let calendar = Calendar.current
+    let now = Date()
+    let currentYear = calendar.component(.year, from: now)
+    let currentMonth = calendar.component(.month, from: now)
+    let incidentMonth = calendar.component(.month, from: date)
+    let targetYear = currentMonth == 1 && incidentMonth == 12 ? currentYear - 1 : currentYear
+    var components = calendar.dateComponents([.month, .day, .hour, .minute, .second, .nanosecond], from: date)
+    components.year = targetYear
+    return calendar.date(from: components) ?? date
+}
+
+private func normalizeVoicePlateText(_ raw: String) -> String {
+    String(
+        raw
+            .uppercased()
+            .filter { $0.isLetter || $0.isNumber }
+            .prefix(voicePlateMaxLength)
+    )
+}
+
+private func inferVoiceComplaint(
+    _ transcript: String,
+    complaintOptions: [ComplaintOption]
+) -> ComplaintOption? {
+    let normalized = transcript.lowercased()
+    let aliases: [([String], [String])] = [
+        (["blocked bike lane", "bike lane"], ["bike", "lane"]),
+        (["blocked crosswalk", "crosswalk"], ["crosswalk"]),
+        (["ran red light", "red light", "stop sign"], ["red", "light"]),
+        (["parked illegally", "illegal parking"], ["park"]),
+        (["reckless driving", "reckless"], ["reckless"])
+    ]
+    for (phrases, optionTerms) in aliases {
+        if phrases.contains(where: { normalized.contains($0) }) {
+            if let option = complaintOptions.first(where: { option in
+                let haystack = "\(option.id) \(option.title)".lowercased()
+                return optionTerms.allSatisfy { haystack.contains($0) }
+            }) {
+                return option
+            }
+        }
+    }
+    return complaintOptions.first { option in
+        let words = option.title
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 2 }
+        return !words.isEmpty && words.allSatisfy { normalized.contains($0) }
+    }
+}
+
+private func inferVoicePlate(_ transcript: String) -> String? {
+    let explicit = firstVoiceRegexGroup(
+        in: transcript,
+        pattern: #"\b(?:license\s+plate|plate|tag)\s*(?:is|number|#|:)?\s*([a-z0-9][a-z0-9 -]{1,12}?)(?=\s+(?:state|address|complaint|description|notes|time|at|near)\b|[.,;]|$)"#
+    )
+    let fallback = allVoiceRegexGroups(in: transcript, pattern: #"\b([a-z0-9]{5,10})\b"#)
+        .first { token in
+            token.contains { $0.isNumber } && token.contains { $0.isLetter }
+        }
+    let raw = explicit ?? fallback ?? ""
+    let normalized = raw
+        .uppercased()
+        .filter { $0.isLetter || $0.isNumber }
+        .prefix(voicePlateMaxLength)
+    let plate = String(normalized)
+    return plate.isEmpty ? nil : plate
+}
+
+private func inferVoicePlateRegion(_ transcript: String) -> String? {
+    let normalized = transcript.lowercased()
+    let explicit = firstVoiceRegexGroup(
+        in: normalized,
+        pattern: #"\b(?:state|plate\s+state)\s*(?:is|:)?\s*([a-z]{2}|new york|new jersey|connecticut|pennsylvania)\b"#
+    )
+    let state = explicit ?? {
+        if normalized.contains("new york") { return "new york" }
+        if normalized.contains("new jersey") { return "new jersey" }
+        if normalized.contains("connecticut") { return "connecticut" }
+        if normalized.contains("pennsylvania") { return "pennsylvania" }
+        return nil
+    }()
+    switch state?.trimmingCharacters(in: .whitespacesAndNewlines) {
+    case "new york", "ny":
+        return "NY"
+    case "new jersey", "nj":
+        return "NJ"
+    case "connecticut", "ct":
+        return "CT"
+    case "pennsylvania", "pa":
+        return "PA"
+    default:
+        let upper = state?.uppercased()
+        return upper?.count == 2 ? upper : nil
+    }
+}
+
+private func inferVoiceAddress(_ transcript: String) -> String? {
+    guard let match = firstVoiceRegexGroup(
+        in: transcript,
+        pattern: #"\b(?:address\s+is|address|near|at)\s+(.+)$"#
+    ) else {
+        return nil
+    }
+    let candidate = voicePrefixBeforeLabels(match)
+        .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;"))
+    if firstVoiceRegexGroup(in: candidate, pattern: #"^(\d{1,2}(?::\d{2})?\s*(?:am|pm).*)$"#) != nil {
+        return nil
+    }
+    return candidate.count >= 4 ? candidate : nil
+}
+
+private func inferVoiceOccurredAt(_ transcript: String) -> String? {
+    let normalized = transcript.lowercased()
+    if normalized.contains("right now") || normalized.contains("now") {
+        return voiceIsoString(from: Date())
+    }
+
+    var date = Date()
+    if normalized.contains("yesterday"), let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: date) {
+        date = yesterday
+    }
+
+    if let match = firstVoiceRegexMatch(
+        in: transcript,
+        pattern: #"\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b"#
+    ) {
+        let hourText = voiceRegexGroup(in: transcript, match: match, group: 1)
+        let minuteText = voiceRegexGroup(in: transcript, match: match, group: 2)
+        let meridiem = voiceRegexGroup(in: transcript, match: match, group: 3)?.lowercased() ?? ""
+        let rawHour = Int(hourText ?? "") ?? 0
+        let minute = Int(minuteText ?? "") ?? 0
+        let isPm = meridiem.hasPrefix("p")
+        let hour: Int
+        if isPm && rawHour < 12 {
+            hour = rawHour + 12
+        } else if !isPm && rawHour == 12 {
+            hour = 0
+        } else {
+            hour = rawHour
+        }
+
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        components.hour = hour
+        components.minute = minute
+        components.second = 0
+        if let incidentDate = Calendar.current.date(from: components) {
+            return voiceIsoString(from: incidentDate)
+        }
+    }
+
+    if normalized.contains("today") || normalized.contains("yesterday") {
+        return voiceIsoString(from: Calendar.current.startOfDay(for: date))
+    }
+    return nil
+}
+
+private func inferVoiceVehicleYearRange(_ transcript: String) -> String? {
+    guard let match = firstVoiceRegexMatch(
+        in: transcript,
+        pattern: #"\b((?:19|20)\d{2})(?:\s*(?:-|to|through)\s*((?:19|20)\d{2}))?\b"#
+    ),
+          let firstYear = voiceRegexGroup(in: transcript, match: match, group: 1) else {
+        return nil
+    }
+    if let secondYear = voiceRegexGroup(in: transcript, match: match, group: 2) {
+        return "\(firstYear)-\(secondYear)"
+    }
+    return firstYear
+}
+
+private func inferVoiceVehicleMake(_ transcript: String) -> String? {
+    if let explicit = firstVoiceRegexGroup(
+        in: transcript,
+        pattern: #"\b(?:make|vehicle\s+make)\s*(?:is|:)?\s*([A-Za-z][A-Za-z -]{1,28}?)(?=\s+(?:model|year|plate|state|address|complaint|description|notes|time)\b|[.,;]|$)"#
+    ) {
+        return voiceVehicleToken(explicit)
+    }
+    return voiceVehicleMakeModelPhrase(transcript)?.make
+}
+
+private func inferVoiceVehicleModel(_ transcript: String) -> String? {
+    if let explicit = firstVoiceRegexGroup(
+        in: transcript,
+        pattern: #"\b(?:model|vehicle\s+model)\s*(?:is|:)?\s*([A-Za-z0-9][A-Za-z0-9 -]{1,32}?)(?=\s+(?:make|year|plate|state|address|complaint|description|notes|time)\b|[.,;]|$)"#
+    ) {
+        return voiceVehicleToken(explicit)
+    }
+    return voiceVehicleMakeModelPhrase(transcript)?.model
+}
+
+private func voiceVehicleMakeModelPhrase(_ transcript: String) -> (make: String, model: String)? {
+    guard let match = firstVoiceRegexMatch(
+        in: transcript,
+        pattern: #"\b(?:19|20)\d{2}(?:\s*(?:-|to|through)\s*(?:19|20)\d{2})?\s+([A-Za-z][A-Za-z-]+)\s+([A-Za-z][A-Za-z0-9-]+)\b"#
+    ),
+          let makeText = voiceRegexGroup(in: transcript, match: match, group: 1),
+          let modelText = voiceRegexGroup(in: transcript, match: match, group: 2),
+          let make = voiceVehicleToken(makeText),
+          let model = voiceVehicleToken(modelText) else {
+        return nil
+    }
+    return (make, model)
+}
+
+private func voiceVehicleToken(_ raw: String) -> String? {
+    let cleaned = raw
+        .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;:"))
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    guard !cleaned.isEmpty else { return nil }
+    return cleaned
+        .split(separator: " ")
+        .map { token in
+            let tokenText = String(token)
+            if tokenText.count <= 4, tokenText.uppercased() == tokenText {
+                return tokenText
+            }
+            return tokenText.prefix(1).uppercased() + tokenText.dropFirst().lowercased()
+        }
+        .joined(separator: " ")
+}
+
+private func inferVoiceDescription(_ transcript: String) -> String? {
+    let value = extractVoiceSection(transcript, label: "description") ?? transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    let limited = String(value.prefix(280))
+    return limited.isEmpty ? nil : limited
+}
+
+private func inferVoiceNotes(_ transcript: String) -> String? {
+    extractVoiceSection(transcript, label: "notes") ?? extractVoiceSection(transcript, label: "note")
+}
+
+private func extractVoiceSection(_ transcript: String, label: String) -> String? {
+    let pattern = "\\b\(NSRegularExpression.escapedPattern(for: label))\\s*(?:are|is|:)?\\s+(.+)$"
+    guard let match = firstVoiceRegexGroup(in: transcript, pattern: pattern) else { return nil }
+    let value = voicePrefixBeforeLabels(match)
+        .trimmingCharacters(in: CharacterSet(charactersIn: " ,.;"))
+    return value.isEmpty ? nil : value
+}
+
+private func voicePrefixBeforeLabels(_ value: String) -> String {
+    let pattern = #"\b(?:plate|license\s+plate|state|complaint|description|notes|address|time|when|occurred)\b"#
+    guard let range = value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else {
+        return value
+    }
+    return String(value[..<range.lowerBound])
+}
+
+private func firstVoiceRegexGroup(in text: String, pattern: String, group: Int = 1) -> String? {
+    guard let match = firstVoiceRegexMatch(in: text, pattern: pattern) else { return nil }
+    return voiceRegexGroup(in: text, match: match, group: group)
+}
+
+private func allVoiceRegexGroups(in text: String, pattern: String, group: Int = 1) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+    let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+    return regex.matches(in: text, options: [], range: nsRange).compactMap { match in
+        voiceRegexGroup(in: text, match: match, group: group)
+    }
+}
+
+private func firstVoiceRegexMatch(in text: String, pattern: String) -> NSTextCheckingResult? {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+    let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+    return regex.firstMatch(in: text, options: [], range: nsRange)
+}
+
+private func voiceRegexGroup(in text: String, match: NSTextCheckingResult, group: Int) -> String? {
+    guard match.numberOfRanges > group else { return nil }
+    let nsRange = match.range(at: group)
+    guard nsRange.location != NSNotFound, let range = Range(nsRange, in: text) else { return nil }
+    let value = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : value
+}
+
+private func voiceIsoString(from date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+}
+
+#if DEBUG
+@MainActor
+func runReportedVoiceSmokeTestIfRequested() async {
+    let arguments = ProcessInfo.processInfo.arguments
+    guard arguments.contains("--reported-voice-smoke-test") else { return }
+
+    let fileManager = FileManager.default
+    guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+        return
+    }
+
+    let audioURL = arguments
+        .first { $0.hasPrefix("--reported-voice-smoke-audio=") }
+        .flatMap { argument -> URL? in
+            let path = String(argument.dropFirst("--reported-voice-smoke-audio=".count))
+            guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return URL(fileURLWithPath: path)
+        }
+        ?? documentsURL.appendingPathComponent("reported-voice-smoke.wav")
+    let resultURL = arguments
+        .first { $0.hasPrefix("--reported-voice-smoke-result=") }
+        .flatMap { argument -> URL? in
+            let path = String(argument.dropFirst("--reported-voice-smoke-result=".count))
+            guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return URL(fileURLWithPath: path)
+        }
+        ?? documentsURL.appendingPathComponent("reported-voice-smoke-result.json")
+
+    func write(_ object: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) else {
+            return
+        }
+        try? data.write(to: resultURL, options: .atomic)
+    }
+
+    guard fileManager.fileExists(atPath: audioURL.path) else {
+        write([
+            "status": "error",
+            "error": "Smoke audio file was not found.",
+            "audioPath": audioURL.path,
+            "modelInstalled": OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+        ])
+        return
+    }
+
+    write([
+        "status": "running",
+        "audioPath": audioURL.path,
+        "modelInstalled": OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+    ])
+
+    do {
+        var state = ComposerState()
+        state.latitude = 40.7128
+        state.longitude = -74.0060
+        let context = VoiceReportContext(
+            state: state,
+            complaintOptions: complaintOptionsList,
+            imageAddressSuggestion: nil
+        )
+        let result = try await OnDeviceGemmaVoiceDraftEngine.generateDraft(
+            audioURL: audioURL,
+            complaintOptions: complaintOptionsList,
+            voiceContext: context
+        )
+        write([
+            "status": "success",
+            "audioPath": audioURL.path,
+            "modelInstalled": OnDeviceGemmaVoiceDraftEngine.isModelInstalled(),
+            "transcript": result.transcript ?? NSNull(),
+            "draft": voiceSmokeJsonObject(from: result.draft)
+        ])
+    } catch {
+        write([
+            "status": "error",
+            "audioPath": audioURL.path,
+            "modelInstalled": OnDeviceGemmaVoiceDraftEngine.isModelInstalled(),
+            "error": error.localizedDescription
+        ])
+    }
+}
+
+private func voiceSmokeJsonObject(from draft: VoiceReportDraft) -> [String: Any] {
+    [
+        "complaint": draft.complaintTitle ?? NSNull(),
+        "complaintId": draft.complaintId ?? NSNull(),
+        "plate": draft.plate ?? NSNull(),
+        "state": draft.plateRegion ?? NSNull(),
+        "address": draft.address ?? NSNull(),
+        "timeofincident": draft.occurredAtIso ?? NSNull(),
+        "occurredAtIso": draft.occurredAtIso ?? NSNull(),
+        "make": draft.make ?? NSNull(),
+        "model": draft.model ?? NSNull(),
+        "yearRange": draft.yearRange ?? NSNull(),
+        "description": draft.description ?? NSNull(),
+        "notes": draft.notes ?? NSNull()
+    ]
+}
+#endif
+
+private struct ImageAddressPickerRow: View {
+    let suggestion: ComposerState.AddressSuggestion?
+    let hasImageAddressSource: Bool
+    let isRefreshing: Bool
+    let onSelect: (ComposerState.AddressSuggestion) -> Void
+
+    var body: some View {
+        if let suggestion {
+            Button {
+                onSelect(suggestion)
+            } label: {
+                rowContent(
+                    title: "Use address from image",
+                    subtitle: suggestion.label,
+                    showsProgress: false
+                )
+            }
+            .buttonStyle(.plain)
+        } else if hasImageAddressSource {
+            rowContent(
+                title: isRefreshing ? "Reading address from image" : "No image address found",
+                subtitle: isRefreshing ? "Checking the selected photo GPS." : "This image does not include readable GPS.",
+                showsProgress: isRefreshing
+            )
+        }
+    }
+
+    private func rowContent(title: String, subtitle: String, showsProgress: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mappin.circle.fill")
+                .font(.title3.weight(.semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
+            if showsProgress {
+                ProgressView()
+                    .tint(Color.reportedOrange)
+            }
+        }
+        .foregroundStyle(Color.reportedOrange)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.reportedOrange.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct AddressSearchTextField: UIViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    @Binding var isFirstResponder: Bool
+    let onSubmit: () -> Void
+
+    func makeUIView(context: Context) -> UITextField {
+        let textField = UITextField(frame: .zero)
+        textField.delegate = context.coordinator
+        textField.placeholder = placeholder
+        textField.borderStyle = .none
+        textField.font = .preferredFont(forTextStyle: .body)
+        textField.adjustsFontForContentSizeCategory = true
+        textField.textColor = .label
+        textField.tintColor = .label
+        textField.autocapitalizationType = .words
+        textField.autocorrectionType = .yes
+        textField.spellCheckingType = .yes
+        textField.textContentType = .fullStreetAddress
+        textField.returnKeyType = .done
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
+        return textField
+    }
+
+    func updateUIView(_ textField: UITextField, context: Context) {
+        context.coordinator.parent = self
+        if textField.text != text {
+            textField.text = text
+        }
+
+        if isFirstResponder {
+            if !textField.isFirstResponder {
+                DispatchQueue.main.async {
+                    guard self.isFirstResponder else { return }
+                    textField.becomeFirstResponder()
+                    context.coordinator.placeCaretAtStartIfNeeded(in: textField)
+                }
+            } else {
+                context.coordinator.placeCaretAtStartIfNeeded(in: textField)
+            }
+        } else if textField.isFirstResponder {
+            textField.resignFirstResponder()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: AddressSearchTextField
+        private var shouldPlaceCaretAtStart = true
+
+        init(parent: AddressSearchTextField) {
+            self.parent = parent
+        }
+
+        @objc func textDidChange(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.isFirstResponder = true
+            placeCaretAtStartIfNeeded(in: textField)
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.isFirstResponder = false
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            parent.isFirstResponder = false
+            parent.onSubmit()
+            return false
+        }
+
+        func placeCaretAtStartIfNeeded(in textField: UITextField) {
+            guard shouldPlaceCaretAtStart else { return }
+            shouldPlaceCaretAtStart = false
+            DispatchQueue.main.async {
+                guard textField.isFirstResponder else { return }
+                let start = textField.beginningOfDocument
+                textField.selectedTextRange = textField.textRange(from: start, to: start)
+            }
+        }
+    }
+}
+
+private struct AddressSearchScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var query: String
+    let suggestions: [ComposerState.AddressSuggestion]
+    let isLoading: Bool
+    let isError: Bool
+    let imageAddressSuggestion: ComposerState.AddressSuggestion?
+    let hasImageAddressSource: Bool
+    let isRefreshingImageAddress: Bool
+    let onCancel: () -> Void
+    let onClear: () -> Void
+    let onOpenMap: () -> Void
+    let onSelect: (ComposerState.AddressSuggestion) -> Void
+    let onUseImageAddress: (ComposerState.AddressSuggestion) -> Void
+    @State private var isSearchFocused = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            addressSearchHeader
+            Divider()
+            if isLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Searching NYC addresses")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            if query.isEmpty && (imageAddressSuggestion != nil || hasImageAddressSource) {
+                ImageAddressPickerRow(
+                    suggestion: imageAddressSuggestion,
+                    hasImageAddressSource: hasImageAddressSource,
+                    isRefreshing: isRefreshingImageAddress
+                ) { suggestion in
+                    onUseImageAddress(suggestion)
+                    dismissActiveKeyboard()
+                    dismiss()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+            }
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(suggestions) { suggestion in
+                        Button {
+                            onSelect(suggestion)
+                            dismissActiveKeyboard()
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(Color.reportedOrange)
+                                Text(suggestion.label)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.leading)
+                                    .lineLimit(2)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if suggestion.id != suggestions.last?.id {
+                            Divider()
+                                .padding(.leading, 50)
+                        }
+                    }
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .background(Color(.systemBackground))
+        .onAppear {
+            DispatchQueue.main.async {
+                isSearchFocused = true
+            }
+        }
+    }
+
+    private var addressSearchHeader: some View {
+        HStack(spacing: 10) {
+            Button {
+                onCancel()
+                dismissActiveKeyboard()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 34, height: 42)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                AddressSearchTextField(
+                    placeholder: "Search address",
+                    text: $query,
+                    isFirstResponder: $isSearchFocused
+                ) {
+                    dismissActiveKeyboard()
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 24, maxHeight: 24)
+                if !query.isEmpty {
+                    Button {
+                        onClear()
+                        isSearchFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear address")
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 46)
+            .frame(maxWidth: .infinity)
+            .background(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isError ? Color.red : Color.clear, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Button {
+                onOpenMap()
+                dismissActiveKeyboard()
+                dismiss()
+            } label: {
+                Image(systemName: "map")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 34, height: 42)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show Map")
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(Color(.systemBackground))
+    }
+}
+
 private struct AddressMapSheet: View {
     private static let defaultCoordinate = CLLocationCoordinate2D(latitude: 40.71305, longitude: -74.00723)
     private static let defaultSpan = MKCoordinateSpan(latitudeDelta: 0.0045, longitudeDelta: 0.0045)
@@ -5039,6 +8210,9 @@ private struct AddressMapSheet: View {
     let initialLatitude: Double?
     let initialLongitude: Double?
     let initialAddress: String
+    let imageAddressSuggestion: ComposerState.AddressSuggestion?
+    let hasImageAddressSource: Bool
+    let isRefreshingImageAddress: Bool
     let onCancel: () -> Void
     let onDone: (ComposerState.AddressSuggestion) -> Void
 
@@ -5055,12 +8229,18 @@ private struct AddressMapSheet: View {
         initialLatitude: Double?,
         initialLongitude: Double?,
         initialAddress: String,
+        imageAddressSuggestion: ComposerState.AddressSuggestion?,
+        hasImageAddressSource: Bool = false,
+        isRefreshingImageAddress: Bool = false,
         onCancel: @escaping () -> Void,
         onDone: @escaping (ComposerState.AddressSuggestion) -> Void
     ) {
         self.initialLatitude = initialLatitude
         self.initialLongitude = initialLongitude
         self.initialAddress = initialAddress
+        self.imageAddressSuggestion = imageAddressSuggestion
+        self.hasImageAddressSource = hasImageAddressSource
+        self.isRefreshingImageAddress = isRefreshingImageAddress
         self.onCancel = onCancel
         self.onDone = onDone
         let coordinate = Self.validCoordinate(latitude: initialLatitude, longitude: initialLongitude)
@@ -5103,6 +8283,17 @@ private struct AddressMapSheet: View {
                     .minimumScaleFactor(0.8)
             }
             .padding(.horizontal, 20)
+
+            if hasImageAddressSource || imageAddressSuggestion != nil {
+                ImageAddressPickerRow(
+                    suggestion: imageAddressSuggestion,
+                    hasImageAddressSource: hasImageAddressSource,
+                    isRefreshing: isRefreshingImageAddress
+                ) { suggestion in
+                    useImageAddress(suggestion)
+                }
+                .padding(.horizontal, 20)
+            }
 
             ZStack {
                 Map(position: $position, interactionModes: [.pan, .zoom])
@@ -5180,6 +8371,21 @@ private struct AddressMapSheet: View {
         }
     }
 
+    private func useImageAddress(_ suggestion: ComposerState.AddressSuggestion) {
+        guard let coordinate = Self.validCoordinate(latitude: suggestion.latitude, longitude: suggestion.longitude) else {
+            return
+        }
+        lookupTask?.cancel()
+        let region = MKCoordinateRegion(center: coordinate, span: Self.defaultSpan)
+        addressCache[addressCacheKey(for: coordinate)] = suggestion
+        selectedCoordinate = coordinate
+        pendingSuggestion = suggestion
+        resolvedAddress = suggestion.label
+        lookupInFlight = false
+        currentRegion = region
+        position = .region(region)
+    }
+
     private func zoom(by factor: Double) {
         let span = MKCoordinateSpan(
             latitudeDelta: min(max(currentRegion.span.latitudeDelta * factor, 0.0012), 0.08),
@@ -5233,15 +8439,11 @@ private struct AddressMapSheet: View {
     }
 
     private func fallbackSuggestion(for coordinate: CLLocationCoordinate2D) -> ComposerState.AddressSuggestion {
-        ComposerState.AddressSuggestion(
-            label: coordinateText(coordinate),
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude
-        )
+        coordinateAddressSuggestion(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
     private func coordinateText(_ coordinate: CLLocationCoordinate2D) -> String {
-        String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)
+        formattedCoordinateText(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
     private static func validCoordinate(latitude: Double?, longitude: Double?) -> CLLocationCoordinate2D? {
@@ -5651,16 +8853,41 @@ struct AuthDivider: View {
     }
 }
 
+enum ReportedButtonSize {
+    case regular
+    case compact
+
+    var font: Font {
+        switch self {
+        case .regular:
+            return .body.weight(.semibold)
+        case .compact:
+            return .callout.weight(.semibold)
+        }
+    }
+
+    var verticalPadding: CGFloat {
+        switch self {
+        case .regular:
+            return 14
+        case .compact:
+            return 10
+        }
+    }
+}
+
 struct PrimaryButton: View {
     let title: String
+    var size: ReportedButtonSize = .regular
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
+                .font(size.font)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, size.verticalPadding)
         }
         .buttonStyle(.borderedProminent)
         .tint(Color.reportedOrange)
@@ -5669,14 +8896,16 @@ struct PrimaryButton: View {
 
 struct SecondaryButton: View {
     let title: String
+    var size: ReportedButtonSize = .regular
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
+                .font(size.font)
                 .foregroundStyle(Color.reportedOrange)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, size.verticalPadding)
         }
         .buttonStyle(.bordered)
         .tint(Color.reportedOrange)

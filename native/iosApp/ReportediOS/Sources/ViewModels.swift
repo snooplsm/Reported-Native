@@ -5,6 +5,8 @@ import SharedCore
 import UIKit
 import UniformTypeIdentifiers
 
+private let maxLicensePlateInputLength = 10
+
 private enum ReportedAnalytics {
     static func logLogin(method: String) {
         Analytics.logEvent(AnalyticsEventLogin, parameters: [
@@ -236,11 +238,14 @@ struct ComposerState {
         let confidence: Double
         let rawPlateText: String?
         let wasPlateCorrected: Bool
+        let ownOcrText: String?
+        let ownOcrConfidence: Double?
         let state: String?
         let stateConfidence: Double?
         let plateType: String?
         let plateTypeLabel: String?
         let bounds: CGRect?
+        let cornerPoints: [CGPoint]
         let plateCropPreview: UIImage?
         let videoFramePreview: UIImage?
         let videoFramePreviewURL: URL?
@@ -1165,16 +1170,20 @@ final class ComposerViewModel: ObservableObject {
                         }
                         let videoFrameTimeSeconds = $0.videoFrameTimeMs.map { Double(truncating: $0) / 1000.0 }
                         let videoFramePreviewURL = Self.restoreURL(from: $0.videoFramePreviewUri)
+                        let cornerPoints = Self.restoreCornerPoints(from: $0.cornerPoints)
                         return ComposerState.PlateCandidate(
                             plate: $0.plate,
                             confidence: Double($0.confidence),
                             rawPlateText: $0.rawPlateText,
                             wasPlateCorrected: $0.wasPlateCorrected,
+                            ownOcrText: nil,
+                            ownOcrConfidence: nil,
                             state: $0.state,
                             stateConfidence: $0.stateConfidence?.doubleValue,
                             plateType: $0.plateType,
                             plateTypeLabel: $0.plateTypeLabel,
                             bounds: bounds,
+                            cornerPoints: cornerPoints,
                             plateCropPreview: nil,
                             videoFramePreview: videoFramePreviewURL.flatMap { UIImage(contentsOfFile: $0.path) },
                             videoFramePreviewURL: videoFramePreviewURL,
@@ -1235,11 +1244,19 @@ final class ComposerViewModel: ObservableObject {
             return
         }
         state.pendingMediaSelection = media
+        state.primaryMedia = media
+        state.stage = .verify
+        state.plateCandidates = []
+        state.selectedPlateCandidate = nil
+        state.plate = ""
+        state.detectionResultMessage = nil
+        state.validationErrors.media = nil
         state.complaintSheetOpen = true
+        persistDraft()
     }
 
     func confirmPendingComplaint(_ complaintId: String) {
-        guard let pending = state.pendingMediaSelection else { return }
+        guard let pending = state.pendingMediaSelection ?? state.primaryMedia else { return }
         if let mediaError = mediaLimitError(for: pending, replacingPrimary: true) {
             state.pendingMediaSelection = nil
             state.complaintSheetOpen = false
@@ -1343,7 +1360,17 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func finishDetection(candidates: [ComposerState.PlateCandidate] = [], inferredPlate: String? = nil, inferredState: String? = nil) {
-        let detectedState = candidates.first { $0.plate == inferredPlate }?.state ?? candidates.first?.state
+        let existingSelectedPlate = state.selectedPlateCandidate
+        let existingPlate = state.plate.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedCandidate = existingSelectedPlate.flatMap { selectedPlate in
+            candidates.first { $0.plate == selectedPlate }
+        }
+        let inferredCandidate = inferredPlate.flatMap { plate in
+            candidates.first { $0.plate == plate }
+        }
+        let shouldApplyInferredPlate = selectedCandidate == nil && existingPlate.isEmpty
+        let appliedCandidate = selectedCandidate ?? (shouldApplyInferredPlate ? inferredCandidate : nil)
+        let detectedState = appliedCandidate?.state ?? inferredCandidate?.state ?? candidates.first?.state
         state.detectingPlates = false
         state.detectionMessage = nil
         state.detectionResultMessage = nil
@@ -1353,7 +1380,10 @@ final class ComposerViewModel: ObservableObject {
         state.detectionVideoDurationSeconds = 0
         state.detectionFrameCandidates = []
         state.plateCandidates = candidates
-        if let inferredPlate {
+        if let appliedCandidate {
+            state.selectedPlateCandidate = appliedCandidate.plate
+            state.plate = appliedCandidate.plate
+        } else if shouldApplyInferredPlate, let inferredPlate {
             state.selectedPlateCandidate = inferredPlate
             state.plate = inferredPlate
         }
@@ -1578,7 +1608,7 @@ final class ComposerViewModel: ObservableObject {
                     boundsRight: $0.bounds.map { KotlinFloat(float: Float($0.maxX)) },
                     boundsBottom: $0.bounds.map { KotlinFloat(float: Float($0.maxY)) },
                     rotationDegrees: 0,
-                    cornerPoints: [],
+                    cornerPoints: $0.cornerPointFloats,
                     sourceImageWidth: nil,
                     sourceImageHeight: nil,
                     thumbnailUri: nil,
@@ -1612,6 +1642,16 @@ final class ComposerViewModel: ObservableObject {
         guard let value, !value.isEmpty else { return nil }
         let url = URL(string: value) ?? URL(fileURLWithPath: value)
         return PersistentMediaStore.restoredURL(from: url)
+    }
+
+    private static func restoreCornerPoints(from values: [KotlinFloat]) -> [CGPoint] {
+        guard values.count >= 8 else { return [] }
+        return stride(from: 0, to: min(values.count, 8), by: 2).map { index in
+            CGPoint(
+                x: min(1, max(0, CGFloat(values[index].doubleValue))),
+                y: min(1, max(0, CGFloat(values[index + 1].doubleValue)))
+            )
+        }
     }
 
     private static func persistedVideoFramePreviewURL(for candidate: ComposerState.PlateCandidate) -> URL? {
@@ -1775,8 +1815,8 @@ final class ComposerViewModel: ObservableObject {
                 if state.plate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     return "Enter the license plate."
                 }
-                if state.plate.count > 8 {
-                    return "License plate must be 8 characters or fewer."
+                if state.plate.count > maxLicensePlateInputLength {
+                    return "License plate must be \(maxLicensePlateInputLength) characters or fewer."
                 }
                 return nil
             }(),
@@ -1790,7 +1830,7 @@ final class ComposerViewModel: ObservableObject {
         let normalized = value
             .uppercased()
             .filter { $0.isLetter || $0.isNumber }
-        return String(normalized.prefix(8))
+        return String(normalized.prefix(maxLicensePlateInputLength))
     }
 
     private var mediaItems: [ComposerState.SubmissionMedia] {
@@ -2083,6 +2123,18 @@ enum ParseMediaUploader {
             totalBytesExpectedToSend: Int64
         ) {
             onProgress(totalBytesSent, totalBytesExpectedToSend)
+        }
+    }
+}
+
+private extension ComposerState.PlateCandidate {
+    var cornerPointFloats: [KotlinFloat] {
+        guard cornerPoints.count >= 4 else { return [] }
+        return cornerPoints.prefix(4).flatMap { point in
+            [
+                KotlinFloat(float: Float(min(1, max(0, point.x)))),
+                KotlinFloat(float: Float(min(1, max(0, point.y))))
+            ]
         }
     }
 }
