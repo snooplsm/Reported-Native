@@ -87,7 +87,7 @@ android {
         applicationId = "cab.reported.nyc"
         minSdk = 25
         targetSdk = 36
-        versionCode = 95
+        versionCode = 96
         versionName = "3.0.10"
         buildConfigField("String", "API_BASE_URL", quotedEnv("REPORTED_API_BASE_URL", "https://reported-stats.herokuapp.com/prod/"))
         buildConfigField("String", "PARSE_SERVER_URL", "\"$parseServerUrl\"")

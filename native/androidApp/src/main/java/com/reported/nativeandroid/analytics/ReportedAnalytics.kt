@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.core.os.bundleOf
 import com.google.firebase.analytics.FirebaseAnalytics
+import com.reported.shared.model.UserSession
 
 object ReportedAnalytics {
     private var analytics: FirebaseAnalytics? = null
@@ -30,7 +31,12 @@ object ReportedAnalytics {
         analytics?.logEvent(name, params)
     }
 
-    fun logLogin(method: String) {
+    fun setUser(session: UserSession?) {
+        analytics?.setUserId(session?.analyticsUserId())
+    }
+
+    fun logLogin(method: String, session: UserSession?) {
+        setUser(session)
         logAction(
             FirebaseAnalytics.Event.LOGIN,
             bundleOf(FirebaseAnalytics.Param.METHOD to method)
@@ -39,6 +45,7 @@ object ReportedAnalytics {
 
     fun logLogout() {
         logAction("logout")
+        setUser(null)
     }
 
     fun logReportsList() {
@@ -54,6 +61,62 @@ object ReportedAnalytics {
                 "has_end_date" to hasEndDate.toLongParam()
             )
         )
+    }
+
+    fun logSubmitReportTapped(stage: String, isAuthorized: Boolean) {
+        logAction(
+            "submit_report_tap",
+            bundleOf(
+                "stage" to stage,
+                "is_authorized" to isAuthorized.toLongParam()
+            )
+        )
+    }
+
+    fun logAiSparkleTapped(surface: String) {
+        logAction("ai_sparkle_tap", bundleOf("surface" to surface))
+    }
+
+    fun logPlateChooserTapped(candidateCount: Int, hasPlate: Boolean) {
+        logAction(
+            "plate_chooser_tap",
+            bundleOf(
+                "candidate_count" to candidateCount.toLong(),
+                "has_plate" to hasPlate.toLongParam()
+            )
+        )
+    }
+
+    fun logStateChooserTapped(currentRegion: String) {
+        logAction("state_chooser_tap", bundleOf("current_state" to currentRegion))
+    }
+
+    fun logStateSelected(region: String) {
+        logAction("state_selected", bundleOf("plate_region" to region))
+    }
+
+    fun logComplaintChooserTapped(surface: String, selectedComplaintId: String?) {
+        val params = Bundle().apply {
+            putString("surface", surface)
+            if (!selectedComplaintId.isNullOrBlank()) {
+                putString("complaint_id", selectedComplaintId)
+            }
+        }
+        logAction("complaint_chooser_tap", params)
+    }
+
+    fun logComplaintSelected(complaintId: String, surface: String) {
+        logAction(
+            "complaint_selected",
+            bundleOf(
+                "complaint_id" to complaintId,
+                "surface" to surface
+            )
+        )
+    }
+
+    fun logSettingsTapped(surface: String) {
+        logAction("settings_tap", bundleOf("surface" to surface))
     }
 
     fun logSubmitReport(
@@ -93,4 +156,7 @@ object ReportedAnalytics {
     }
 
     private fun Boolean.toLongParam(): Long = if (this) 1L else 0L
+
+    private fun UserSession.analyticsUserId(): String? =
+        objectId.takeIf { it.isNotBlank() } ?: id.takeIf { it > 0L }?.toString()
 }

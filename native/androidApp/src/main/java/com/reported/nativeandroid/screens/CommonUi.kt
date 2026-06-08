@@ -2,6 +2,7 @@ package com.reported.nativeandroid.screens
 
 import android.widget.NumberPicker
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,10 +44,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -72,6 +77,8 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val ReportedFieldShape = RoundedCornerShape(8.dp)
 private val ReportedFieldMinHeight = 56.dp
@@ -86,10 +93,12 @@ private fun ReportedFieldShell(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isError: Boolean = false,
+    isFocused: Boolean = false,
     minHeight: Dp = ReportedFieldMinHeight,
     onClick: (() -> Unit)? = null,
     trailingWidth: Dp = 40.dp,
     trailing: @Composable (() -> Unit)? = null,
+    contentVerticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
     content: @Composable (Modifier) -> Unit
 ) {
     var labelWidthPx by remember(label) { mutableStateOf(0) }
@@ -100,6 +109,7 @@ private fun ReportedFieldShell(
     val labelStartPx = with(density) { 12.dp.toPx() }
     val outlineColor = when {
         isError -> MaterialTheme.colorScheme.error
+        isFocused -> MaterialTheme.colorScheme.primary
         enabled -> ReportedFieldBorderColor
         else -> ReportedFieldBorderColorDisabled
     }
@@ -165,7 +175,7 @@ private fun ReportedFieldShell(
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = minHeight)
                     .padding(horizontal = ReportedFieldHorizontalPadding, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = contentVerticalAlignment
             ) {
                 content(Modifier.weight(1f))
                 if (trailing != null) {
@@ -188,6 +198,7 @@ private fun ReportedFieldShell(
             style = MaterialTheme.typography.labelLarge,
             color = when {
                 isError -> MaterialTheme.colorScheme.error
+                isFocused -> MaterialTheme.colorScheme.primary
                 enabled -> MaterialTheme.colorScheme.primary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
@@ -225,7 +236,11 @@ fun ReportedField(
     trailingContent: @Composable (() -> Unit)? = null,
     trailingWidth: Dp = 40.dp,
     autoFitText: Boolean = false,
-    minHeight: Dp = ReportedFieldMinHeight
+    minHeight: Dp = ReportedFieldMinHeight,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     ReportedTextInputField(
         label = label,
@@ -238,7 +253,11 @@ fun ReportedField(
         trailingContent = trailingContent,
         trailingWidth = trailingWidth,
         autoFitText = autoFitText,
-        minHeight = minHeight
+        minHeight = minHeight,
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
+        keyboardOptions = keyboardOptions
     )
 }
 
@@ -283,6 +302,7 @@ fun ReportedPasswordField(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ReportedTextInputField(
     label: String,
     value: String,
@@ -296,7 +316,10 @@ private fun ReportedTextInputField(
     autoFitText: Boolean = false,
     minHeight: Dp = ReportedFieldMinHeight,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE
 ) {
     val bodyStyle = MaterialTheme.typography.bodyLarge
     val inputTextColor = if (enabled) {
@@ -305,13 +328,18 @@ private fun ReportedTextInputField(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     var textSize by remember(value) { mutableStateOf(bodyStyle.fontSize) }
+    var isFocused by remember { mutableStateOf(false) }
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val coroutineScope = rememberCoroutineScope()
     ReportedFieldShell(
         label = label,
         modifier = modifier,
         enabled = enabled,
         isError = isError,
+        isFocused = isFocused,
         minHeight = minHeight,
         trailingWidth = trailingWidth,
+        contentVerticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
         trailing = if ((onClear != null && value.isNotEmpty()) || trailingContent != null) {
             {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -331,15 +359,27 @@ private fun ReportedTextInputField(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            modifier = fieldModifier,
-            singleLine = true,
+            modifier = fieldModifier
+                .bringIntoViewRequester(bringIntoViewRequester)
+                .onFocusChanged { focusState ->
+                    isFocused = focusState.isFocused
+                    if (focusState.isFocused) {
+                        coroutineScope.launch {
+                            delay(180)
+                            bringIntoViewRequester.bringIntoView()
+                        }
+                    }
+                },
+            singleLine = singleLine,
+            minLines = minLines,
+            maxLines = maxLines,
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 fontSize = textSize,
                 color = inputTextColor
             ),
-            cursorBrush = SolidColor(inputTextColor),
+            cursorBrush = SolidColor(if (isFocused) MaterialTheme.colorScheme.primary else inputTextColor),
             onTextLayout = { layoutResult ->
                 if (autoFitText && layoutResult.hasVisualOverflow && textSize.value > 14f) {
                     textSize = (textSize.value - 1f).coerceAtLeast(14f).sp
@@ -348,7 +388,7 @@ private fun ReportedTextInputField(
             decorationBox = { innerTextField ->
                 Box(
                     modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.CenterStart
+                    contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart
                 ) {
                     innerTextField()
                 }
@@ -545,7 +585,8 @@ fun PlateRegionPickerField(
     value: String,
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    isError: Boolean = false
+    isError: Boolean = false,
+    onPickerOpened: () -> Unit = {}
 ) {
     var showPicker by remember { mutableStateOf(false) }
     var showAllRegions by remember { mutableStateOf(false) }
@@ -602,6 +643,7 @@ fun PlateRegionPickerField(
         value = value.ifBlank { "Select" },
         modifier = modifier.fillMaxWidth(),
         onClick = {
+            onPickerOpened()
             showAllRegions = false
             showPicker = true
         },

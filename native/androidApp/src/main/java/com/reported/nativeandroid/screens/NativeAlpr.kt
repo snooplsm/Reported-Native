@@ -23,6 +23,7 @@ import androidx.exifinterface.media.ExifInterface
 import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.app.PlateCandidate
 import com.reported.nativeandroid.app.SubmissionMedia
+import com.reported.nativeandroid.media.AutoReportThresholds
 import com.reported.shared.model.PlatePatternClassifier
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -78,7 +79,7 @@ private const val COMPLAINT_BLOCKED_BIKE_LANE = "blocked_bike_lane"
 private const val COMPLAINT_BLOCKED_CROSSWALK = "blocked_crosswalk"
 private const val COMPLAINT_CLASS_BLOCKED_BIKE_LANE = 0
 private const val COMPLAINT_CLASS_BLOCKED_CROSSWALK = 1
-private const val COMPLAINT_DETECTION_THRESHOLD = 0.9f
+private val COMPLAINT_DETECTION_THRESHOLD = AutoReportThresholds.COMPLAINT_CONFIDENCE
 private const val MEDIA_SCANNER_LOG_TAG = "ReportedMediaScanner"
 private const val PLATE_DETECTION_LOG_TAG = "ReportedPlateDetection"
 private const val PLATE_STATE_SIZE = 160
@@ -206,6 +207,12 @@ internal data class LiveFrameDetectionResult(
     val complaintId: String?
 )
 
+internal data class ComplaintInferenceResult(
+    val complaintId: String,
+    val confidence: Float,
+    val accepted: Boolean
+)
+
 internal object NativeAlprEngine {
     private val ortEnvironment by lazy { OrtEnvironment.getEnvironment() }
     private val sessionMutex = Mutex()
@@ -254,6 +261,9 @@ internal object NativeAlprEngine {
         }
 
     suspend fun inferComplaintId(context: Context, media: SubmissionMedia): String? =
+        inferComplaint(context, media)?.takeIf { it.accepted }?.complaintId
+
+    suspend fun inferComplaint(context: Context, media: SubmissionMedia): ComplaintInferenceResult? =
         withContext(Dispatchers.IO) {
             if (media.isVideo) return@withContext null
             val bitmap = decodeBitmap(context, Uri.parse(media.uri)) ?: return@withContext null
@@ -276,7 +286,7 @@ internal object NativeAlprEngine {
             forceBackupTextOcr = false
         )
         val complaintId = if (candidates.isNotEmpty()) {
-            detectComplaint(bitmap, sessions.complaint)
+            detectComplaint(bitmap, sessions.complaint)?.takeIf { it.accepted }?.complaintId
         } else {
             null
         }
@@ -1082,7 +1092,7 @@ internal object NativeAlprEngine {
         }
     }
 
-    private fun detectComplaint(bitmap: Bitmap, session: OrtSession?): String? {
+    private fun detectComplaint(bitmap: Bitmap, session: OrtSession?): ComplaintInferenceResult? {
         session ?: run {
             Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference skipped: complaint model session is unavailable")
             return null
@@ -1115,15 +1125,19 @@ internal object NativeAlprEngine {
                         decodeComplaintScore(raw, offset, rowSize)
                     }
                     Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint top scores: ${scoredRows.toComplaintLogSummary()}")
-                    val best = scoredRows
-                        .filter { (label, score) ->
-                            score >= COMPLAINT_DETECTION_THRESHOLD &&
-                                (label == COMPLAINT_CLASS_BLOCKED_BIKE_LANE || label == COMPLAINT_CLASS_BLOCKED_CROSSWALK)
-                        }
-                        .maxByOrNull { it.second } ?: run {
+                    val bikeLaneScore = scoredRows
+                        .filter { (label, _) -> label == COMPLAINT_CLASS_BLOCKED_BIKE_LANE }
+                        .maxOfOrNull { (_, score) -> score }
+                    val crosswalkScore = scoredRows
+                        .filter { (label, _) -> label == COMPLAINT_CLASS_BLOCKED_CROSSWALK }
+                        .maxOfOrNull { (_, score) -> score }
+                    val best = listOfNotNull(
+                        bikeLaneScore?.let { COMPLAINT_CLASS_BLOCKED_BIKE_LANE to it },
+                        crosswalkScore?.let { COMPLAINT_CLASS_BLOCKED_CROSSWALK to it }
+                    ).maxByOrNull { it.second } ?: run {
                         Log.d(
                             MEDIA_SCANNER_LOG_TAG,
-                            "Complaint inference returned no accepted label at threshold=$COMPLAINT_DETECTION_THRESHOLD"
+                            "Complaint inference returned no blocked bike lane/crosswalk label"
                         )
                         return null
                     }
@@ -1131,9 +1145,14 @@ internal object NativeAlprEngine {
                         COMPLAINT_CLASS_BLOCKED_BIKE_LANE -> COMPLAINT_BLOCKED_BIKE_LANE
                         COMPLAINT_CLASS_BLOCKED_CROSSWALK -> COMPLAINT_BLOCKED_CROSSWALK
                         else -> null
-                    }
-                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference accepted: label=${best.first} score=${best.second} complaint=$complaint")
-                    complaint.also {
+                    } ?: return null
+                    val accepted = best.second >= COMPLAINT_DETECTION_THRESHOLD
+                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference result: label=${best.first} score=${best.second} complaint=$complaint accepted=$accepted threshold=$COMPLAINT_DETECTION_THRESHOLD")
+                    ComplaintInferenceResult(
+                        complaintId = complaint,
+                        confidence = best.second,
+                        accepted = accepted
+                    ).also {
                         session.logOrtProfileOnce()
                     }
                 }
@@ -1263,22 +1282,38 @@ internal object NativeAlprEngine {
 
     private fun inferComplaintRowSize(flatSize: Int): Int =
         when {
-            flatSize % 7 == 0 -> 7
             flatSize % 6 == 0 -> 6
+            flatSize % 7 == 0 -> 7
             flatSize % 5 == 0 -> 5
             else -> flatSize
         }
 
     private fun decodeComplaintScore(raw: FloatArray, offset: Int, rowSize: Int): Pair<Int, Float>? =
         when {
-            rowSize >= 7 -> raw[offset + 5].roundToInt() to raw[offset + 6]
-            rowSize == 6 -> raw[offset + 4].roundToInt() to raw[offset + 5]
-            rowSize == 5 -> raw[offset + 4].roundToInt() to raw[offset + 3]
+            rowSize >= 7 -> raw[offset + 5].roundToInt() to raw[offset + 6].normalizedComplaintScore()
+            rowSize == 6 -> {
+                val bikeLaneScore = raw[offset + 4].normalizedComplaintScore()
+                val crosswalkScore = raw[offset + 5].normalizedComplaintScore()
+                if (bikeLaneScore >= crosswalkScore) {
+                    COMPLAINT_CLASS_BLOCKED_BIKE_LANE to bikeLaneScore
+                } else {
+                    COMPLAINT_CLASS_BLOCKED_CROSSWALK to crosswalkScore
+                }
+            }
+            rowSize == 5 -> raw[offset + 4].roundToInt() to raw[offset + 3].normalizedComplaintScore()
             rowSize >= 2 -> {
                 val bestLabel = (0 until rowSize).maxByOrNull { raw[offset + it] } ?: return null
-                bestLabel to raw[offset + bestLabel]
+                bestLabel to raw[offset + bestLabel].normalizedComplaintScore()
             }
             else -> null
+        }
+
+    private fun Float.normalizedComplaintScore(): Float =
+        when {
+            !isFinite() -> 0f
+            this < 0f -> 0f
+            this > 1f -> 1f
+            else -> this
         }
 
     private fun runOcr(bitmap: Bitmap, session: OrtSession): String {

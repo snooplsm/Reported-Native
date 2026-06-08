@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import ImageIO
 import Photos
 import SharedCore
@@ -178,10 +179,12 @@ struct IOSDetectedInfraction: Codable {
     let plateConfidence: Double
     let stateConfidence: Double
     let complaintId: String
+    let complaintConfidence: Double?
     let occurredAtIso: String
     let address: String
     let latitude: Double?
     let longitude: Double?
+    let contentHash: String?
     let candidates: [StoredCandidate]
 
     var media: ComposerState.SubmissionMedia {
@@ -264,6 +267,40 @@ enum IOSDetectedInfractionStore {
     }
 }
 
+struct IOSAutoReportScanSummary {
+    let photoAccessGranted: Bool
+    let scannedCount: Int
+    let matches: [IOSDetectedInfraction]
+    let processedPhotos: [IOSAutoReportProcessedPhoto]
+
+    var groups: [IOSAutoReportGroup] {
+        Dictionary(grouping: matches, by: \.complaintId)
+            .map { complaintId, infractions in
+                IOSAutoReportGroup(
+                    complaintId: complaintId,
+                    title: notificationComplaintLabel(for: complaintId),
+                    infractions: infractions.sorted { $0.occurredAtIso < $1.occurredAtIso }
+                )
+            }
+            .sorted { $0.title < $1.title }
+    }
+}
+
+struct IOSAutoReportProcessedPhoto: Identifiable {
+    let id: String
+    let mediaURL: URL?
+    let resultTitle: String
+    let resultDetail: String
+    let matched: Bool
+}
+
+struct IOSAutoReportGroup: Identifiable {
+    var id: String { complaintId }
+    let complaintId: String
+    let title: String
+    let infractions: [IOSDetectedInfraction]
+}
+
 final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotificationCenterDelegate {
     static let shared = IOSMediaScanner()
 
@@ -322,6 +359,37 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         Task {
             await scheduleScan(reason: "background")
         }
+    }
+
+    func runAutoReportScan(
+        lookback: TimeInterval = 7 * 24 * 60 * 60,
+        progress: @escaping @MainActor (_ processed: Int, _ total: Int) -> Void
+    ) async -> IOSAutoReportScanSummary {
+        guard await IOSMediaScannerSettings.requestPhotoAccessIfNeeded() else {
+            return IOSAutoReportScanSummary(photoAccessGranted: false, scannedCount: 0, matches: [], processedPhotos: [])
+        }
+        registerForPhotoChangesIfNeeded()
+        let since = Date(timeIntervalSinceNow: -lookback)
+        let assets = fetchImageAssets(after: since, limit: nil)
+        await progress(0, assets.count)
+        var matches: [IOSDetectedInfraction] = []
+        var processedPhotos: [IOSAutoReportProcessedPhoto] = []
+        for (index, asset) in assets.enumerated() {
+            guard !Task.isCancelled else { break }
+            let result = await processAutoReport(asset: asset)
+            processedPhotos.append(result.photo)
+            if let detected = result.detected,
+               autoReportComplaintIds.contains(detected.complaintId) {
+                matches.append(detected)
+            }
+            await progress(index + 1, assets.count)
+        }
+        return IOSAutoReportScanSummary(
+            photoAccessGranted: true,
+            scannedCount: assets.count,
+            matches: matches,
+            processedPhotos: processedPhotos
+        )
     }
 
     func photoLibraryDidChange(_ changeInstance: PHChange) {
@@ -436,14 +504,14 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
                 continue
             }
             IOSMediaScannerSettings.markSeen(asset.localIdentifier)
-            await process(asset: asset)
+            _ = await process(asset: asset)
         }
         IOSMediaScannerSettings.lastScanDate = scanStart
         print("\(reportedMediaScannerLogTag): media scan finished")
         endBackgroundTask()
     }
 
-    private func fetchImageAssets(after date: Date) -> [PHAsset] {
+    private func fetchImageAssets(after date: Date, limit: Int? = 30) -> [PHAsset] {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         options.predicate = NSPredicate(
@@ -451,7 +519,9 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             PHAssetMediaType.image.rawValue,
             date as NSDate
         )
-        options.fetchLimit = 30
+        if let limit {
+            options.fetchLimit = limit
+        }
         let fetch = PHAsset.fetchAssets(with: options)
         var assets: [PHAsset] = []
         fetch.enumerateObjects { asset, _, _ in
@@ -460,31 +530,33 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         return assets
     }
 
-    private func process(asset: PHAsset) async {
+    private func process(asset: PHAsset, notify: Bool = true) async -> IOSDetectedInfraction? {
         print("\(reportedMediaScannerLogTag): processing asset \(asset.localIdentifier)")
         guard let media = await copyImageAsset(asset) else {
             print("\(reportedMediaScannerLogTag): skipping asset: unable to copy image data")
-            return
+            return nil
         }
         let candidates = await NativeAlprEngine.shared.detectLicensePlates(media: media)
         print("\(reportedMediaScannerLogTag): detected \(candidates.count) plate candidate(s)")
         guard let bestPlate = candidates.bestMediaScannerCandidate() else {
             print("\(reportedMediaScannerLogTag): skipping asset: no plate met confidence/state threshold")
-            return
+            return nil
         }
         print(
             "\(reportedMediaScannerLogTag): best plate \(bestPlate.plate) state=\(bestPlate.state ?? "") plateConfidence=\(bestPlate.confidence) stateConfidence=\(bestPlate.stateConfidence ?? 0)"
         )
         guard let complaintId = await NativeAlprEngine.shared.inferComplaintId(media: media) else {
             print("\(reportedMediaScannerLogTag): skipping asset: complaint inference did not meet threshold")
-            return
+            return nil
         }
-        let latitude = asset.location?.coordinate.latitude
-        let longitude = asset.location?.coordinate.longitude
+        let metadata = await extractSubmissionMetadata(from: media)
+        let latitude = metadata.latitude ?? asset.location?.coordinate.latitude
+        let longitude = metadata.longitude ?? asset.location?.coordinate.longitude
         let address = await ifLet(latitude, longitude) { lat, lon in
             await IOSMediaScanner.reverseGeocode(latitude: lat, longitude: lon)
         } ?? ""
-        let occurredAtIso = asset.creationDate.map { scannerIsoStringUTC(from: $0) } ?? scannerIsoStringUTC(from: Date())
+        let occurredAtIso = metadata.occurredAtIso ?? asset.creationDate.map { scannerIsoStringUTC(from: $0) } ?? scannerIsoStringUTC(from: Date())
+        let contentHash = mediaContentHash(for: media.fileURL)
         let plateRegion = bestPlate.state ?? "NY"
         let detectedId = detectedInfractionId(
             plate: bestPlate.plate,
@@ -500,14 +572,111 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             plateConfidence: bestPlate.confidence,
             stateConfidence: bestPlate.stateConfidence ?? 0,
             complaintId: complaintId,
+            complaintConfidence: nil,
             occurredAtIso: occurredAtIso,
             address: address,
             latitude: latitude,
             longitude: longitude,
+            contentHash: contentHash,
             candidates: candidates.map(IOSDetectedInfraction.StoredCandidate.init)
         )
         IOSDetectedInfractionStore.save(detected)
-        await showDetectedNotification(detected)
+        if notify {
+            await showDetectedNotification(detected)
+        }
+        return detected
+    }
+
+    private func processAutoReport(asset: PHAsset) async -> (photo: IOSAutoReportProcessedPhoto, detected: IOSDetectedInfraction?) {
+        print("\(reportedMediaScannerLogTag): auto-report processing asset \(asset.localIdentifier)")
+        guard let media = await copyImageAsset(asset) else {
+            return (
+                IOSAutoReportProcessedPhoto(
+                    id: asset.localIdentifier,
+                    mediaURL: nil,
+                    resultTitle: "Could not read photo",
+                    resultDetail: "Photo data was unavailable to the on-device scanner.",
+                    matched: false
+                ),
+                nil
+            )
+        }
+
+        let candidates = await NativeAlprEngine.shared.detectLicensePlates(media: media)
+        guard let bestPlate = candidates.bestMediaScannerCandidate() else {
+            return (
+                IOSAutoReportProcessedPhoto(
+                    id: asset.localIdentifier,
+                    mediaURL: media.fileURL,
+                    resultTitle: candidates.isEmpty ? "No vehicle plate found" : "No qualified vehicle plate",
+                    resultDetail: candidates.isEmpty
+                        ? "Plate AI found no readable plate candidates."
+                        : "Top plate AI: \(candidates.bestObservedMediaScannerCandidate()?.mediaScannerConfidenceSummary ?? "\(candidates.count) candidate\(candidates.count == 1 ? "" : "s") found").",
+                    matched: false
+                ),
+                nil
+            )
+        }
+
+        let complaintInferenceResult = await NativeAlprEngine.shared.inferComplaint(media: media)
+        guard let complaintInference = complaintInferenceResult,
+              complaintInference.accepted,
+              autoReportComplaintIds.contains(complaintInference.complaintId) else {
+            return (
+                IOSAutoReportProcessedPhoto(
+                    id: asset.localIdentifier,
+                    mediaURL: media.fileURL,
+                    resultTitle: "Not report-worthy",
+                    resultDetail: "Plate AI passed: \(bestPlate.mediaScannerConfidenceSummary). \(complaintInferenceResult.autoReportComplaintConfidenceSummary(matched: false))",
+                    matched: false
+                ),
+                nil
+            )
+        }
+        let complaintId = complaintInference.complaintId
+
+        let metadata = await extractSubmissionMetadata(from: media)
+        let latitude = metadata.latitude ?? asset.location?.coordinate.latitude
+        let longitude = metadata.longitude ?? asset.location?.coordinate.longitude
+        let address = await ifLet(latitude, longitude) { lat, lon in
+            await IOSMediaScanner.reverseGeocode(latitude: lat, longitude: lon)
+        } ?? ""
+        let occurredAtIso = metadata.occurredAtIso ?? asset.creationDate.map { scannerIsoStringUTC(from: $0) } ?? scannerIsoStringUTC(from: Date())
+        let contentHash = mediaContentHash(for: media.fileURL)
+        let plateRegion = bestPlate.state ?? "NY"
+        let detectedId = detectedInfractionId(
+            plate: bestPlate.plate,
+            state: plateRegion,
+            occurredAtIso: occurredAtIso
+        )
+        let detected = IOSDetectedInfraction(
+            id: detectedId,
+            mediaURL: media.fileURL,
+            displayName: media.displayName,
+            plate: bestPlate.plate,
+            plateRegion: plateRegion,
+            plateConfidence: bestPlate.confidence,
+            stateConfidence: bestPlate.stateConfidence ?? 0,
+            complaintId: complaintId,
+            complaintConfidence: Double(complaintInference.confidence),
+            occurredAtIso: occurredAtIso,
+            address: address,
+            latitude: latitude,
+            longitude: longitude,
+            contentHash: contentHash,
+            candidates: candidates.map(IOSDetectedInfraction.StoredCandidate.init)
+        )
+        IOSDetectedInfractionStore.save(detected)
+        return (
+            IOSAutoReportProcessedPhoto(
+                id: asset.localIdentifier,
+                mediaURL: media.fileURL,
+                resultTitle: "Matched \(notificationComplaintLabel(for: complaintId))",
+                resultDetail: "Plate AI passed: \(bestPlate.mediaScannerConfidenceSummary). \(Optional(complaintInference).autoReportComplaintConfidenceSummary(matched: true))",
+                matched: true
+            ),
+            detected
+        )
     }
 
     private func copyImageAsset(_ asset: PHAsset) async -> ComposerState.SubmissionMedia? {
@@ -539,6 +708,13 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
                 }
             }
         }
+    }
+
+    private func mediaContentHash(for url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private func showDetectedNotification(_ infraction: IOSDetectedInfraction) async {
@@ -679,6 +855,14 @@ private func notificationComplaintLabel(for complaintId: String) -> String {
     }
 }
 
+private let autoReportComplaintIds: Set<String> = ["Z8vjWz8uYr", "GzRxlMN1vl"]
+private let autoReportStandardPlateConfidenceThreshold = 0.65
+private let autoReportPostInferencePlateConfidenceThreshold = 0.65
+private let autoReportStateConfidenceThreshold = 0.65
+private let autoReportComplaintConfidenceThreshold = 0.65
+
+let autoReportConfidenceThresholdSummary = "Thresholds: plate \(scannerConfidencePercent(autoReportStandardPlateConfidenceThreshold))+, state \(scannerConfidencePercent(autoReportStateConfidenceThreshold))+, infraction \(scannerConfidencePercent(autoReportComplaintConfidenceThreshold))+."
+
 private func ifLet<A, B, T>(_ a: A?, _ b: B?, transform: (A, B) async -> T?) async -> T? {
     guard let a, let b else { return nil }
     return await transform(a, b)
@@ -687,12 +871,17 @@ private func ifLet<A, B, T>(_ a: A?, _ b: B?, transform: (A, B) async -> T?) asy
 private extension Array where Element == ComposerState.PlateCandidate {
     func bestMediaScannerCandidate() -> ComposerState.PlateCandidate? {
         filter { candidate in
-            let requiredPlateConfidence = candidate.hasPostInferredNyForHirePlate ? 0.8 : 0.9
-            return candidate.confidence >= requiredPlateConfidence &&
-                (candidate.stateConfidence ?? 0) >= 0.9 &&
+            candidate.confidence >= candidate.mediaScannerPlateThreshold &&
+                (candidate.stateConfidence ?? 0) >= autoReportStateConfidenceThreshold &&
                 candidate.state?.isEmpty == false
         }
         .max { lhs, rhs in
+            lhs.mediaScannerScore < rhs.mediaScannerScore
+        }
+    }
+
+    func bestObservedMediaScannerCandidate() -> ComposerState.PlateCandidate? {
+        self.max { lhs, rhs in
             lhs.mediaScannerScore < rhs.mediaScannerScore
         }
     }
@@ -703,9 +892,45 @@ private extension ComposerState.PlateCandidate {
         state == "NY" && (plateType == "TAXI" || plateType == "TLC")
     }
 
+    var mediaScannerPlateThreshold: Double {
+        hasPostInferredNyForHirePlate ? autoReportPostInferencePlateConfidenceThreshold : autoReportStandardPlateConfidenceThreshold
+    }
+
     var mediaScannerScore: Double {
         confidence + (stateConfidence ?? 0)
     }
+
+    var mediaScannerConfidenceSummary: String {
+        "\(plate) \(state ?? "") plate \(scannerConfidencePercent(confidence)) (needs \(scannerConfidencePercent(mediaScannerPlateThreshold))), state \(scannerConfidencePercent(stateConfidence ?? 0)) (needs \(scannerConfidencePercent(autoReportStateConfidenceThreshold)))"
+    }
+}
+
+private extension Optional where Wrapped == ComplaintInferenceResult {
+    var acceptedAutoReportComplaint: Bool {
+        guard let result = self else { return false }
+        return result.accepted && autoReportComplaintIds.contains(result.complaintId)
+    }
+
+    func autoReportComplaintConfidenceSummary(matched: Bool) -> String {
+        let required = scannerConfidencePercent(autoReportComplaintConfidenceThreshold)
+        guard let result = self else {
+            return "Reported infraction model returned no blocked bike lane/crosswalk detection score (needs \(required))."
+        }
+        let label = notificationComplaintLabel(for: result.complaintId)
+        let confidence = scannerConfidencePercent(Double(result.confidence))
+        if matched {
+            return "Reported infraction model: \(label) \(confidence) (needs \(required)), queued this photo for bulk review."
+        }
+        return "Reported infraction model top score: \(label) \(confidence) (needs \(required)), below Auto-Report threshold."
+    }
+}
+
+private func scannerConfidencePercent(_ value: Double) -> String {
+    let bounded = min(0.999, max(0, value))
+    if bounded > 0, bounded < 0.01 {
+        return "<1%"
+    }
+    return "\(Int(bounded * 100))%"
 }
 
 private extension String {

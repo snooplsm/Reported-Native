@@ -22,6 +22,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reported.nativeandroid.app.ProfileAction
 import com.reported.nativeandroid.app.ProfileViewModel
+import com.reported.nativeandroid.ai.ReportedAiModelStore
+import com.reported.nativeandroid.media.AutoReportThresholds
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
 import com.reported.nativeandroid.screens.ComplaintChipGroup
@@ -31,6 +33,7 @@ import com.reported.nativeandroid.screens.PrimaryButton
 import com.reported.nativeandroid.screens.ReportedField
 import com.reported.nativeandroid.screens.ScreenSection
 import com.reported.shared.model.AppThemeMode
+import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -175,6 +178,13 @@ fun SettingsScreen(
     val backgroundScanningSupported = MediaScannerSettings.supportsBackgroundLibraryScanning()
     var mediaScannerEnabled by remember { mutableStateOf(MediaScannerSettings.isEnabled(context)) }
     var offlineProcessingEnabled by remember { mutableStateOf(MediaScannerSettings.isOfflineProcessingEnabled(context)) }
+    val scope = rememberCoroutineScope()
+    var reportedAiInstalled by remember { mutableStateOf(ReportedAiModelStore.isModelInstalled(context)) }
+    var reportedAiModelSize by remember { mutableStateOf(ReportedAiModelStore.installedModelSizeLabel(context)) }
+    var reportedAiAccelerationMessage by remember { mutableStateOf(ReportedAiModelStore.accelerationMessage(context)) }
+    var reportedAiDownloading by remember { mutableStateOf(false) }
+    var reportedAiDownloadProgress by remember { mutableStateOf<Float?>(null) }
+    var reportedAiMessage by remember { mutableStateOf<String?>(null) }
     var notificationsEnabled by remember {
         mutableStateOf(MediaScannerSettings.isNotificationsEnabled(context) && MediaScannerSettings.hasNotificationPermission(context))
     }
@@ -204,6 +214,54 @@ fun SettingsScreen(
         }
     }
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.onAction(ProfileAction.Load) }
+
+    fun refreshReportedAiModelState() {
+        reportedAiInstalled = ReportedAiModelStore.isModelInstalled(context)
+        reportedAiModelSize = ReportedAiModelStore.installedModelSizeLabel(context)
+        reportedAiAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+    }
+
+    fun downloadReportedAiModel() {
+        if (reportedAiDownloading) return
+        reportedAiDownloading = true
+        reportedAiDownloadProgress = null
+        reportedAiMessage = null
+        scope.launch {
+            ReportedAiModelStore.downloadModel(context) { downloadedBytes, totalBytes ->
+                reportedAiDownloadProgress = if (totalBytes > 0L) {
+                    (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    null
+                }
+            }.fold(
+                onSuccess = {
+                    refreshReportedAiModelState()
+                    reportedAiDownloadProgress = 1f
+                    reportedAiMessage = "REPORTED AI installed."
+                },
+                onFailure = { error ->
+                    refreshReportedAiModelState()
+                    reportedAiMessage = error.message ?: "Could not install REPORTED AI."
+                }
+            )
+            reportedAiDownloading = false
+        }
+    }
+
+    fun deleteReportedAiModel() {
+        if (reportedAiDownloading) return
+        reportedAiMessage = null
+        scope.launch {
+            val deleted = ReportedAiModelStore.deleteModel(context)
+            refreshReportedAiModelState()
+            reportedAiDownloadProgress = null
+            reportedAiMessage = if (deleted > 0) {
+                "REPORTED AI deleted."
+            } else {
+                "No REPORTED AI model was installed."
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -253,6 +311,89 @@ fun SettingsScreen(
                             onThemeModeSelected(mode)
                         }
                     )
+
+                    Text(
+                        "Reported AI",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 1.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            val statusText = when {
+                                reportedAiDownloading -> "Installing"
+                                reportedAiInstalled -> "Installed${reportedAiModelSize?.let { " ($it)" }.orEmpty()}"
+                                else -> "Not installed"
+                            }
+                            Text(statusText, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                reportedAiAccelerationMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (reportedAiDownloading) {
+                                reportedAiDownloadProgress?.let { progress ->
+                                    LinearProgressIndicator(
+                                        progress = { progress },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                            reportedAiMessage?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (reportedAiInstalled) {
+                                OutlinedButton(
+                                    onClick = ::deleteReportedAiModel,
+                                    enabled = !reportedAiDownloading,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Delete REPORTED AI")
+                                }
+                            } else {
+                                PrimaryButton(
+                                    text = "Install REPORTED AI (${ReportedAiModelStore.compactDownloadSizeLabel})",
+                                    onClick = ::downloadReportedAiModel,
+                                    enabled = !reportedAiDownloading
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        "Auto-Report",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 1.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Confidence thresholds", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                AutoReportThresholds.summary(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
                     if (backgroundScanningSupported) {
                         Text(

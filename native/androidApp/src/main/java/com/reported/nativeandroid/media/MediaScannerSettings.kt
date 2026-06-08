@@ -109,6 +109,23 @@ object MediaScannerSettings {
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }
 
+    fun autoReportPermissions(): Array<String> = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        }
+    }.toTypedArray()
+
+    fun hasAutoReportPermissions(context: Context): Boolean =
+        autoReportPermissions().all { permission ->
+            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        }
+
     private fun seenMedia(context: Context): Set<String> =
         prefs(context).getStringSet(KEY_SEEN_MEDIA, emptySet()).orEmpty()
 

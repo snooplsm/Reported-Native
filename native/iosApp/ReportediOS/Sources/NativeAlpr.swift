@@ -28,7 +28,7 @@ private let ocrWidth = 140
 private let ocrHeight = 70
 private let ocrLegacyBatchSize = 8
 private let detectionThreshold: Float = 0.2
-private let complaintDetectionThreshold: Float = 0.9
+private let complaintDetectionThreshold: Float = 0.65
 private let complaintClassBlockedBikeLane = 0
 private let complaintClassBlockedCrosswalk = 1
 private let segmentationMaskThreshold: Float = 0.5
@@ -68,6 +68,12 @@ private struct Detection {
     let x2: CGFloat
     let y2: CGFloat
     let score: Float
+}
+
+struct ComplaintInferenceResult {
+    let complaintId: String
+    let confidence: Float
+    let accepted: Bool
 }
 
 private struct PlateCrop {
@@ -165,6 +171,11 @@ final class NativeAlprEngine {
     }
 
     func inferComplaintId(media: ComposerState.SubmissionMedia) async -> String? {
+        guard let result = await inferComplaint(media: media), result.accepted else { return nil }
+        return result.complaintId
+    }
+
+    func inferComplaint(media: ComposerState.SubmissionMedia) async -> ComplaintInferenceResult? {
         guard !media.isVideo else { return nil }
         return await Task.detached(priority: .utility) {
             guard
@@ -173,22 +184,7 @@ final class NativeAlprEngine {
             else {
                 return nil
             }
-            let bikeLaneRegions = self.detectComplaintRegions(
-                in: image,
-                session: complaint,
-                expectedLabel: complaintClassBlockedBikeLane
-            )
-            let crosswalkRegions = self.detectComplaintRegions(
-                in: image,
-                session: complaint,
-                expectedLabel: complaintClassBlockedCrosswalk
-            )
-            let bikeLaneScore = bikeLaneRegions.map(\.score).max() ?? 0
-            let crosswalkScore = crosswalkRegions.map(\.score).max() ?? 0
-            guard max(bikeLaneScore, crosswalkScore) >= complaintDetectionThreshold else {
-                return nil
-            }
-            return bikeLaneScore >= crosswalkScore ? "Z8vjWz8uYr" : "GzRxlMN1vl"
+            return self.detectComplaintInference(in: image, session: complaint)
         }.value
     }
 
@@ -671,6 +667,52 @@ final class NativeAlprEngine {
         }
     }
 
+    private func detectComplaintInference(
+        in image: UIImage,
+        session: ORTSession
+    ) -> ComplaintInferenceResult? {
+        let letterboxed = letterbox(image: image, targetSize: complaintDetectorSize)
+        guard let raw = runFloatModel(
+            session: session,
+            input: rgbFloatData(from: letterboxed.image, width: complaintDetectorSize, height: complaintDetectorSize),
+            shape: [1, 3, complaintDetectorSize, complaintDetectorSize].map(NSNumber.init(value:))
+        ), !raw.isEmpty else {
+            return nil
+        }
+        let rowSize = inferComplaintRowSize(raw.count)
+        guard rowSize >= 2 else { return nil }
+        let rowCount = raw.count / rowSize
+        let scores = (0..<rowCount)
+            .compactMap { rowIndex -> (label: Int, score: Float)? in
+                let offset = rowIndex * rowSize
+                guard let (label, score) = decodeComplaintScore(raw: raw, offset: offset, rowSize: rowSize),
+                      label == complaintClassBlockedBikeLane || label == complaintClassBlockedCrosswalk else {
+                    return nil
+                }
+                return (label, score)
+            }
+        let bikeLaneScore = scores
+            .filter { $0.label == complaintClassBlockedBikeLane }
+            .map(\.score)
+            .max()
+        let crosswalkScore = scores
+            .filter { $0.label == complaintClassBlockedCrosswalk }
+            .map(\.score)
+            .max()
+        let best = [
+            bikeLaneScore.map { (label: complaintClassBlockedBikeLane, score: $0) },
+            crosswalkScore.map { (label: complaintClassBlockedCrosswalk, score: $0) }
+        ]
+        .compactMap { $0 }
+        .max { lhs, rhs in lhs.score < rhs.score }
+        guard let best else { return nil }
+        return ComplaintInferenceResult(
+            complaintId: best.label == complaintClassBlockedBikeLane ? "Z8vjWz8uYr" : "GzRxlMN1vl",
+            confidence: best.score,
+            accepted: best.score >= complaintDetectionThreshold
+        )
+    }
+
     private func detectComplaintRegions(
         in image: UIImage,
         session: ORTSession,
@@ -710,25 +752,35 @@ final class NativeAlprEngine {
     }
 
     private func inferComplaintRowSize(_ flatSize: Int) -> Int {
-        if flatSize % 7 == 0 { return 7 }
         if flatSize % 6 == 0 { return 6 }
+        if flatSize % 7 == 0 { return 7 }
         if flatSize % 5 == 0 { return 5 }
         return flatSize
     }
 
     private func decodeComplaintScore(raw: [Float], offset: Int, rowSize: Int) -> (Int, Float)? {
         if rowSize >= 7 {
-            return (Int(raw[offset + 5].rounded()), raw[offset + 6])
+            return (Int(raw[offset + 5].rounded()), normalizedComplaintScore(raw[offset + 6]))
         }
         if rowSize == 6 {
-            return (Int(raw[offset + 4].rounded()), raw[offset + 5])
+            let bikeLaneScore = normalizedComplaintScore(raw[offset + 4])
+            let crosswalkScore = normalizedComplaintScore(raw[offset + 5])
+            if bikeLaneScore >= crosswalkScore {
+                return (complaintClassBlockedBikeLane, bikeLaneScore)
+            }
+            return (complaintClassBlockedCrosswalk, crosswalkScore)
         }
         if rowSize == 5 {
-            return (Int(raw[offset + 4].rounded()), raw[offset + 3])
+            return (Int(raw[offset + 4].rounded()), normalizedComplaintScore(raw[offset + 3]))
         }
         guard rowSize >= 2 else { return nil }
         let label = (0..<rowSize).max { raw[offset + $0] < raw[offset + $1] } ?? 0
-        return (label, raw[offset + label])
+        return (label, normalizedComplaintScore(raw[offset + label]))
+    }
+
+    private func normalizedComplaintScore(_ value: Float) -> Float {
+        guard value.isFinite else { return 0 }
+        return min(1, max(0, value))
     }
 
     private func annotatedFramePreview(image: UIImage, candidates: [ComposerState.PlateCandidate]) -> UIImage {

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Videocam
@@ -136,6 +137,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
             val items = buildList {
                 add(TabDestination.Report)
                 add(TabDestination.Batch)
+                add(TabDestination.AutoReport)
                 if (remoteConfigSnapshot.enableLive) add(TabDestination.Live)
                 add(TabDestination.Reports)
                 add(TabDestination.Profile)
@@ -198,7 +200,16 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                             selectedTab = selectedTab,
                             closeDrawer = closeDrawer,
                             onSelected = { item, closeDrawer ->
-                                if (isAuthorized || item == TabDestination.Report || item == TabDestination.Live || item == TabDestination.Settings) {
+                                if (
+                                    isAuthorized ||
+                                    item == TabDestination.Report ||
+                                    item == TabDestination.AutoReport ||
+                                    item == TabDestination.Live ||
+                                    item == TabDestination.Settings
+                                ) {
+                                    if (item == TabDestination.Settings) {
+                                        ReportedAnalytics.logSettingsTapped("navigation")
+                                    }
                                     mainNavController.navigate(item.route) {
                                         launchSingleTop = true
                                         restoreState = true
@@ -261,6 +272,15 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
                                     onOpenMenu = onOpenMenu
+                                )
+                            }
+                            composable(TabDestination.AutoReport.route) {
+                                BatchScreen(
+                                    isAuthorized = isAuthorized,
+                                    onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
+                                    onOpenMenu = onOpenMenu,
+                                    title = "Auto-Report",
+                                    autoReportMode = true
                                 )
                             }
                             composable(TabDestination.Live.route) {
@@ -500,6 +520,7 @@ private fun LeftGliderNavRail(
                     val image = when (item) {
                         TabDestination.Report -> Icons.Outlined.AddCircle
                         TabDestination.Batch -> Icons.Outlined.Collections
+                        TabDestination.AutoReport -> Icons.Outlined.AutoAwesome
                         TabDestination.Live -> Icons.Outlined.Videocam
                         TabDestination.Reports -> Icons.AutoMirrored.Outlined.List
                         TabDestination.Profile -> Icons.Outlined.AccountCircle

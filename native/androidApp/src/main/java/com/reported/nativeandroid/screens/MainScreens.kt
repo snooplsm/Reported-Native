@@ -17,6 +17,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -96,6 +97,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -181,6 +183,8 @@ import com.reported.nativeandroid.app.SharedMediaRequest
 import com.reported.nativeandroid.app.SubmissionMedia
 import com.reported.nativeandroid.app.SubmissionStage
 import com.reported.nativeandroid.BuildConfig
+import com.reported.nativeandroid.ai.ReportedAiModelStore
+import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
 import com.reported.nativeandroid.report.NewReportTutorialSheet
@@ -202,12 +206,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.snapshotFlow
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -294,8 +297,14 @@ fun ReportComposerScreen(
     var voiceModelInstalled by remember { mutableStateOf(OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)) }
     var voiceModelDownloading by remember { mutableStateOf(false) }
     var voiceModelDownloadProgress by remember { mutableStateOf<Float?>(null) }
+    var voiceAccelerationMessage by remember { mutableStateOf(ReportedAiModelStore.accelerationMessage(context)) }
     var voiceImageContext by remember { mutableStateOf<String?>(null) }
     var voiceImageContextJob by remember { mutableStateOf<Job?>(null) }
+    var hasVoiceMicrophonePermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
     val voiceAudioRecorder = remember { VoiceReportAudioRecorder() }
     var showAddressSearchScreen by remember { mutableStateOf(false) }
     var showAddressMap by remember { mutableStateOf(false) }
@@ -628,12 +637,17 @@ fun ReportComposerScreen(
                 imageVisualContext = voiceImageContext,
                 resolvedCurrentAddress = resolveVoiceCurrentAddress(context, state)
             )
-            OnDeviceGemmaVoiceDraftEngine.generateDraft(
-                context = context,
-                audioFile = audioFile,
-                complaintOptions = complaintOptions,
-                voiceContext = voiceContext
-            ).fold(
+            val draftResult = withTimeoutOrNull(120_000L) {
+                OnDeviceGemmaVoiceDraftEngine.generateDraft(
+                    context = context,
+                    audioFile = audioFile,
+                    complaintOptions = complaintOptions,
+                    voiceContext = voiceContext
+                )
+            } ?: Result.failure(
+                IllegalStateException("REPORTED AI is taking too long to process this recording. Try a shorter recording.")
+            )
+            draftResult.fold(
                 onSuccess = { result ->
                     voiceTranscript = result.transcript.orEmpty()
                     voiceDraft = result.draft
@@ -648,6 +662,7 @@ fun ReportComposerScreen(
                 audioFile.delete()
             }
             voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+            voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
         }
     }
 
@@ -669,9 +684,26 @@ fun ReportComposerScreen(
     }
 
     fun openVoiceAssistant() {
+        ReportedAnalytics.logAiSparkleTapped(surface = "report_composer")
         voiceError = null
+        voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+        hasVoiceMicrophonePermission =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         showVoiceAssistSheet = true
         startVoiceImageContextWarmup()
+    }
+
+    fun openComplaintChooser(surface: String) {
+        ReportedAnalytics.logComplaintChooserTapped(surface, state.selectedComplaintId)
+        showComplaintChooser = true
+    }
+
+    fun openPlateChooser() {
+        ReportedAnalytics.logPlateChooserTapped(
+            candidateCount = state.plateCandidates.size,
+            hasPlate = state.plate.isNotBlank()
+        )
+        showPlateCandidates = true
     }
 
     fun downloadVoiceModel() {
@@ -689,11 +721,13 @@ fun ReportComposerScreen(
             }.fold(
                 onSuccess = {
                     voiceModelInstalled = true
+                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
                     voiceError = null
                     voiceModelDownloadProgress = 1f
                 },
                 onFailure = { error ->
                     voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
+                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
                     voiceError = error.message ?: "Could not install REPORTED AI."
                 }
             )
@@ -704,6 +738,7 @@ fun ReportComposerScreen(
     val voicePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
+        hasVoiceMicrophonePermission = granted
         if (granted) {
             voiceError = null
         } else {
@@ -717,7 +752,9 @@ fun ReportComposerScreen(
             voiceError = null
             return
         }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        hasVoiceMicrophonePermission =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!hasVoiceMicrophonePermission) {
             voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
@@ -862,7 +899,10 @@ fun ReportComposerScreen(
                                 onAnimationFinished = {
                                     advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
                                 },
-                                onClick = { vm.onAction(ComposerAction.PendingComplaintConfirmed(option.id)) }
+                                onClick = {
+                                    ReportedAnalytics.logComplaintSelected(option.id, "pending_media")
+                                    vm.onAction(ComposerAction.PendingComplaintConfirmed(option.id))
+                                }
                             )
                         }
                         if (row.size == 1) {
@@ -896,10 +936,7 @@ fun ReportComposerScreen(
 
     if (showVoiceAssistSheet) {
         VoiceReportAssistantSheet(
-            hasMicrophonePermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED,
+            hasMicrophonePermission = hasVoiceMicrophonePermission,
             transcript = voiceTranscript,
             draft = voiceDraft,
             isRecording = voiceRecording,
@@ -910,6 +947,7 @@ fun ReportComposerScreen(
             modelDownloading = voiceModelDownloading,
             modelDownloadProgress = voiceModelDownloadProgress,
             modelDownloadSizeLabel = OnDeviceGemmaVoiceDraftEngine.ModelDownloadSizeLabel,
+            accelerationMessage = voiceAccelerationMessage,
             error = voiceError,
             onRequestPermission = {
                 voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -971,6 +1009,7 @@ fun ReportComposerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    ReportedAnalytics.logComplaintSelected(option.id, "verify")
                                     vm.onAction(ComposerAction.SelectedComplaintChanged(option.id))
                                     showComplaintChooser = false
                                 }
@@ -1255,6 +1294,7 @@ fun ReportComposerScreen(
                                                     advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
                                                 },
                                                 onClick = {
+                                                    ReportedAnalytics.logComplaintSelected(option.id, "pick_media")
                                                     pendingMultipleSelection = false
                                                     pendingMediaForCurrentReport = false
                                                     pendingComplaintId = option.id
@@ -1359,6 +1399,7 @@ fun ReportComposerScreen(
                                                 advanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
                                             },
                                             onClick = {
+                                                ReportedAnalytics.logComplaintSelected(option.id, "pick_media")
                                                 pendingMultipleSelection = false
                                                 pendingMediaForCurrentReport = false
                                                 pendingComplaintId = option.id
@@ -1397,6 +1438,10 @@ fun ReportComposerScreen(
                     locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
                 }
                 val submitReport = {
+                    ReportedAnalytics.logSubmitReportTapped(
+                        stage = if (state.stage == SubmissionStage.VERIFY) "verify" else "pick_media",
+                        isAuthorized = isAuthorized
+                    )
                     val readyToSubmit = vm.prepareSubmit()
                     if (!readyToSubmit) {
                         Unit
@@ -1444,7 +1489,7 @@ fun ReportComposerScreen(
                                         landscapeSubmit = null,
                                         onPlateCandidateTapped = { pendingPlateCandidate = it },
                                         onPlateCandidateConfirmed = { vm.onAction(ComposerAction.PlateCandidateChosen(it)) },
-                                        onShowPlateCandidates = { showPlateCandidates = true },
+                                        onShowPlateCandidates = ::openPlateChooser,
                                         onRemoveMedia = { vm.onAction(ComposerAction.MediaRemoved(it)) }
                                     )
                                 }
@@ -1455,7 +1500,9 @@ fun ReportComposerScreen(
                                 ) {
                                     LazyColumn(
                                         state = verifyListState,
-                                        modifier = Modifier.fillMaxSize(),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .imePadding(),
                                         contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 78.dp)
                                     ) {
                                         item {
@@ -1468,8 +1515,8 @@ fun ReportComposerScreen(
                                                     complaintOptions = complaintOptions,
                                                     isLandscape = true,
                                                     onAction = vm::onAction,
-                                                    onShowComplaintChooser = { showComplaintChooser = true },
-                                                    onShowPlateCandidates = { showPlateCandidates = true },
+                                                    onShowComplaintChooser = { openComplaintChooser("verify") },
+                                                    onShowPlateCandidates = ::openPlateChooser,
                                                     onShowAddressSearch = { showAddressSearchScreen = true },
                                                     onShowAddressMap = { showAddressMap = true }
                                                 )
@@ -1509,7 +1556,9 @@ fun ReportComposerScreen(
                         } else {
                             LazyColumn(
                                 state = verifyListState,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .imePadding(),
                                 contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 112.dp)
                             ) {
                                 item {
@@ -1521,7 +1570,7 @@ fun ReportComposerScreen(
                                             landscapeSubmit = null,
                                             onPlateCandidateTapped = { pendingPlateCandidate = it },
                                             onPlateCandidateConfirmed = { vm.onAction(ComposerAction.PlateCandidateChosen(it)) },
-                                            onShowPlateCandidates = { showPlateCandidates = true },
+                                            onShowPlateCandidates = ::openPlateChooser,
                                             onRemoveMedia = { vm.onAction(ComposerAction.MediaRemoved(it)) }
                                         )
                                         VerifyFieldsPanel(
@@ -1529,8 +1578,8 @@ fun ReportComposerScreen(
                                             complaintOptions = complaintOptions,
                                             isLandscape = false,
                                             onAction = vm::onAction,
-                                            onShowComplaintChooser = { showComplaintChooser = true },
-                                            onShowPlateCandidates = { showPlateCandidates = true },
+                                            onShowComplaintChooser = { openComplaintChooser("verify") },
+                                            onShowPlateCandidates = ::openPlateChooser,
                                             onShowAddressSearch = { showAddressSearchScreen = true },
                                             onShowAddressMap = { showAddressMap = true }
                                         )
@@ -2191,7 +2240,7 @@ private fun ReportComposerTopBar(
                         .offset(x = 34.dp)
                         .size(34.dp)
                 ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = "Reported AI")
+                    AnimatedSparkleIcon(contentDescription = "Reported AI")
                 }
             }
             if (hasDraftContent) {
@@ -2217,7 +2266,7 @@ private fun ReportComposerTopBar(
                             .offset(x = 36.dp)
                             .size(36.dp)
                     ) {
-                        Icon(Icons.Outlined.AutoAwesome, contentDescription = "Reported AI")
+                        AnimatedSparkleIcon(contentDescription = "Reported AI")
                     }
                 }
             },
@@ -2244,6 +2293,54 @@ private fun ReportComposerTopBar(
     }
 }
 
+@Composable
+private fun AnimatedSparkleIcon(
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.primary
+) {
+    val transition = rememberInfiniteTransition(label = "sparkleIcon")
+    val scale by transition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 820, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sparkleScale"
+    )
+    val rotation by transition.animateFloat(
+        initialValue = -7f,
+        targetValue = 7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1240, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sparkleRotation"
+    )
+    val alpha by transition.animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sparkleAlpha"
+    )
+
+    Icon(
+        Icons.Outlined.AutoAwesome,
+        contentDescription = contentDescription,
+        tint = tint,
+        modifier = modifier.graphicsLayer(
+            scaleX = scale,
+            scaleY = scale,
+            rotationZ = rotation,
+            alpha = alpha
+        )
+    )
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun VoiceReportAssistantSheet(
@@ -2258,6 +2355,7 @@ private fun VoiceReportAssistantSheet(
     modelDownloading: Boolean,
     modelDownloadProgress: Float?,
     modelDownloadSizeLabel: String,
+    accelerationMessage: String,
     error: String?,
     onRequestPermission: () -> Unit,
     onDownloadModel: () -> Unit,
@@ -2274,6 +2372,17 @@ private fun VoiceReportAssistantSheet(
     var undoCurrentSourceFields by remember { mutableStateOf<Set<VoiceDraftField>?>(null) }
     var pendingBulkSource by remember { mutableStateOf<VoiceDraftSource?>(null) }
     var elapsedMillis by remember(isRecording) { mutableLongStateOf(0L) }
+    val contentScrollState = rememberScrollState()
+    val reviewContentKey = remember(transcript, changeRows, draft) {
+        listOf(
+            transcript.trim(),
+            changeRows.joinToString(",") { it.field.name },
+            listOfNotNull(draft?.yearRange, draft?.make, draft?.model)
+                .joinToString(",") { it.trim() }
+        )
+            .filter { it.isNotBlank() }
+            .joinToString("|")
+    }
     val activeHeaderSource = when {
         rowFields.isEmpty() -> null
         currentSourceFields.containsAll(rowFields) -> VoiceDraftSource.Current
@@ -2293,6 +2402,20 @@ private fun VoiceReportAssistantSheet(
             }
             delay(100)
         }
+    }
+
+    LaunchedEffect(isProcessing) {
+        if (isProcessing) {
+            sheetState.expand()
+        }
+    }
+
+    LaunchedEffect(reviewContentKey) {
+        if (reviewContentKey.isBlank() || isRecording || isProcessing) return@LaunchedEffect
+        sheetState.expand()
+        delay(180)
+        val midpoint = (contentScrollState.maxValue * 0.45f).toInt().coerceAtLeast(0)
+        contentScrollState.animateScrollTo(midpoint)
     }
 
     LaunchedEffect(rowFields) {
@@ -2329,20 +2452,37 @@ private fun VoiceReportAssistantSheet(
         )
     }
 
+    val floatingSheetShape = RoundedCornerShape(22.dp)
     ModalBottomSheet(
+        modifier = Modifier
+            .padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        scrimColor = Color.Transparent
+        scrimColor = Color.Transparent,
+        shape = floatingSheetShape,
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 0.dp)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp)
-        ) {
+        val isMinimizedRecording = isRecording && sheetState.currentValue == SheetValue.PartiallyExpanded
+        if (isMinimizedRecording) {
+            VoiceMinimizedRecordingControl(
+                amplitude = voiceAmplitude,
+                elapsedMillis = elapsedMillis,
+                maxMillis = maxRecordingMillis,
+                onClick = onStop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 8.dp)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 0.dp)
+                    .verticalScroll(contentScrollState),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
             Box(
                 modifier = Modifier
                     .width(40.dp)
@@ -2356,11 +2496,7 @@ private fun VoiceReportAssistantSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    Icons.Outlined.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                AnimatedSparkleIcon(contentDescription = null)
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Reported AI", style = MaterialTheme.typography.titleLarge)
                     Text(
@@ -2372,6 +2508,15 @@ private fun VoiceReportAssistantSheet(
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Outlined.Close, contentDescription = "Close voice assistant")
                 }
+            }
+
+            if (accelerationMessage.isNotBlank()) {
+                Text(
+                    accelerationMessage,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (!modelInstalled) {
@@ -2482,6 +2627,99 @@ private fun VoiceReportAssistantSheet(
                         enabled = draft.keepingReportedFields(reportedFields).hasAnyFillableField
                     )
                 }
+        }
+        }
+    }
+}
+
+}
+
+@Composable
+private fun VoiceMinimizedRecordingControl(
+    amplitude: Float,
+    elapsedMillis: Long,
+    maxMillis: Long,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val progress = if (maxMillis > 0L) {
+        (elapsedMillis.toFloat() / maxMillis.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val remainingMillis = (maxMillis - elapsedMillis).coerceAtLeast(0L)
+
+    Row(
+        modifier = modifier.heightIn(min = 76.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        VoiceLevelMeter(
+            amplitude = amplitude,
+            isActive = true,
+            modifier = Modifier
+                .width(94.dp)
+                .height(30.dp)
+        )
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Recording",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    "${formatVoiceElapsedTenths(remainingMillis)} left",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "${formatVoiceElapsedTenths(elapsedMillis)} / ${formatVoiceElapsedTenths(maxMillis)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(width = 62.dp, height = 54.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.error)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    "STOP",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.surface
+                )
+                Icon(
+                    Icons.Outlined.Stop,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.surface
+                )
             }
         }
     }
@@ -2559,8 +2797,8 @@ private fun VoiceCaptureControl(
                 )
             }
         }
+        }
     }
-}
 
 @Composable
 private fun VoiceLevelMeter(
@@ -3014,91 +3252,15 @@ private fun resolveVoiceReportImageInput(
 }
 
 private object OnDeviceGemmaVoiceDraftEngine {
-    const val ModelDownloadSizeLabel = "2.6 GB"
-    private const val ModelDownloadFileName = "gemma-4-E2B-it.litertlm"
-    private const val ModelDownloadEstimatedBytes = 2_590_000_000L
-    private const val ModelDownloadMinimumBytes = 512L * 1024L * 1024L
-    private const val ModelDownloadUrl =
-        "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true"
-    private val ModelFileNames = listOf(
-        "gemma-voice-report.litertlm",
-        "gemma-4-E2B-it.litertlm",
-        "gemma-4-E4B-it.litertlm"
-    )
+    val ModelDownloadSizeLabel: String
+        get() = ReportedAiModelStore.DownloadSizeLabel
 
-    fun isModelInstalled(context: Context): Boolean = resolveModelFile(context) != null
+    fun isModelInstalled(context: Context): Boolean = ReportedAiModelStore.isModelInstalled(context)
 
     suspend fun downloadModel(
         context: Context,
         onProgress: suspend (downloadedBytes: Long, totalBytes: Long) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
-        runCatching {
-            resolveModelFile(context)?.let { return@runCatching it }
-
-            val modelsDir = File(context.noBackupFilesDir, "models").apply { mkdirs() }
-            val destinationFile = File(modelsDir, ModelDownloadFileName)
-            val partialFile = File(modelsDir, "$ModelDownloadFileName.part")
-            if (partialFile.exists()) partialFile.delete()
-            if (modelsDir.usableSpace in 1 until ModelDownloadEstimatedBytes) {
-                error("Not enough free storage for REPORTED AI. It needs about ${ModelDownloadSizeLabel.toInstallSizeLabel()}.")
-            }
-
-            val connection = (URL(ModelDownloadUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Reported Android")
-            }
-            try {
-                val responseCode = connection.responseCode
-                if (responseCode !in 200..299) {
-                    error("Could not install REPORTED AI. Server returned HTTP $responseCode.")
-                }
-                val totalBytes = connection.contentLengthLong
-                    .takeIf { it > 0L }
-                    ?: ModelDownloadEstimatedBytes
-                connection.inputStream.use { input ->
-                    partialFile.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var downloadedBytes = 0L
-                        var lastProgressBytes = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            output.write(buffer, 0, read)
-                            downloadedBytes += read
-                            if (
-                                downloadedBytes - lastProgressBytes >= 4L * 1024L * 1024L ||
-                                downloadedBytes == totalBytes
-                            ) {
-                                lastProgressBytes = downloadedBytes
-                                withContext(Dispatchers.Main) {
-                                    onProgress(downloadedBytes, totalBytes)
-                                }
-                            }
-                        }
-                        output.flush()
-                        withContext(Dispatchers.Main) {
-                            onProgress(downloadedBytes, totalBytes)
-                        }
-                    }
-                }
-            } catch (error: Throwable) {
-                partialFile.delete()
-                throw error
-            } finally {
-                connection.disconnect()
-            }
-
-            if (destinationFile.exists()) destinationFile.delete()
-            if (!partialFile.renameTo(destinationFile)) {
-                partialFile.copyTo(destinationFile, overwrite = true)
-                partialFile.delete()
-            }
-            destinationFile.takeIf { it.isUsableModelFile() }
-                ?: error("REPORTED AI did not finish installing correctly.")
-        }
-    }
+    ): Result<File> = ReportedAiModelStore.downloadModel(context, onProgress)
 
     suspend fun generateDraft(
         context: Context,
@@ -3108,9 +3270,9 @@ private object OnDeviceGemmaVoiceDraftEngine {
         voiceContext: VoiceReportContext
     ): Result<VoiceReportGemmaResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val modelFile = resolveModelFile(context)
+            val modelFile = ReportedAiModelStore.resolveModelFile(context)
                 ?: error(
-                    "REPORTED AI is not installed. Install REPORTED AI (${ModelDownloadSizeLabel.toInstallSizeLabel()}) before voice drafting can run."
+                    "REPORTED AI is not installed. Install REPORTED AI (${ReportedAiModelStore.compactDownloadSizeLabel}) before voice drafting can run."
                 )
             val prompt = buildVoiceReportGemmaPrompt(complaintOptions, voiceContext)
             if (audioFile.length() <= VoiceReportAudioRecorder.WAV_HEADER_BYTES) {
@@ -3145,16 +3307,14 @@ private object OnDeviceGemmaVoiceDraftEngine {
         imageFile: File
     ): String? = withContext(Dispatchers.IO) {
         runCatching {
-            val modelFile = resolveModelFile(context) ?: return@runCatching null
+            val modelFile = ReportedAiModelStore.resolveModelFile(context) ?: return@runCatching null
             if (!imageFile.isFile || imageFile.length() <= 0L) return@runCatching null
-            val engineConfig = EngineConfig(
-                modelPath = modelFile.absolutePath,
-                backend = Backend.CPU(),
-                visionBackend = Backend.CPU(),
-                cacheDir = resolveCacheDir(context).absolutePath
-            )
-            Engine(engineConfig).use { engine ->
-                engine.initialize()
+            createEngineWithFallback(
+                context = context,
+                modelFile = modelFile,
+                visionEnabled = true,
+                audioEnabled = false
+            ).use { engine ->
                 val conversationConfig = ConversationConfig(
                     samplerConfig = SamplerConfig(
                         topK = 1,
@@ -3192,15 +3352,12 @@ private object OnDeviceGemmaVoiceDraftEngine {
         prompt: String,
         complaintOptions: List<ComplaintOption>
     ): VoiceReportGemmaResult {
-        val engineConfig = EngineConfig(
-            modelPath = modelFile.absolutePath,
-            backend = Backend.CPU(),
-            visionBackend = if (imageFile != null) Backend.CPU() else null,
-            audioBackend = Backend.CPU(),
-            cacheDir = resolveCacheDir(context).absolutePath
-        )
-        Engine(engineConfig).use { engine ->
-            engine.initialize()
+        createEngineWithFallback(
+            context = context,
+            modelFile = modelFile,
+            visionEnabled = imageFile != null,
+            audioEnabled = true
+        ).use { engine ->
             val conversationConfig = ConversationConfig(
                 samplerConfig = SamplerConfig(
                     topK = 1,
@@ -3231,49 +3388,68 @@ private object OnDeviceGemmaVoiceDraftEngine {
         }
     }
 
-    private fun resolveModelFile(context: Context): File? {
-        modelSearchDirectories(context).forEach { directory ->
-            ModelFileNames.forEach { modelFileName ->
-                val model = File(directory, modelFileName).takeIf { it.isUsableModelFile() }
-                if (model != null) return model
+    private fun createEngineWithFallback(
+        context: Context,
+        modelFile: File,
+        visionEnabled: Boolean,
+        audioEnabled: Boolean
+    ): Engine {
+        val nativeLibraryDir = context.applicationInfo.nativeLibraryDir.orEmpty()
+        val npuBackend = Backend.NPU(nativeLibraryDir = nativeLibraryDir)
+        val attempts = listOf(
+            VoiceBackendAttempt(
+                label = "NPU",
+                backend = npuBackend,
+                visionBackend = npuBackend.takeIf { visionEnabled },
+                audioBackend = npuBackend.takeIf { audioEnabled }
+            ),
+            VoiceBackendAttempt(
+                label = "CPU",
+                backend = Backend.CPU(),
+                visionBackend = Backend.CPU().takeIf { visionEnabled },
+                audioBackend = Backend.CPU().takeIf { audioEnabled }
+            )
+        )
+
+        var lastFailure: Throwable? = null
+        attempts.forEach { attempt ->
+            val engineConfig = EngineConfig(
+                modelPath = modelFile.absolutePath,
+                backend = attempt.backend,
+                visionBackend = attempt.visionBackend,
+                audioBackend = attempt.audioBackend,
+                cacheDir = ReportedAiModelStore.resolveCacheDir(context).absolutePath
+            )
+            val engine = Engine(engineConfig)
+            try {
+                engine.initialize()
+                ReportedAiModelStore.setAccelerationStatus(
+                    context,
+                    if (attempt.label == "NPU") {
+                        ReportedAiModelStore.AccelerationStatus.Accelerated
+                    } else {
+                        ReportedAiModelStore.AccelerationStatus.CpuFallback
+                    }
+                )
+                Log.i(LogTag, "LiteRT-LM initialized with ${attempt.label} backend for ${modelFile.name}.")
+                return engine
+            } catch (error: Throwable) {
+                runCatching { engine.close() }
+                lastFailure = error
+                Log.w(LogTag, "LiteRT-LM ${attempt.label} backend failed for ${modelFile.name}; trying fallback.", error)
             }
         }
-
-        ModelFileNames.forEach { modelFileName ->
-            val appNoBackupModel = File(context.noBackupFilesDir, modelFileName).takeIf { it.isUsableModelFile() }
-            if (appNoBackupModel != null) return appNoBackupModel
-        }
-
-        ModelFileNames.forEach { modelFileName ->
-            val filesModel = File(context.filesDir, modelFileName).takeIf { it.isUsableModelFile() }
-            if (filesModel != null) return filesModel
-        }
-
-        ModelFileNames.forEach { modelFileName ->
-            val assetsModel = runCatching {
-                context.assets.open(modelFileName).use { input ->
-                    val outputFile = File(context.noBackupFilesDir, modelFileName)
-                    if (!outputFile.exists() || outputFile.length() == 0L) {
-                        outputFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    outputFile.takeIf { it.isUsableModelFile() }
-                }
-            }.getOrNull()
-            if (assetsModel != null) return assetsModel
-        }
-        return null
+        throw lastFailure ?: IllegalStateException("Could not initialize REPORTED AI.")
     }
 
-    private fun modelSearchDirectories(context: Context): List<File> = listOf(
-        File(context.noBackupFilesDir, "models"),
-        File(context.filesDir, "models")
+    private data class VoiceBackendAttempt(
+        val label: String,
+        val backend: Backend,
+        val visionBackend: Backend?,
+        val audioBackend: Backend?
     )
 
-    private fun resolveCacheDir(context: Context): File {
-        return File(context.cacheDir, "litertlm").apply { mkdirs() }
-    }
-
-    private fun File.isUsableModelFile(): Boolean = exists() && isFile && length() >= ModelDownloadMinimumBytes
+    private const val LogTag = "ReportedAI"
 }
 
 private suspend fun resolveVoiceReportAddress(
@@ -4566,9 +4742,15 @@ private fun VerifyFieldsPanel(
         PlateRegionPickerField(
             label = "State",
             value = state.plateRegion,
-            onSelected = { onAction(ComposerAction.FieldsChanged(plateRegion = it)) },
+            onSelected = {
+                ReportedAnalytics.logStateSelected(it)
+                onAction(ComposerAction.FieldsChanged(plateRegion = it))
+            },
             modifier = Modifier.weight(if (isLandscape) 0.36f else 0.32f),
-            isError = state.validationErrors.plateRegion != null
+            isError = state.validationErrors.plateRegion != null,
+            onPickerOpened = {
+                ReportedAnalytics.logStateChooserTapped(state.plateRegion)
+            }
         )
     }
     FieldErrorRow(
@@ -4623,26 +4805,52 @@ private fun VerifyFieldsPanel(
                 state.description,
                 onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) },
                 modifier = Modifier.weight(1f),
-                minHeight = 96.dp
+                minHeight = 96.dp,
+                singleLine = false,
+                minLines = 3,
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences
+                )
             )
             ReportedField(
                 "Notes (for your records)",
                 state.notes,
                 onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) },
                 modifier = Modifier.weight(1f),
-                minHeight = 96.dp
+                minHeight = 96.dp,
+                singleLine = false,
+                minLines = 3,
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences
+                )
             )
         }
     } else {
         ReportedField(
             "Description (public facing)",
             state.description,
-            onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) }
+            onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) },
+            minHeight = 104.dp,
+            singleLine = false,
+            minLines = 3,
+            maxLines = 5,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences
+            )
         )
         ReportedField(
             "Notes (for your records)",
             state.notes,
-            onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) }
+            onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) },
+            minHeight = 104.dp,
+            singleLine = false,
+            minLines = 3,
+            maxLines = 5,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences
+            )
         )
     }
 }

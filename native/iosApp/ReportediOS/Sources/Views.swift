@@ -261,6 +261,7 @@ private struct SplashVideoBackground: UIViewRepresentable {
 
 enum MainShellDestination: Int, CaseIterable {
     case report
+    case autoReport
     case reports
     case profile
     case settings
@@ -268,6 +269,7 @@ enum MainShellDestination: Int, CaseIterable {
     var title: String {
         switch self {
         case .report: return "Report"
+        case .autoReport: return "Auto-Report"
         case .reports: return "My Reports"
         case .profile: return "Profile"
         case .settings: return "Settings"
@@ -277,6 +279,7 @@ enum MainShellDestination: Int, CaseIterable {
     var systemImage: String {
         switch self {
         case .report: return "plus.square"
+        case .autoReport: return "sparkles"
         case .reports: return "list.bullet.rectangle"
         case .profile: return "person.crop.circle"
         case .settings: return "gearshape"
@@ -442,6 +445,14 @@ struct MainShellView: View {
                     submittedSnackbarObjectId = objectId
                 }
             )
+        case .autoReport:
+            AutoReportScreen(
+                isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
+                onRequireLogin: onRequireLogin,
+                onReportSubmitted: { objectId in
+                    submittedSnackbarObjectId = objectId
+                }
+            )
         case .reports:
             ReportsScreen(
                 isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
@@ -511,6 +522,9 @@ struct MainShellView: View {
             onRequireLogin()
             return
         }
+        if destination == .settings {
+            ReportedAnalytics.logSettingsTapped(surface: "navigation")
+        }
         selection = destination
         closeNavigation()
     }
@@ -567,7 +581,7 @@ private extension MainShellDestination {
         switch self {
         case .reports, .profile:
             return true
-        case .report, .settings:
+        case .report, .autoReport, .settings:
             return false
         }
     }
@@ -606,8 +620,7 @@ private struct MainShellToolbar: View {
                 .overlay(alignment: .trailing) {
                     if let onVoiceAssist {
                         Button(action: onVoiceAssist) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: compact ? 17 : 19, weight: .semibold))
+                            AnimatedSparkleIcon(size: compact ? 17 : 19)
                                 .frame(width: compact ? 30 : 34, height: compact ? 30 : 34)
                         }
                         .buttonStyle(.plain)
@@ -637,6 +650,25 @@ private struct MainShellToolbar: View {
         .padding(.horizontal, compact ? 8 : 20)
         .padding(.vertical, compact ? 6 : 12)
         .background(Color(.systemBackground))
+    }
+}
+
+private struct AnimatedSparkleIcon: View {
+    let size: CGFloat
+    var color: Color = .reportedOrange
+    @State private var isAnimating = false
+
+    var body: some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(color)
+            .scaleEffect(isAnimating ? 1.12 : 0.92)
+            .rotationEffect(.degrees(isAnimating ? 7 : -7))
+            .opacity(isAnimating ? 1 : 0.72)
+            .animation(.easeInOut(duration: 0.82).repeatForever(autoreverses: true), value: isAnimating)
+            .onAppear {
+                isAnimating = true
+            }
     }
 }
 
@@ -889,6 +921,7 @@ struct ComposerScreen: View {
     @State private var showAddressSearchScreen = false
     @State private var showPlateEntryScreen = false
     @State private var showVoiceAssistSheet = false
+    @State private var voiceAssistSheetDetent: PresentationDetent = .height(voiceAssistantCompactSheetHeight)
     @State private var showComplaintChooser = false
     @StateObject private var voiceAudio = VoiceReportAudioController()
     @State private var voiceTranscript = ""
@@ -1017,6 +1050,7 @@ struct ComposerScreen: View {
                 selectedValue: viewModel.state.plateRegion,
                 showAllStates: $showAllPlateRegions,
                 onSelected: { value in
+                    ReportedAnalytics.logStateSelected(region: value)
                     viewModel.onAction(.fieldsChanged(plateRegion: value))
                     showPlateRegionSheet = false
                 }
@@ -1108,10 +1142,12 @@ struct ComposerScreen: View {
                 draft: voiceDraft,
                 changeRows: voiceDraft?.changeRows(currentState: viewModel.state, complaintOptions: complaintOptions) ?? [],
                 isProcessing: voiceProcessing,
+                isMinimized: isVoiceAssistSheetMinimized,
                 modelInstalled: voiceModelInstalled,
                 modelDownloading: voiceModelDownloading,
                 modelDownloadProgress: voiceModelDownloadProgress,
                 modelDownloadSizeLabel: OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel,
+                accelerationMessage: OnDeviceGemmaVoiceDraftEngine.accelerationMessage,
                 error: voiceError,
                 onRequestPermission: {
                     Task {
@@ -1151,11 +1187,26 @@ struct ComposerScreen: View {
                     showVoiceAssistSheet = false
                 }
             )
-            .presentationDetents([.height(voiceAssistantCompactSheetHeight), .large])
+            .presentationDetents(
+                voiceAssistantSheetDetents,
+                selection: $voiceAssistSheetDetent
+            )
             .presentationContentInteraction(.resizes)
             .presentationDragIndicator(.hidden)
             .presentationBackground(Color(.systemBackground))
             .presentationBackgroundInteraction(.enabled)
+            .onChange(of: voiceAudio.isRecording) { _, isRecording in
+                guard !isRecording else { return }
+                withAnimation(.snappy) {
+                    voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
+                }
+            }
+            .onChange(of: voiceProcessing) { _, isProcessing in
+                guard isProcessing else { return }
+                withAnimation(.snappy) {
+                    voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
+                }
+            }
         })
         view = AnyView(view.sheet(isPresented: $showReportTutorial) {
             NewReportTutorialSheet(
@@ -1311,6 +1362,7 @@ struct ComposerScreen: View {
                 selectedComplaintId: viewModel.state.selectedComplaintId,
                 activeAnimatedComplaintId: activeAnimatedComplaintId
             ) { option in
+                ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "verify")
                 viewModel.onAction(.selectedComplaintChanged(option.id))
                 showComplaintChooser = false
             }
@@ -1360,14 +1412,34 @@ struct ComposerScreen: View {
     }
 
     private func openVoiceAssistant() {
+        ReportedAnalytics.logAiSparkleTapped(surface: "report_composer")
         voiceError = nil
         voiceImageContext = nil
         voiceImageContextTask?.cancel()
         voiceImageContextTask = nil
         voiceAudio.refreshPermissionState()
         voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+        voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
         showVoiceAssistSheet = true
         startVoiceImageContextWarmup()
+    }
+
+    private var voiceAssistantSheetDetents: Set<PresentationDetent> {
+        if voiceAudio.isRecording {
+            return [
+                .height(voiceAssistantMinimizedSheetHeight),
+                .height(voiceAssistantCompactSheetHeight),
+                .large
+            ]
+        }
+        return [
+            .height(voiceAssistantCompactSheetHeight),
+            .large
+        ]
+    }
+
+    private var isVoiceAssistSheetMinimized: Bool {
+        voiceAudio.isRecording && voiceAssistSheetDetent == .height(voiceAssistantMinimizedSheetHeight)
     }
 
     @MainActor
@@ -1429,6 +1501,9 @@ struct ComposerScreen: View {
             )
             voiceTranscript = result.transcript ?? ""
             voiceDraft = result.draft
+            withAnimation(.snappy) {
+                voiceAssistSheetDetent = .large
+            }
         } catch {
             voiceError = error.localizedDescription
         }
@@ -1609,6 +1684,7 @@ struct ComposerScreen: View {
             selectedComplaintId: viewModel.state.selectedComplaintId,
             activeAnimatedComplaintId: activeAnimatedComplaintId
         ) { option in
+            ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "pending_media")
             viewModel.onAction(.pendingComplaintConfirmed(option.id))
         }
         .interactiveDismissDisabled()
@@ -1739,6 +1815,7 @@ struct ComposerScreen: View {
                             minHeight: tileMetrics.minHeight,
                             titleFont: availableWidth >= 700 ? .title2.weight(.semibold) : .subheadline.weight(.semibold)
                         ) {
+                            ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "pick_media")
                             pendingComplaintId = option.id
                             singlePickerPresented = true
                         }
@@ -2073,8 +2150,7 @@ struct ComposerScreen: View {
                     Button {
                         openVoiceAssistant()
                     } label: {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 17, weight: .semibold))
+                        AnimatedSparkleIcon(size: 17)
                             .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.plain)
@@ -2231,6 +2307,10 @@ struct ComposerScreen: View {
                 value: complaintOptions.first(where: { $0.id == viewModel.state.selectedComplaintId })?.title ?? "Select complaint",
                 isError: viewModel.state.validationErrors.complaint != nil
             ) {
+                ReportedAnalytics.logComplaintChooserTapped(
+                    surface: "verify",
+                    selectedComplaintId: viewModel.state.selectedComplaintId
+                )
                 showComplaintChooser = true
             }
             .frame(minWidth: complaintMinWidth, maxWidth: complaintMaxWidth)
@@ -2238,7 +2318,13 @@ struct ComposerScreen: View {
                 text: viewModel.state.plate,
                 isError: viewModel.state.validationErrors.plate != nil,
                 candidateCount: viewModel.state.plateCandidates.count,
-                onEdit: { showPlateEntryScreen = true }
+                onEdit: {
+                    ReportedAnalytics.logPlateChooserTapped(
+                        candidateCount: viewModel.state.plateCandidates.count,
+                        hasPlate: !viewModel.state.plate.isEmpty
+                    )
+                    showPlateEntryScreen = true
+                }
             )
             .frame(width: plateWidth)
             PickerField(
@@ -2248,6 +2334,7 @@ struct ComposerScreen: View {
                 showsChevron: false,
                 alignment: .center
             ) {
+                ReportedAnalytics.logStateChooserTapped(currentRegion: viewModel.state.plateRegion)
                 showAllPlateRegions = false
                 showPlateRegionSheet = true
             }
@@ -2400,6 +2487,10 @@ struct ComposerScreen: View {
     }
 
     private func submitReport() {
+        ReportedAnalytics.logSubmitReportTapped(
+            stage: viewModel.state.stage == .verify ? "verify" : "pick_media",
+            isAuthorized: isAuthorized
+        )
         guard viewModel.onAction(.submitValidationRequested) else { return }
         if isAuthorized {
             viewModel.onAction(.submitPressed)
@@ -2698,7 +2789,7 @@ private func complaintOptionFor(
     )
 }
 
-private struct ExtractedSubmissionMetadata {
+struct ExtractedSubmissionMetadata {
     let occurredAtIso: String?
     let latitude: Double?
     let longitude: Double?
@@ -3924,7 +4015,7 @@ private func loadSubmissionMedia(from item: PhotosPickerItem) async -> ComposerS
     }
 }
 
-private func extractSubmissionMetadata(from media: ComposerState.SubmissionMedia) async -> ExtractedSubmissionMetadata {
+func extractSubmissionMetadata(from media: ComposerState.SubmissionMedia) async -> ExtractedSubmissionMetadata {
     if media.isVideo {
         let asset = AVURLAsset(url: media.fileURL)
         let creationDate = try? await asset.load(.creationDate)
@@ -4649,6 +4740,1023 @@ struct ProfileScreen: View {
     }
 }
 
+private struct AutoReportIncident: Identifiable {
+    let id: String
+    var plate: String
+    var plateRegion: String
+    var complaintId: String
+    var occurredAtIso: String
+    var address: String
+    var description = ""
+    var notes = ""
+    var latitude: Double?
+    var longitude: Double?
+    let infractions: [IOSDetectedInfraction]
+    var selected = true
+    var good = true
+
+    var complaintTitle: String {
+        autoReportComplaintTitle(for: complaintId)
+    }
+
+    var previewURL: URL? {
+        infractions.first?.mediaURL
+    }
+
+    var media: [ComposerState.SubmissionMedia] {
+        infractions.map(\.media)
+    }
+
+    var aiSummary: String {
+        let photoText = "\(infractions.count) photo\(infractions.count == 1 ? "" : "s")"
+        let plateScore = infractions.map(\.plateConfidence).max().map(autoReportPercent) ?? "unknown"
+        let stateScore = infractions.map(\.stateConfidence).max().map(autoReportPercent) ?? "unknown"
+        let complaintScore = infractions.compactMap(\.complaintConfidence).max().map(autoReportPercent) ?? "unknown"
+        return "Reported AI grouped \(photoText) that appear to show \(complaintTitle.lowercased()) involving plate \(plate) in \(plateRegion). Plate confidence \(plateScore), state confidence \(stateScore), infraction confidence \(complaintScore)."
+    }
+
+    var validationErrors: ComposerState.ValidationErrors {
+        ComposerState.ValidationErrors(
+            media: media.isEmpty ? "Add at least one photo or video." : nil,
+            complaint: complaintId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose a complaint type." : nil,
+            plate: {
+                let trimmed = plate.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    return "Enter the license plate."
+                }
+                if trimmed.count > autoReportMaxLicensePlateLength {
+                    return "License plate must be \(autoReportMaxLicensePlateLength) characters or fewer."
+                }
+                return nil
+            }(),
+            plateRegion: plateRegion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose a state." : nil,
+            address: address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter or choose an address." : nil,
+            occurredAt: occurredAtIso.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Choose when this happened." : nil
+        )
+    }
+
+    var isSubmittable: Bool {
+        !validationErrors.hasErrors
+    }
+}
+
+private let autoReportMaxLicensePlateLength = 10
+
+private struct AutoReportScanWindow: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let buttonLabel: String
+    let sentenceLabel: String
+    let lookback: TimeInterval
+
+    static let oneHour = AutoReportScanWindow(
+        id: "oneHour",
+        label: "1 hr",
+        buttonLabel: "Last 1 Hour",
+        sentenceLabel: "the last hour",
+        lookback: 60 * 60
+    )
+    static let sevenDays = AutoReportScanWindow(
+        id: "sevenDays",
+        label: "7 days",
+        buttonLabel: "Last 7 Days",
+        sentenceLabel: "the last 7 days",
+        lookback: 7 * 24 * 60 * 60
+    )
+    static let options = [
+        oneHour,
+        AutoReportScanWindow(id: "eightHours", label: "8 hr", buttonLabel: "Last 8 Hours", sentenceLabel: "the last 8 hours", lookback: 8 * 60 * 60),
+        AutoReportScanWindow(id: "oneDay", label: "1 day", buttonLabel: "Last 1 Day", sentenceLabel: "the last day", lookback: 24 * 60 * 60),
+        AutoReportScanWindow(id: "threeDays", label: "3 days", buttonLabel: "Last 3 Days", sentenceLabel: "the last 3 days", lookback: 3 * 24 * 60 * 60),
+        sevenDays,
+        AutoReportScanWindow(id: "fourteenDays", label: "14 days", buttonLabel: "Last 14 Days", sentenceLabel: "the last 14 days", lookback: 14 * 24 * 60 * 60),
+        AutoReportScanWindow(id: "thirtyOneDays", label: "31 days", buttonLabel: "Last 31 Days", sentenceLabel: "the last 31 days", lookback: 31 * 24 * 60 * 60)
+    ]
+}
+
+struct AutoReportScreen: View {
+    let isAuthorized: Bool
+    let onRequireLogin: () -> Void
+    let onReportSubmitted: (String) -> Void
+    @State private var scanning = false
+    @State private var submitting = false
+    @State private var processed = 0
+    @State private var total = 0
+    @State private var incidents: [AutoReportIncident] = []
+    @State private var processedPhotos: [IOSAutoReportProcessedPhoto] = []
+    @State private var scanWindow = AutoReportScanWindow.sevenDays
+    @State private var message: String?
+    @State private var scanTask: Task<Void, Never>?
+    @State private var showingReviewSheet = false
+
+    var body: some View {
+        ScrollView {
+            ScreenCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Scan photos into a bulk review")
+                        .font(.title3.weight(.semibold))
+                    Text("Reported will scan \(scanWindow.sentenceLabel) of photos on this device and use on-device AI to determine if they are reported worthy. We look for vehicle photos where the infraction model shows a blocked bike lane or blocked crosswalk, then ask you before anything is submitted.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Picker("Scan window", selection: $scanWindow) {
+                            ForEach(AutoReportScanWindow.options) { option in
+                                Text(option.label).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(Color.reportedOrange)
+                        .disabled(scanning || submitting)
+                        .frame(minWidth: 92, alignment: .leading)
+
+                        Button {
+                            startScan()
+                        } label: {
+                            HStack {
+                                if scanning {
+                                    ProgressView()
+                                        .tint(.white)
+                                }
+                                Text(scanning ? "Scanning..." : "Scan Photos")
+                                    .font(.body.weight(.semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.reportedOrange)
+                        .disabled(scanning || submitting)
+                    }
+                }
+
+                AutoReportSummaryView(incidents: incidents)
+
+                if let message {
+                    MessageView(text: message)
+                }
+
+                if !incidents.isEmpty || !processedPhotos.isEmpty {
+                    Button {
+                        showingReviewSheet = true
+                    } label: {
+                        Text("Review Results")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.reportedOrange)
+                    .disabled(scanning || submitting)
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.systemBackground))
+        .sheet(isPresented: $scanning) {
+            AutoReportScanProgressSheet(
+                processed: processed,
+                total: total,
+                onCancel: cancelScan
+            )
+            .presentationDetents([.height(220)])
+            .presentationDragIndicator(.visible)
+            .interactiveDismissDisabled(true)
+        }
+        .sheet(isPresented: $showingReviewSheet) {
+            AutoReportReviewSheet(
+                incidents: $incidents,
+                processedPhotos: processedPhotos,
+                submitting: submitting,
+                onSubmit: submitSelected
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func startScan() {
+        scanTask?.cancel()
+        scanning = true
+        showingReviewSheet = false
+        message = nil
+        processed = 0
+        total = 0
+        incidents = []
+        processedPhotos = []
+        let selectedWindow = scanWindow
+        scanTask = Task {
+            let summary = await IOSMediaScanner.shared.runAutoReportScan(lookback: selectedWindow.lookback) { processed, total in
+                Task { @MainActor in
+                    self.processed = processed
+                    self.total = total
+                }
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                scanTask = nil
+                scanning = false
+                processed = summary.scannedCount
+                total = summary.scannedCount
+                incidents = buildAutoReportIncidents(from: summary.matches)
+                processedPhotos = summary.processedPhotos
+                if !summary.photoAccessGranted {
+                    message = "Photo library permission is needed to scan \(selectedWindow.sentenceLabel) without opening the gallery."
+                } else if summary.scannedCount == 0 {
+                    message = "No photos from \(selectedWindow.sentenceLabel) were available to scan."
+                } else if incidents.isEmpty {
+                    message = "Scanned \(summary.scannedCount) photo\(summary.scannedCount == 1 ? "" : "s") and did not find a blocked bike lane or blocked crosswalk report to review."
+                } else {
+                    message = nil
+                }
+                if summary.photoAccessGranted && summary.scannedCount > 0 {
+                    DispatchQueue.main.async {
+                        showingReviewSheet = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func cancelScan() {
+        scanTask?.cancel()
+        scanTask = nil
+        scanning = false
+        processed = 0
+        total = 0
+        message = "Photo scan cancelled."
+    }
+
+    private func submitSelected() {
+        let selectedIncidents = incidents.filter { $0.selected && $0.good }
+        guard !selectedIncidents.isEmpty else { return }
+        let invalidCount = selectedIncidents.filter { !$0.isSubmittable }.count
+        guard invalidCount == 0 else {
+            message = "\(invalidCount) kept auto-report\(invalidCount == 1 ? "" : "s") need edits before submission."
+            showingReviewSheet = true
+            return
+        }
+        guard isAuthorized else {
+            onRequireLogin()
+            return
+        }
+        submitting = true
+        message = nil
+        Task {
+            do {
+                var submittedObjectId: String?
+                for incident in selectedIncidents {
+                    let media = incident.media
+                    let mediaFiles = try await ParseMediaUploader.uploadAll(media)
+                    let objectId = try await SharedBridge.shared.container.submitReportUseCase.execute(command: SubmitReportCommand(
+                        plate: incident.plate,
+                        plateRegion: incident.plateRegion,
+                        description: incident.description,
+                        notes: incident.notes,
+                        address: incident.address,
+                        complaintIds: [incident.complaintId],
+                        timeOfIncidentIso: incident.occurredAtIso,
+                        latitude: incident.latitude.map { KotlinDouble(double: $0) },
+                        longitude: incident.longitude.map { KotlinDouble(double: $0) },
+                        vehicleImageDescription: nil,
+                        vehicleColor: nil,
+                        vehicleMake: nil,
+                        vehicleModel: nil,
+                        mediaUrls: [],
+                        mediaFiles: mediaFiles
+                    ))
+                    submittedObjectId = objectId
+                    PersistentMediaStore.deleteStoredMedia(media.map(\.fileURL))
+                    incident.infractions.forEach { IOSDetectedInfractionStore.remove(id: $0.id) }
+                }
+                await MainActor.run {
+                    incidents.removeAll { incident in
+                        selectedIncidents.contains { $0.id == incident.id }
+                    }
+                    submitting = false
+                    showingReviewSheet = false
+                    if let submittedObjectId {
+                        onReportSubmitted(submittedObjectId)
+                    }
+                    message = "Submitted \(selectedIncidents.count) auto-report\(selectedIncidents.count == 1 ? "" : "s")."
+                }
+            } catch {
+                await MainActor.run {
+                    submitting = false
+                    message = "Auto-Report submission failed. Review the selected reports and try again."
+                }
+            }
+        }
+    }
+}
+
+private struct AutoReportSummaryView: View {
+    let incidents: [AutoReportIncident]
+
+    var body: some View {
+        let counts = Dictionary(grouping: incidents, by: \.complaintTitle).mapValues(\.count)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(incidents.count) possible report\(incidents.count == 1 ? "" : "s")")
+                .font(.headline)
+            if counts.isEmpty {
+                Text("Scan your recent photos to build a bulk review.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(counts.keys.sorted(), id: \.self) { title in
+                    Text("\(title): \(counts[title] ?? 0)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct AutoReportProcessedPhotosView: View {
+    let photos: [IOSAutoReportProcessedPhoto]
+
+    var body: some View {
+        if !photos.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Processed photos")
+                    .font(.headline)
+                ForEach(photos) { photo in
+                    AutoReportProcessedPhotoRow(photo: photo)
+                }
+            }
+        }
+    }
+}
+
+private struct AutoReportProcessedPhotoRow: View {
+    let photo: IOSAutoReportProcessedPhoto
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                if let mediaURL = photo.mediaURL {
+                    AsyncImage(url: mediaURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        ProgressView()
+                    }
+                }
+            }
+            .frame(width: 74, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(photo.resultTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(photo.matched ? Color.reportedOrange : .primary)
+                    .lineLimit(2)
+                Text(photo.resultDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(photo.matched ? Color.reportedOrange.opacity(0.10) : Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct AutoReportScanProgressSheet: View {
+    let processed: Int
+    let total: Int
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Scanning Photos")
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: total == 0 ? 0 : Double(processed) / Double(total))
+                    .tint(Color.reportedOrange)
+                Text(total == 0 ? "Preparing photo scan" : "Checking photo \(processed) of \(total)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Button(role: .cancel, action: onCancel) {
+                Text("Cancel")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(20)
+    }
+}
+
+private struct AutoReportReviewSheet: View {
+    @Binding var incidents: [AutoReportIncident]
+    let processedPhotos: [IOSAutoReportProcessedPhoto]
+    let submitting: Bool
+    let onSubmit: () -> Void
+
+    private var keptIncidents: [AutoReportIncident] {
+        incidents.filter { $0.selected && $0.good }
+    }
+
+    private var submitCount: Int {
+        keptIncidents.count
+    }
+
+    private var invalidKeptCount: Int {
+        keptIncidents.filter { !$0.isSubmittable }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Review Auto-Reports")
+                        .font(.headline)
+                    Text(reviewSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            TabView {
+                ForEach($incidents) { $incident in
+                    GeometryReader { geometry in
+                        AutoReportIncidentCard(incident: $incident)
+                            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                    }
+                }
+                GeometryReader { geometry in
+                    AutoReportSubmissionSummaryCard(
+                        incidents: incidents,
+                        processedPhotos: processedPhotos,
+                        submitting: submitting,
+                        onSubmit: onSubmit
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .automatic))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(.top, 16)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var reviewSubtitle: String {
+        let discarded = max(0, incidents.count - submitCount)
+        if invalidKeptCount > 0 {
+            return "\(submitCount) kept, \(discarded) discarded, \(invalidKeptCount) needs edits"
+        }
+        return "\(submitCount) kept, \(discarded) discarded"
+    }
+}
+
+private struct AutoReportIncidentCard: View {
+    @Binding var incident: AutoReportIncident
+    @State private var showComplaintChooser = false
+    @State private var showPlateRegionSheet = false
+    @State private var showAllPlateRegions = false
+    @State private var showOccurredAtPicker = false
+
+    private var complaintOptions: [ComplaintOption] {
+        complaintOptionsFor(Array(Catalogs.shared.complaintCategories))
+    }
+
+    private var validationErrors: ComposerState.ValidationErrors {
+        incident.validationErrors
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                AutoReportGroupedPhotoCarousel(infractions: incident.infractions)
+
+                HStack(alignment: .top, spacing: 12) {
+                    ComplaintPickerField(
+                        value: complaintOptions.first(where: { $0.id == incident.complaintId })?.title ?? incident.complaintTitle,
+                        isError: validationErrors.complaint != nil
+                    ) {
+                        showComplaintChooser = true
+                    }
+                    .frame(minWidth: 150)
+
+                    PickerField(
+                        title: "State",
+                        value: incident.plateRegion,
+                        isError: validationErrors.plateRegion != nil,
+                        showsChevron: false,
+                        alignment: .center
+                    ) {
+                        showAllPlateRegions = false
+                        showPlateRegionSheet = true
+                    }
+                    .frame(width: 74)
+                }
+                FieldErrorGroup([validationErrors.complaint, validationErrors.plateRegion])
+
+                InputField(
+                    title: "Plate",
+                    text: Binding(
+                        get: { incident.plate },
+                        set: { incident.plate = autoReportNormalizedPlateInput($0) }
+                    ),
+                    isError: validationErrors.plate != nil,
+                    autocapitalizationType: .allCharacters,
+                    autocorrectionDisabled: true
+                )
+                FieldErrorGroup([validationErrors.plate])
+
+                InputField(
+                    title: "Address",
+                    text: Binding(
+                        get: { incident.address },
+                        set: {
+                            incident.address = $0
+                            incident.latitude = nil
+                            incident.longitude = nil
+                        }
+                    ),
+                    isError: validationErrors.address != nil,
+                    fieldMinHeight: 72
+                )
+                FieldErrorGroup([validationErrors.address])
+
+                PickerField(
+                    title: "Occurred At",
+                    value: autoReportDisplayTime(incident.occurredAtIso),
+                    isError: validationErrors.occurredAt != nil
+                ) {
+                    showOccurredAtPicker = true
+                }
+                FieldErrorGroup([validationErrors.occurredAt])
+
+                InputField(
+                    title: "Description (public facing)",
+                    text: $incident.description,
+                    fieldMinHeight: 96
+                )
+                InputField(
+                    title: "Notes (for your records)",
+                    text: $incident.notes,
+                    fieldMinHeight: 96
+                )
+
+                AutoReportReviewField(title: "AI Summary", value: incident.aiSummary)
+                AutoReportGroupedPhotoStrip(infractions: incident.infractions)
+
+                HStack(spacing: 10) {
+                    Button {
+                        incident.good = true
+                        incident.selected = true
+                    } label: {
+                        Text("Keep")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(incident.good && incident.selected ? Color.reportedOrange : Color(.tertiarySystemFill))
+
+                    Button {
+                        incident.good = false
+                        incident.selected = false
+                    } label: {
+                        Text("Discard")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(!incident.good || !incident.selected ? Color.red : Color.secondary)
+                }
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background((incident.good && incident.selected) ? Color.reportedOrange.opacity(0.06) : Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke((incident.good && incident.selected) ? Color.reportedOrange.opacity(0.35) : Color(.separator), lineWidth: 1)
+        )
+        .sheet(isPresented: $showComplaintChooser) {
+            ComplaintChooserSheet(
+                title: "Choose Complaint",
+                options: complaintOptions,
+                selectedComplaintId: incident.complaintId,
+                activeAnimatedComplaintId: nil
+            ) { option in
+                incident.complaintId = option.id
+                showComplaintChooser = false
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showPlateRegionSheet) {
+            PlateRegionSheet(
+                selectedValue: incident.plateRegion,
+                showAllStates: $showAllPlateRegions,
+                onSelected: { value in
+                    incident.plateRegion = value
+                    showPlateRegionSheet = false
+                }
+            )
+            .presentationDetents([.height(showAllPlateRegions ? 300 : 176)])
+            .presentationDragIndicator(.hidden)
+        }
+        .sheet(isPresented: $showOccurredAtPicker) {
+            ReportedDateTimeSheet(
+                isoValue: incident.occurredAtIso,
+                photoIsoValue: incident.occurredAtIso,
+                hasImageTimeSource: true,
+                isRefreshingImageTime: false
+            ) { iso in
+                incident.occurredAtIso = iso
+            }
+            .presentationDetents([.height(360)])
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
+        }
+    }
+}
+
+private struct AutoReportGroupedPhotoCarousel: View {
+    let infractions: [IOSDetectedInfraction]
+
+    var body: some View {
+        TabView {
+            ForEach(Array(infractions.enumerated()), id: \.element.id) { index, infraction in
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: infraction.mediaURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        ProgressView()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+
+                    Text("\(index + 1)/\(infractions.count)")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(8)
+                }
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: infractions.count > 1 ? .automatic : .never))
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct AutoReportGroupedPhotoStrip: View {
+    let infractions: [IOSDetectedInfraction]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(infractions.count) processed photo\(infractions.count == 1 ? "" : "s")")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, reportedFieldLabelHorizontalInset)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(infractions, id: \.id) { infraction in
+                        AsyncImage(url: infraction.mediaURL) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            ProgressView()
+                        }
+                        .frame(width: 84, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
+                .padding(.horizontal, reportedFieldLabelHorizontalInset)
+            }
+        }
+    }
+}
+
+private struct AutoReportReviewField: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "Not set" : value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct AutoReportSubmissionSummaryCard: View {
+    let incidents: [AutoReportIncident]
+    let processedPhotos: [IOSAutoReportProcessedPhoto]
+    let submitting: Bool
+    let onSubmit: () -> Void
+
+    private var keptIncidents: [AutoReportIncident] {
+        incidents.filter { $0.selected && $0.good }
+    }
+
+    private var invalidKeptIncidents: [AutoReportIncident] {
+        keptIncidents.filter { !$0.isSubmittable }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Submission Summary")
+                    .font(.headline)
+
+                AutoReportReviewField(
+                    title: "Reports to Submit",
+                    value: "\(keptIncidents.count) report\(keptIncidents.count == 1 ? "" : "s") from \(keptIncidents.reduce(0) { $0 + $1.infractions.count }) photo\(keptIncidents.reduce(0) { $0 + $1.infractions.count } == 1 ? "" : "s")"
+                )
+                AutoReportReviewField(
+                    title: "Processed Photos",
+                    value: "\(processedPhotos.count) scanned, \(processedPhotos.filter { $0.matched }.count) matched, \(processedPhotos.filter { !$0.matched }.count) not queued"
+                )
+                if !invalidKeptIncidents.isEmpty {
+                    AutoReportReviewField(
+                        title: "Needs Edits",
+                        value: "\(invalidKeptIncidents.count) kept report\(invalidKeptIncidents.count == 1 ? "" : "s") must be completed before submission."
+                    )
+                }
+
+                if keptIncidents.isEmpty {
+                    Text("No reports are currently marked Keep.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 10)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(keptIncidents) { incident in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(incident.complaintTitle)
+                                        .font(.subheadline.weight(.semibold))
+                                    Spacer(minLength: 8)
+                                    Text(incident.isSubmittable ? "Ready" : "Needs edits")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(incident.isSubmittable ? Color.reportedOrange : Color.red)
+                                }
+                                Text("\(incident.infractions.count) photo\(incident.infractions.count == 1 ? "" : "s") • \(incident.aiSummary)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(3)
+                                Text("\(incident.plate) - \(incident.plateRegion) • \(autoReportDisplayTime(incident.occurredAtIso))")
+                                    .font(.subheadline.weight(.semibold))
+                                if !incident.address.isEmpty {
+                                    Text(incident.address)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
+                }
+
+                Button {
+                    onSubmit()
+                } label: {
+                    HStack {
+                        if submitting {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text(submitting ? "Submitting..." : "Submit \(keptIncidents.count) Report\(keptIncidents.count == 1 ? "" : "s")")
+                            .font(.body.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.reportedOrange)
+                .disabled(keptIncidents.isEmpty || !invalidKeptIncidents.isEmpty || submitting)
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct AutoReportIncidentRow: View {
+    @Binding var incident: AutoReportIncident
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                if let previewURL = incident.previewURL {
+                    AsyncImage(url: previewURL) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        ProgressView()
+                    }
+                }
+            }
+            .frame(width: 84, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(incident.complaintTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(incident.plate) - \(incident.plateRegion)")
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Text(autoReportDisplayTime(incident.occurredAtIso))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button("Good") { incident.good = true }
+                        .foregroundStyle(incident.good ? Color.reportedOrange : .secondary)
+                    Button("Bad") { incident.good = false }
+                        .foregroundStyle(!incident.good ? Color.reportedOrange : .secondary)
+                }
+                .font(.caption.weight(.semibold))
+            }
+            Spacer(minLength: 8)
+            Toggle("Submit", isOn: $incident.selected)
+                .labelsHidden()
+                .tint(Color.reportedOrange)
+        }
+        .padding(12)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private func buildAutoReportIncidents(from matches: [IOSDetectedInfraction]) -> [AutoReportIncident] {
+    let sorted = uniqueAutoReportMatches(matches).sorted {
+        (autoReportDate(from: $0.occurredAtIso) ?? .distantPast) < (autoReportDate(from: $1.occurredAtIso) ?? .distantPast)
+    }
+    var groups: [[IOSDetectedInfraction]] = []
+    for infraction in sorted {
+        if let lastIndex = groups.indices.last,
+           groups[lastIndex].contains(where: { shouldGroupAutoReportInfractions($0, infraction) }) {
+            groups[lastIndex].append(infraction)
+        } else {
+            groups.append([infraction])
+        }
+    }
+    return groups.compactMap { group in
+        guard let first = group.first else { return nil }
+        let best = group.max { lhs, rhs in
+            lhs.plateConfidence < rhs.plateConfidence
+        } ?? first
+        return AutoReportIncident(
+            id: first.id,
+            plate: best.plate,
+            plateRegion: best.plateRegion,
+            complaintId: first.complaintId,
+            occurredAtIso: group.compactMap { autoReportDate(from: $0.occurredAtIso) }.min().map(scannerIsoStringUTCForAutoReport) ?? first.occurredAtIso,
+            address: group.first { !$0.address.isEmpty }?.address ?? "",
+            latitude: group.compactMap(\.latitude).first,
+            longitude: group.compactMap(\.longitude).first,
+            infractions: group
+        )
+    }
+}
+
+private func uniqueAutoReportMatches(_ matches: [IOSDetectedInfraction]) -> [IOSDetectedInfraction] {
+    var seenHashes = Set<String>()
+    var seenURLs = Set<String>()
+    return matches.filter { match in
+        if let contentHash = match.contentHash, !contentHash.isEmpty {
+            return seenHashes.insert(contentHash).inserted
+        }
+        return seenURLs.insert(match.mediaURL.absoluteString).inserted
+    }
+}
+
+private func shouldGroupAutoReportInfractions(_ existing: IOSDetectedInfraction, _ next: IOSDetectedInfraction) -> Bool {
+    guard existing.complaintId == next.complaintId,
+          existing.plateRegion == next.plateRegion,
+          let existingDate = autoReportDate(from: existing.occurredAtIso),
+          let nextDate = autoReportDate(from: next.occurredAtIso) else {
+        return false
+    }
+    let distance = autoReportPlateDistance(existing.plate, next.plate)
+    let minPlateLength = min(normalizedAutoReportPlate(existing.plate).count, normalizedAutoReportPlate(next.plate).count)
+    let similarPlate = distance <= (minPlateLength >= 6 ? 2 : 1)
+    guard similarPlate else { return false }
+    let window: TimeInterval = distance == 0 ? 5 * 60 : 2 * 60
+    return abs(existingDate.timeIntervalSince(nextDate)) <= window
+}
+
+private func normalizedAutoReportPlate(_ value: String) -> String {
+    value
+        .uppercased()
+        .filter { $0.isLetter || $0.isNumber }
+}
+
+private func autoReportPlateDistance(_ a: String, _ b: String) -> Int {
+    let left = Array(normalizedAutoReportPlate(a))
+    let right = Array(normalizedAutoReportPlate(b))
+    if left == right { return 0 }
+    if left.isEmpty { return right.count }
+    if right.isEmpty { return left.count }
+
+    var previous = Array(0...right.count)
+    for (i, leftChar) in left.enumerated() {
+        var current = Array(repeating: 0, count: right.count + 1)
+        current[0] = i + 1
+        for (j, rightChar) in right.enumerated() {
+            let substitution = previous[j] + (leftChar == rightChar ? 0 : 1)
+            current[j + 1] = min(previous[j + 1] + 1, current[j] + 1, substitution)
+        }
+        previous = current
+    }
+    return previous[right.count]
+}
+
+private func autoReportComplaintTitle(for complaintId: String) -> String {
+    switch complaintId {
+    case "Z8vjWz8uYr": return "Blocked bike lane"
+    case "GzRxlMN1vl": return "Blocked crosswalk"
+    default: return "Complaint"
+    }
+}
+
+private func autoReportDate(from value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let fallback = ISO8601DateFormatter()
+    fallback.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value) ?? fallback.date(from: value)
+}
+
+private func scannerIsoStringUTCForAutoReport(from date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    return formatter.string(from: date)
+}
+
+private func autoReportPercent(_ value: Double) -> String {
+    let bounded = min(0.999, max(0, value))
+    if bounded > 0, bounded < 0.01 {
+        return "<1%"
+    }
+    return "\(Int(bounded * 100))%"
+}
+
+private func autoReportNormalizedPlateInput(_ value: String) -> String {
+    let normalized = value
+        .uppercased()
+        .filter { $0.isLetter || $0.isNumber }
+    return String(normalized.prefix(autoReportMaxLicensePlateLength))
+}
+
+private func autoReportDisplayTime(_ value: String) -> String {
+    guard let date = autoReportDate(from: value) else { return value }
+    return date.formatted(date: .abbreviated, time: .shortened)
+}
+
 struct SettingsScreen: View {
     @StateObject private var viewModel = ProfileViewModel()
     @State private var mediaScannerFeatureEnabled = RemoteConfigOverrides.shared.enableMediaScanner
@@ -4677,6 +5785,24 @@ struct SettingsScreen: View {
                                 setTheme(.dark)
                             }
                         }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Reported AI")
+                            .font(.headline)
+                        Text(OnDeviceGemmaVoiceDraftEngine.settingsStatusText)
+                            .font(.subheadline.weight(.semibold))
+                        Text(OnDeviceGemmaVoiceDraftEngine.accelerationMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Auto-Report")
+                            .font(.headline)
+                        Text("Confidence thresholds")
+                            .font(.subheadline.weight(.semibold))
+                        Text(autoReportConfidenceThresholdSummary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                     if mediaScannerFeatureEnabled || offlineProcessingFeatureEnabled {
                         mediaSettingsContent(isLandscape: isLandscape)
@@ -6026,6 +7152,7 @@ private struct VoiceReportGemmaResult {
 
 private enum OnDeviceGemmaVoiceDraftEngine {
     static let modelDownloadSizeLabel = "2.6 GB"
+    static let accelerationMessage = "Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly."
     private static let modelDownloadFileName = "gemma-4-E2B-it.litertlm"
     private static let modelDownloadEstimatedBytes: Int64 = 2_590_000_000
     private static let modelDownloadMinimumBytes: Int64 = 512 * 1024 * 1024
@@ -6040,6 +7167,15 @@ private enum OnDeviceGemmaVoiceDraftEngine {
 
     static func isModelInstalled() -> Bool {
         resolveModelURL() != nil
+    }
+
+    static var settingsStatusText: String {
+        guard let modelURL = resolveModelURL() else { return "Not installed" }
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: modelURL.path),
+              let size = attributes[.size] as? NSNumber else {
+            return "Installed"
+        }
+        return "Installed (\(formatModelBytes(size.int64Value)))"
     }
 
     static func downloadModel(onProgress: @escaping (Int64, Int64) -> Void) async throws {
@@ -6251,6 +7387,11 @@ private enum OnDeviceGemmaVoiceDraftEngine {
             return false
         }
         return size.int64Value >= modelDownloadMinimumBytes
+    }
+
+    private static func formatModelBytes(_ bytes: Int64) -> String {
+        let gib = Double(bytes) / (1024.0 * 1024.0 * 1024.0)
+        return String(format: "%.1f GB", gib)
     }
 }
 
@@ -6578,16 +7719,22 @@ private var voiceAssistantCompactSheetHeight: CGFloat {
     UIDevice.current.userInterfaceIdiom == .pad ? 430 : 390
 }
 
+private var voiceAssistantMinimizedSheetHeight: CGFloat {
+    UIDevice.current.userInterfaceIdiom == .pad ? 126 : 118
+}
+
 private struct VoiceReportAssistantSheet: View {
     @ObservedObject var audio: VoiceReportAudioController
     let transcript: String
     let draft: VoiceReportDraft?
     let changeRows: [VoiceDraftChangeRow]
     let isProcessing: Bool
+    let isMinimized: Bool
     let modelInstalled: Bool
     let modelDownloading: Bool
     let modelDownloadProgress: Double?
     let modelDownloadSizeLabel: String
+    let accelerationMessage: String
     let error: String?
     let onRequestPermission: () -> Void
     let onDownloadModel: () -> Void
@@ -6602,137 +7749,182 @@ private struct VoiceReportAssistantSheet: View {
     @State private var pendingBulkSource: VoiceDraftSource?
 
     private let maxRecordingSeconds: TimeInterval = 29.9
+    private enum ScrollTarget {
+        static let transcript = "voice-assist-transcript"
+        static let changes = "voice-assist-changes"
+    }
+
+    private var reviewContentKey: String {
+        let cleanedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fields = changeRows.map(\.field.rawValue).joined(separator: ",")
+        let vehicle = [
+            draft?.yearRange,
+            draft?.make,
+            draft?.model
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .joined(separator: ",")
+        return [cleanedTranscript, fields, vehicle]
+            .filter { !$0.isEmpty }
+            .joined(separator: "|")
+    }
 
     var body: some View {
         let rowFields = Set(changeRows.map(\.field))
         let reportedFields = rowFields.subtracting(currentSourceFields)
 
-        ScrollView {
-            VStack(alignment: .center, spacing: 14) {
-                Capsule()
-                    .fill(Color(.separator).opacity(0.45))
-                    .frame(width: 40, height: 4)
-                    .padding(.top, 2)
+        Group {
+            if isMinimized && audio.isRecording {
+                VoiceMinimizedRecordingControl(
+                    amplitude: audio.amplitude,
+                    elapsedSeconds: elapsedSeconds,
+                    maxSeconds: maxRecordingSeconds,
+                    action: onStop
+                )
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .center, spacing: 14) {
+                            Capsule()
+                                .fill(Color(.separator).opacity(0.45))
+                                .frame(width: 40, height: 4)
+                                .padding(.top, 2)
 
-                HStack(spacing: 10) {
-                    Image(systemName: "sparkles")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Reported AI")
-                            .font(.title3.weight(.semibold))
-                        Text("Dictate the complaint, plate, state, time, address, description, and notes, and we'll fill in the fields.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close voice assistant")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(spacing: 10) {
+                                AnimatedSparkleIcon(size: 20)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Reported AI")
+                                        .font(.title3.weight(.semibold))
+                                    Text("Dictate the complaint, plate, state, time, address, description, and notes, and we'll fill in the fields.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                Button(action: onDismiss) {
+                                    Image(systemName: "xmark")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .frame(width: 34, height: 34)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Close voice assistant")
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                if !modelInstalled {
-                    if modelDownloading {
-                        if let modelDownloadProgress {
-                            ProgressView(value: modelDownloadProgress)
-                                .progressViewStyle(.linear)
-                        } else {
-                            ProgressView()
-                        }
-                        Text("Installing REPORTED AI...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        VoicePrimaryAction(title: "Install REPORTED AI (\(installSizeLabel(from: modelDownloadSizeLabel)))", action: onDownloadModel)
-                    }
-                } else if !audio.hasPermission {
-                    VoiceReportMessage(
-                        title: "Microphone access needed",
-                        message: "Reported needs microphone access before you can talk through report fields."
-                    )
-                    VoicePrimaryAction(title: "Allow microphone", action: onRequestPermission)
-                } else if isProcessing {
-                    VoiceProcessingPanel()
-                } else {
-                    VoiceCaptureControl(
-                        isRecording: audio.isRecording,
-                        amplitude: audio.amplitude,
-                        elapsedSeconds: elapsedSeconds,
-                        maxSeconds: maxRecordingSeconds,
-                        action: audio.isRecording ? onStop : onTalk
-                    )
-                }
+                            if !accelerationMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(accelerationMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
 
-                if let displayedError = error ?? audio.errorMessage {
-                    ValidationMessage(text: displayedError)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    VoiceReportBlock(title: "Transcript", message: transcript)
-                }
-
-                if let draft {
-                    if !changeRows.isEmpty {
-                        VoiceReportBlockHeader(title: "Changes to apply")
-                        VoiceDraftSourceHeader(
-                            activeSource: activeHeaderSource(for: rowFields),
-                            canUndo: undoCurrentSourceFields != nil,
-                            onSelect: { pendingBulkSource = $0 },
-                            onUndo: undoBulkSelection
-                        )
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(changeRows.enumerated()), id: \.offset) { item in
-                                VoiceDraftDataRow(
-                                    row: item.element,
-                                    selectedSource: currentSourceFields.contains(item.element.field) ? .current : .reportedAI,
-                                    onSelect: { source in
-                                        selectField(item.element.field, source: source)
+                            if !modelInstalled {
+                                if modelDownloading {
+                                    if let modelDownloadProgress {
+                                        ProgressView(value: modelDownloadProgress)
+                                            .progressViewStyle(.linear)
+                                    } else {
+                                        ProgressView()
                                     }
+                                    Text("Installing REPORTED AI...")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    VoicePrimaryAction(title: "Install REPORTED AI (\(installSizeLabel(from: modelDownloadSizeLabel)))", action: onDownloadModel)
+                                }
+                            } else if !audio.hasPermission {
+                                VoiceReportMessage(
+                                    title: "Microphone access needed",
+                                    message: "Reported needs microphone access before you can talk through report fields."
+                                )
+                                VoicePrimaryAction(title: "Allow microphone", action: onRequestPermission)
+                            } else if isProcessing {
+                                VoiceProcessingPanel()
+                            } else {
+                                VoiceCaptureControl(
+                                    isRecording: audio.isRecording,
+                                    amplitude: audio.amplitude,
+                                    elapsedSeconds: elapsedSeconds,
+                                    maxSeconds: maxRecordingSeconds,
+                                    action: audio.isRecording ? onStop : onTalk
                                 )
                             }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
 
-                    if draft.make != nil || draft.model != nil || draft.yearRange != nil {
-                        VoiceReportBlockHeader(title: "Extracted vehicle")
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let yearRange = draft.yearRange {
-                                VoiceDraftMetadataRow(label: "Vehicle Year", value: yearRange)
+                            if let displayedError = error ?? audio.errorMessage {
+                                ValidationMessage(text: displayedError)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            if let make = draft.make {
-                                VoiceDraftMetadataRow(label: "Make", value: make)
+
+                            if !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                VoiceReportBlock(title: "Transcript", message: transcript)
+                                    .id(Self.ScrollTarget.transcript)
                             }
-                            if let model = draft.model {
-                                VoiceDraftMetadataRow(label: "Model", value: model)
+
+                            if let draft {
+                                if !changeRows.isEmpty {
+                                    VoiceReportBlockHeader(title: "Changes to apply")
+                                        .id(Self.ScrollTarget.changes)
+                                    VoiceDraftSourceHeader(
+                                        activeSource: activeHeaderSource(for: rowFields),
+                                        canUndo: undoCurrentSourceFields != nil,
+                                        onSelect: { pendingBulkSource = $0 },
+                                        onUndo: undoBulkSelection
+                                    )
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ForEach(Array(changeRows.enumerated()), id: \.offset) { item in
+                                            VoiceDraftDataRow(
+                                                row: item.element,
+                                                selectedSource: currentSourceFields.contains(item.element.field) ? .current : .reportedAI,
+                                                onSelect: { source in
+                                                    selectField(item.element.field, source: source)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+
+                                if draft.make != nil || draft.model != nil || draft.yearRange != nil {
+                                    VoiceReportBlockHeader(title: "Extracted vehicle")
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        if let yearRange = draft.yearRange {
+                                            VoiceDraftMetadataRow(label: "Vehicle Year", value: yearRange)
+                                        }
+                                        if let make = draft.make {
+                                            VoiceDraftMetadataRow(label: "Make", value: make)
+                                        }
+                                        if let model = draft.model {
+                                            VoiceDraftMetadataRow(label: "Model", value: model)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+
+                                if changeRows.isEmpty && draft.make == nil && draft.model == nil && draft.yearRange == nil {
+                                    VoiceReportMessage(title: "Nothing to change", message: "Reported AI did not find any form fields to update.")
+                                }
+
+                                HStack(spacing: 10) {
+                                    VoiceSecondaryAction(title: "Clear", action: onClear)
+                                    VoicePrimaryAction(title: "Fill form") {
+                                        onApply(draft.keepingReportedFields(reportedFields))
+                                    }
+                                    .disabled(!draft.keepingReportedFields(reportedFields).hasAnyFillableField)
+                                }
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    if changeRows.isEmpty && draft.make == nil && draft.model == nil && draft.yearRange == nil {
-                        VoiceReportMessage(title: "Nothing to change", message: "Reported AI did not find any form fields to update.")
-                    }
-
-                    HStack(spacing: 10) {
-                        VoiceSecondaryAction(title: "Clear", action: onClear)
-                        VoicePrimaryAction(title: "Fill form") {
-                            onApply(draft.keepingReportedFields(reportedFields))
-                        }
-                        .disabled(!draft.keepingReportedFields(reportedFields).hasAnyFillableField)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+                    .padding(.bottom, 0)
+                    .onChange(of: reviewContentKey) { _, key in
+                        scrollToReviewContent(proxy: proxy, key: key)
                     }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 0)
         }
         .task(id: audio.isRecording) {
             guard audio.isRecording else {
@@ -6765,6 +7957,19 @@ private struct VoiceReportAssistantSheet: View {
                     pendingBulkSource = nil
                 }
             )
+        }
+    }
+
+    private func scrollToReviewContent(proxy: ScrollViewProxy, key: String) {
+        guard !key.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            withAnimation(.snappy) {
+                if !changeRows.isEmpty || draft != nil {
+                    proxy.scrollTo(Self.ScrollTarget.changes, anchor: .center)
+                } else {
+                    proxy.scrollTo(Self.ScrollTarget.transcript, anchor: .center)
+                }
+            }
         }
     }
 
@@ -6851,6 +8056,66 @@ private struct VoiceCaptureControl: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isRecording ? "Stop" : "Talk")
             .padding(8)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct VoiceMinimizedRecordingControl: View {
+    let amplitude: Double
+    let elapsedSeconds: TimeInterval
+    let maxSeconds: TimeInterval
+    let action: () -> Void
+
+    private var progress: Double {
+        guard maxSeconds > 0 else { return 0 }
+        return min(1, max(0, elapsedSeconds / maxSeconds))
+    }
+
+    private var remainingSeconds: TimeInterval {
+        max(0, maxSeconds - elapsedSeconds)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VoiceLevelMeter(amplitude: amplitude, isActive: true)
+                .frame(width: 94, height: 30)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Recording")
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 0)
+                    Text("\(formatVoiceElapsedTenths(remainingSeconds)) left")
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.primary)
+
+                Text("\(formatVoiceElapsedTenths(elapsedSeconds)) / \(formatVoiceElapsedTenths(maxSeconds))")
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: action) {
+                VStack(spacing: 4) {
+                    Text("STOP")
+                        .font(.caption.weight(.bold))
+                    Image(systemName: "stop.fill")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(Color(.systemBackground))
+                .frame(width: 62, height: 54)
+                .background(Color.red, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop recording")
         }
         .frame(maxWidth: .infinity)
     }

@@ -7,8 +7,13 @@ import UniformTypeIdentifiers
 
 private let maxLicensePlateInputLength = 10
 
-private enum ReportedAnalytics {
-    static func logLogin(method: String) {
+enum ReportedAnalytics {
+    static func setUser(_ session: UserSession?) {
+        Analytics.setUserID(userId(from: session))
+    }
+
+    static func logLogin(method: String, session: UserSession?) {
+        setUser(session)
         Analytics.logEvent(AnalyticsEventLogin, parameters: [
             AnalyticsParameterMethod: method
         ])
@@ -16,6 +21,7 @@ private enum ReportedAnalytics {
 
     static func logLogout() {
         Analytics.logEvent("logout", parameters: nil)
+        setUser(nil)
     }
 
     static func logReportsList() {
@@ -43,6 +49,61 @@ private enum ReportedAnalytics {
             "complaint_count": complaintCount,
             "media_count": mediaCount,
             "has_video": hasVideo ? 1 : 0
+        ])
+    }
+
+    static func logSubmitReportTapped(stage: String, isAuthorized: Bool) {
+        Analytics.logEvent("submit_report_tap", parameters: [
+            "stage": stage,
+            "is_authorized": isAuthorized ? 1 : 0
+        ])
+    }
+
+    static func logAiSparkleTapped(surface: String) {
+        Analytics.logEvent("ai_sparkle_tap", parameters: [
+            "surface": surface
+        ])
+    }
+
+    static func logPlateChooserTapped(candidateCount: Int, hasPlate: Bool) {
+        Analytics.logEvent("plate_chooser_tap", parameters: [
+            "candidate_count": candidateCount,
+            "has_plate": hasPlate ? 1 : 0
+        ])
+    }
+
+    static func logStateChooserTapped(currentRegion: String) {
+        Analytics.logEvent("state_chooser_tap", parameters: [
+            "current_state": currentRegion
+        ])
+    }
+
+    static func logStateSelected(region: String) {
+        Analytics.logEvent("state_selected", parameters: [
+            "plate_region": region
+        ])
+    }
+
+    static func logComplaintChooserTapped(surface: String, selectedComplaintId: String?) {
+        var parameters: [String: Any] = [
+            "surface": surface
+        ]
+        if let selectedComplaintId, !selectedComplaintId.isEmpty {
+            parameters["complaint_id"] = selectedComplaintId
+        }
+        Analytics.logEvent("complaint_chooser_tap", parameters: parameters)
+    }
+
+    static func logComplaintSelected(complaintId: String, surface: String) {
+        Analytics.logEvent("complaint_selected", parameters: [
+            "complaint_id": complaintId,
+            "surface": surface
+        ])
+    }
+
+    static func logSettingsTapped(surface: String) {
+        Analytics.logEvent("settings_tap", parameters: [
+            "surface": surface
         ])
     }
 
@@ -91,6 +152,15 @@ private enum ReportedAnalytics {
             return "Philadelphia County"
         }
         return "unknown"
+    }
+
+    private static func userId(from session: UserSession?) -> String? {
+        guard let session else { return nil }
+        let objectId = session.objectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !objectId.isEmpty {
+            return objectId
+        }
+        return session.id > 0 ? "\(session.id)" : nil
     }
 }
 
@@ -406,9 +476,11 @@ final class SessionViewModel: ObservableObject {
             do {
                 let session = try await SharedBridge.shared.container.loadSessionUseCase.execute()
                 let isGuest = try await SharedBridge.shared.container.loadGuestModeUseCase.execute()
+                ReportedAnalytics.setUser(session)
                 state = SessionState(loading: false, session: session, isGuest: session == nil ? isGuest.boolValue : false)
             } catch {
                 let isGuest = (try? await SharedBridge.shared.container.loadGuestModeUseCase.execute())?.boolValue ?? false
+                ReportedAnalytics.setUser(nil)
                 state = SessionState(loading: false, session: nil, isGuest: isGuest)
             }
         }
@@ -424,6 +496,7 @@ final class SessionViewModel: ObservableObject {
     func continueAsGuest() {
         Task {
             try? await SharedBridge.shared.container.saveGuestModeUseCase.execute(enabled: true)
+            ReportedAnalytics.setUser(nil)
             state = SessionState(loading: false, session: nil, isGuest: true)
         }
     }
@@ -471,12 +544,12 @@ final class LoginViewModel: ObservableObject {
         state.error = nil
         Task {
             do {
-                _ = try await SharedBridge.shared.container.loginUseCase.execute(
+                let session = try await SharedBridge.shared.container.loginUseCase.execute(
                     email: state.email,
                     password: state.password
                 )
                 state.loading = false
-                ReportedAnalytics.logLogin(method: "password")
+                ReportedAnalytics.logLogin(method: "password", session: session)
                 onSuccess()
             } catch {
                 print("ReportedAuth: login failed \(error)")
@@ -525,7 +598,7 @@ final class LoginViewModel: ObservableObject {
         state.error = nil
         Task {
             do {
-                _ = try await SharedBridge.shared.container.socialLoginUseCase.execute(
+                let session = try await SharedBridge.shared.container.socialLoginUseCase.execute(
                     provider: profile.provider,
                     providerUserId: profile.providerUserId,
                     idToken: profile.idToken,
@@ -536,7 +609,7 @@ final class LoginViewModel: ObservableObject {
                     testify: false
                 )
                 state.loading = false
-                ReportedAnalytics.logLogin(method: profile.provider)
+                ReportedAnalytics.logLogin(method: profile.provider, session: session)
                 onSuccess()
             } catch {
                 print("ReportedAuth: social login failed \(error)")
@@ -612,7 +685,7 @@ final class RegisterViewModel: ObservableObject {
         state.error = nil
         Task {
             do {
-                _ = try await SharedBridge.shared.container.registerUseCase.execute(
+                let session = try await SharedBridge.shared.container.registerUseCase.execute(
                     firstName: state.firstName,
                     lastName: state.lastName,
                     phone: state.phone,
@@ -621,7 +694,7 @@ final class RegisterViewModel: ObservableObject {
                     password: state.password
                 )
                 state.loading = false
-                ReportedAnalytics.logLogin(method: "password")
+                ReportedAnalytics.logLogin(method: "password", session: session)
                 onSuccess()
             } catch {
                 print("ReportedAuth: registration failed \(error)")
@@ -672,7 +745,7 @@ final class RegisterViewModel: ObservableObject {
         state.error = nil
         Task {
             do {
-                _ = try await SharedBridge.shared.container.socialLoginUseCase.execute(
+                let session = try await SharedBridge.shared.container.socialLoginUseCase.execute(
                     provider: profile.provider,
                     providerUserId: profile.providerUserId,
                     idToken: profile.idToken,
@@ -683,7 +756,7 @@ final class RegisterViewModel: ObservableObject {
                     testify: state.testify
                 )
                 state.loading = false
-                ReportedAnalytics.logLogin(method: profile.provider)
+                ReportedAnalytics.logLogin(method: profile.provider, session: session)
                 onSuccess()
             } catch {
                 print("ReportedAuth: social registration failed \(error)")

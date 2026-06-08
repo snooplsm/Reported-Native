@@ -45,6 +45,7 @@ class SessionViewModel : ViewModel() {
         viewModelScope.launch {
             val session = AppGraph.shared.loadSessionUseCase.execute()
             val guestMode = AppGraph.shared.loadGuestModeUseCase.execute()
+            ReportedAnalytics.setUser(session)
             _state.value = SessionUiState(
                 loading = false,
                 session = session,
@@ -63,6 +64,7 @@ class SessionViewModel : ViewModel() {
     fun continueAsGuest() {
         viewModelScope.launch {
             AppGraph.shared.saveGuestModeUseCase.execute(true)
+            ReportedAnalytics.setUser(null)
             _state.value = SessionUiState(loading = false, session = null, isGuest = true)
         }
     }
@@ -89,9 +91,9 @@ class SessionViewModel : ViewModel() {
                     phone = "",
                     testify = false
                 )
-            }.onSuccess {
+            }.onSuccess { session ->
                 AppGraph.shared.saveGuestModeUseCase.execute(false)
-                ReportedAnalytics.logLogin(profile.provider)
+                ReportedAnalytics.logLogin(profile.provider, session)
                 load()
             }.onFailure { error ->
                 _state.update { current -> current.copy(loading = false, session = null, isGuest = current.isGuest) }
@@ -125,9 +127,9 @@ class LoginViewModel : ViewModel() {
             _state.update { it.copy(loading = true, error = null) }
             runCatching {
                 AppGraph.shared.loginUseCase.execute(_state.value.email, _state.value.password)
-            }.onSuccess {
+            }.onSuccess { session ->
                 _state.update { current -> current.copy(loading = false, error = null) }
-                ReportedAnalytics.logLogin("password")
+                ReportedAnalytics.logLogin("password", session)
                 onSuccess()
             }.onFailure { error ->
                 Log.e("ReportedAuth", "Login failed", error)
@@ -206,9 +208,9 @@ class LoginViewModel : ViewModel() {
                     phone = "",
                     testify = false
                 )
-            }.onSuccess {
+            }.onSuccess { session ->
                 _state.update { current -> current.copy(loading = false, error = null) }
-                ReportedAnalytics.logLogin(profile.provider)
+                ReportedAnalytics.logLogin(profile.provider, session)
                 onSuccess()
             }.onFailure { error ->
                 Log.e("ReportedAuth", "Social login failed", error)
@@ -274,9 +276,9 @@ class RegisterViewModel : ViewModel() {
                     email = _state.value.email,
                     password = _state.value.password
                 )
-            }.onSuccess {
+            }.onSuccess { session ->
                 _state.update { current -> current.copy(loading = false) }
-                ReportedAnalytics.logLogin("password")
+                ReportedAnalytics.logLogin("password", session)
                 onSuccess()
             }.onFailure { error ->
                 Log.e("ReportedAuth", "Registration failed", error)
@@ -331,9 +333,9 @@ class RegisterViewModel : ViewModel() {
                     phone = _state.value.phone,
                     testify = _state.value.testify
                 )
-            }.onSuccess {
+            }.onSuccess { session ->
                 _state.update { current -> current.copy(loading = false, error = null) }
-                ReportedAnalytics.logLogin(profile.provider)
+                ReportedAnalytics.logLogin(profile.provider, session)
                 onSuccess()
             }.onFailure { error ->
                 Log.e("ReportedAuth", "Social registration failed", error)
