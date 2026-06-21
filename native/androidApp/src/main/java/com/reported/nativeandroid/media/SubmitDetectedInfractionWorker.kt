@@ -5,6 +5,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.reported.nativeandroid.analytics.ReportedAnalytics
+import com.reported.nativeandroid.batch.BatchSubmitStore
 import com.reported.nativeandroid.di.AppGraph
 import com.reported.shared.model.SubmitReportCommand
 
@@ -29,22 +31,23 @@ class SubmitDetectedInfractionWorker(
             return Result.success()
         }
 
+        val baseCommand = SubmitReportCommand(
+            plate = candidate.plate,
+            plateRegion = candidate.plateRegion,
+            description = "",
+            notes = "",
+            address = candidate.address,
+            complaintIds = listOf(candidate.complaintId),
+            timeOfIncidentIso = candidate.occurredAtIso,
+            latitude = candidate.latitude,
+            longitude = candidate.longitude
+        )
+        var attemptedCommand = baseCommand
         return runCatching {
             val mediaFile = ParseMediaUploader.upload(applicationContext, candidate.media)
-            AppGraph.shared.submitReportUseCase.execute(
-                SubmitReportCommand(
-                    plate = candidate.plate,
-                    plateRegion = candidate.plateRegion,
-                    description = "",
-                    notes = "",
-                    address = candidate.address,
-                    complaintIds = listOf(candidate.complaintId),
-                    timeOfIncidentIso = candidate.occurredAtIso,
-                    latitude = candidate.latitude,
-                    longitude = candidate.longitude,
-                    mediaFiles = listOfNotNull(mediaFile)
-                )
-            )
+            attemptedCommand = baseCommand.copy(mediaFiles = listOfNotNull(mediaFile))
+            AppGraph.shared.submitReportUseCase.execute(attemptedCommand)
+            BatchSubmitStore.markSubmittedAutoReportMedia(applicationContext, listOf(candidate.media))
             LocalSubmissionMediaCleaner.cleanupAfterSuccessfulSubmit(
                 context = applicationContext,
                 media = listOf(candidate.media),
@@ -55,6 +58,17 @@ class SubmitDetectedInfractionWorker(
             Result.success()
         }.getOrElse { error ->
             Log.e(TAG, "Detected infraction submit failed", error)
+            ReportedAnalytics.logSubmitReportFailed(
+                surface = "detected_infraction_worker",
+                stage = "background_submit",
+                error = error,
+                plateRegion = candidate.plateRegion,
+                complaintCount = if (candidate.complaintId.isBlank()) 0 else 1,
+                mediaCount = 1,
+                hasVideo = candidate.media.isVideo,
+                session = session,
+                command = attemptedCommand
+            )
             AppGraph.shared.saveDraftUseCase.execute(candidate.toDraft())
             DetectedInfractionNotifications.showNeedsEdit(
                 applicationContext,

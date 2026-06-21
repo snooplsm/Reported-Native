@@ -56,6 +56,9 @@ import kotlin.math.roundToLong
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+@Suppress("UNCHECKED_CAST")
+private fun Any?.asFloatRowsOrNull(): Array<FloatArray>? = this as? Array<FloatArray>
+
 private const val DETECTOR_ASSET = "models/yolo-v9-t-640-license-plates-end2end.onnx"
 private const val OCR_ASSET = "models/global_mobile_vit_v2_ocr.onnx"
 private const val PLATE_STATE_ASSET = "models/reported-plate-class-best.onnx"
@@ -79,7 +82,6 @@ private const val COMPLAINT_BLOCKED_BIKE_LANE = "blocked_bike_lane"
 private const val COMPLAINT_BLOCKED_CROSSWALK = "blocked_crosswalk"
 private const val COMPLAINT_CLASS_BLOCKED_BIKE_LANE = 0
 private const val COMPLAINT_CLASS_BLOCKED_CROSSWALK = 1
-private val COMPLAINT_DETECTION_THRESHOLD = AutoReportThresholds.COMPLAINT_CONFIDENCE
 private const val MEDIA_SCANNER_LOG_TAG = "ReportedMediaScanner"
 private const val PLATE_DETECTION_LOG_TAG = "ReportedPlateDetection"
 private const val PLATE_STATE_SIZE = 160
@@ -268,7 +270,11 @@ internal object NativeAlprEngine {
             if (media.isVideo) return@withContext null
             val bitmap = decodeBitmap(context, Uri.parse(media.uri)) ?: return@withContext null
             val sessions = getSessionsOrNull(context.applicationContext) ?: return@withContext null
-            detectComplaint(bitmap, sessions.complaint)
+            detectComplaint(
+                bitmap = bitmap,
+                session = sessions.complaint,
+                confidenceThreshold = AutoReportThresholds.complaintConfidence(context)
+            )
         }
 
     suspend fun detectLiveFrame(
@@ -286,7 +292,11 @@ internal object NativeAlprEngine {
             forceBackupTextOcr = false
         )
         val complaintId = if (candidates.isNotEmpty()) {
-            detectComplaint(bitmap, sessions.complaint)?.takeIf { it.accepted }?.complaintId
+            detectComplaint(
+                bitmap = bitmap,
+                session = sessions.complaint,
+                confidenceThreshold = AutoReportThresholds.DEFAULT_COMPLAINT_CONFIDENCE
+            )?.takeIf { it.accepted }?.complaintId
         } else {
             null
         }
@@ -1071,7 +1081,7 @@ internal object NativeAlprEngine {
             longArrayOf(1, 3, DETECTOR_SIZE.toLong(), DETECTOR_SIZE.toLong())
         ).use { inputTensor ->
             session.run(mapOf(inputName to inputTensor)).use { results ->
-                val raw = (results[0].value as? Array<FloatArray>) ?: return emptyList()
+                val raw = results[0].value.asFloatRowsOrNull() ?: return emptyList()
                 return raw.mapNotNull { row ->
                     if (row.size < 7) return@mapNotNull null
                     val score = row[6]
@@ -1092,7 +1102,11 @@ internal object NativeAlprEngine {
         }
     }
 
-    private fun detectComplaint(bitmap: Bitmap, session: OrtSession?): ComplaintInferenceResult? {
+    private fun detectComplaint(
+        bitmap: Bitmap,
+        session: OrtSession?,
+        confidenceThreshold: Float
+    ): ComplaintInferenceResult? {
         session ?: run {
             Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference skipped: complaint model session is unavailable")
             return null
@@ -1146,8 +1160,8 @@ internal object NativeAlprEngine {
                         COMPLAINT_CLASS_BLOCKED_CROSSWALK -> COMPLAINT_BLOCKED_CROSSWALK
                         else -> null
                     } ?: return null
-                    val accepted = best.second >= COMPLAINT_DETECTION_THRESHOLD
-                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference result: label=${best.first} score=${best.second} complaint=$complaint accepted=$accepted threshold=$COMPLAINT_DETECTION_THRESHOLD")
+                    val accepted = best.second >= confidenceThreshold
+                    Log.d(MEDIA_SCANNER_LOG_TAG, "Complaint inference result: label=${best.first} score=${best.second} complaint=$complaint accepted=$accepted threshold=$confidenceThreshold")
                     ComplaintInferenceResult(
                         complaintId = complaint,
                         confidence = best.second,
@@ -1204,7 +1218,7 @@ internal object NativeAlprEngine {
                     (0 until rowCount).mapNotNull { rowIndex ->
                         val offset = rowIndex * rowSize
                         val (label, score) = decodeComplaintScore(raw, offset, rowSize) ?: return@mapNotNull null
-                        if (label != expectedLabel || score < COMPLAINT_DETECTION_THRESHOLD) return@mapNotNull null
+                        if (label != expectedLabel || score < AutoReportThresholds.DEFAULT_COMPLAINT_CONFIDENCE) return@mapNotNull null
                         val coordinateOffset = if (rowSize >= 7) 1 else 0
                         val x1 = ((raw[offset + coordinateOffset] - letterboxed.padX) / letterboxed.scale)
                             .coerceIn(0f, bitmap.width.toFloat())
@@ -1238,7 +1252,7 @@ internal object NativeAlprEngine {
                 longArrayOf(bitmaps.size.toLong(), 3, DETECTOR_SIZE.toLong(), DETECTOR_SIZE.toLong())
             ).use { inputTensor ->
                 session.run(mapOf(inputName to inputTensor)).use { results ->
-                    val raw = (results[0].value as? Array<FloatArray>) ?: return@use emptyList<List<Detection>>()
+                    val raw = results[0].value.asFloatRowsOrNull() ?: return@use emptyList<List<Detection>>()
                     val grouped = MutableList(bitmaps.size) { mutableListOf<Detection>() }
                     raw.forEach { row ->
                         if (row.size < 7) return@forEach
@@ -1346,7 +1360,7 @@ internal object NativeAlprEngine {
             OnnxJavaType.UINT8
         ).use { inputTensor ->
             session.run(mapOf(inputName to inputTensor)).use { results ->
-                val raw = (results[0].value as? Array<FloatArray>) ?: return bitmaps.map { "" }
+                val raw = results[0].value.asFloatRowsOrNull() ?: return bitmaps.map { "" }
                 if (raw.size < bitmaps.size) return bitmaps.map { "" }
                 return raw.take(bitmaps.size).map(::decodeOcrRow).also {
                     session.logOrtProfileOnce()
@@ -1811,10 +1825,6 @@ internal object NativeAlprEngine {
         val plateBitmap = crop(rotatedMatch.rotatedImage.bitmap, ocrDetection)
             ?: crop(rotatedMatch.rotatedImage.bitmap, rotatedMatch.detection)
             ?: return null
-        val imageCornerPoints = ocrDetection.toOriginalImageCornerPoints(
-            rotatedImage = rotatedMatch.rotatedImage,
-            originalDetection = detection
-        )
         val displayDetection = detection
         val displayThumbnail = crop(bitmap, displayDetection) ?: initialPlateCrop
         Log.d(
@@ -1826,7 +1836,9 @@ internal object NativeAlprEngine {
             thumbnailBitmap = displayThumbnail,
             detection = displayDetection.copy(score = ocrDetection.score),
             rotationDegrees = -rotatedMatch.appliedRotationDegrees,
-            cornerPoints = imageCornerPoints
+            // Keep the OCR crop refined, but render the stable detector rectangle.
+            // The segmentation polygon can overfit bumper text or plate trim and show a fake slant.
+            cornerPoints = displayDetection.cornerPoints()
         )
     }
 

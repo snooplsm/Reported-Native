@@ -20,6 +20,9 @@ class ReportsRepository(
 
     suspend fun submitReport(command: SubmitReportCommand): String = api.submitReport(command)
 
+    suspend fun previewVehicleEnrichmentDebugNote(plate: String): String? =
+        api.previewVehicleEnrichmentDebugNote(plate)
+
     suspend fun changeStatus(reportId: Long, status: String) = api.changeStatus(reportId, status)
 
     suspend fun deleteReport(reportId: Long) = api.deleteReport(reportId)

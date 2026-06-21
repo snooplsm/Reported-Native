@@ -1,9 +1,15 @@
 package com.reported.nativeandroid.app
 
 import com.reported.shared.model.AppThemeMode
+import com.reported.shared.model.CityReportingRules
 import com.reported.shared.model.ComplaintCategory
+import com.reported.shared.model.PhiladelphiaMobilityAccessDetails
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.UserSession
+
+const val PhiladelphiaSubmissionMediaCount = 2
+const val PhiladelphiaSubmissionMediaMessage = "Philadelphia Parking Authority reports can include up to 2 photos and no videos."
+const val PhiladelphiaSubmissionVideoMessage = "Philadelphia Parking Authority reports do not accept videos. Add up to 2 JPG or PNG photos instead."
 
 enum class SubmissionStage {
     PICK_MEDIA,
@@ -66,7 +72,11 @@ data class AddressSuggestion(
     val label: String,
     val latitude: Double,
     val longitude: Double,
-    val region: String? = null
+    val region: String? = null,
+    val providerId: String? = null,
+    val blockNumber: String? = null,
+    val streetName: String? = null,
+    val zipCode: String? = null
 )
 
 data class SessionUiState(
@@ -235,6 +245,7 @@ data class ComposerUiState(
     val primaryMedia: SubmissionMedia? = null,
     val extraMedia: List<SubmissionMedia> = emptyList(),
     val pendingMediaSelection: SubmissionMedia? = null,
+    val firstMediaAddedElapsedRealtimeMs: Long? = null,
     val awaitingVideoProcessingDecision: Boolean = false,
     val pendingVideoProcessingMedia: SubmissionMedia? = null,
     val detectingPlates: Boolean = false,
@@ -259,6 +270,7 @@ data class ComposerUiState(
     val address: String = "",
     val description: String = "",
     val notes: String = "",
+    val philadelphiaMobilityAccessDetails: PhiladelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(),
     val occurredAtIso: String = "",
     val photoOccurredAtIso: String? = null,
     val complaintCategories: List<ComplaintCategory> = emptyList(),
@@ -274,6 +286,9 @@ data class ComposerUiState(
     val validationErrors: ComposerValidationErrors = ComposerValidationErrors(),
     val infoMessage: String = "Upload a photo or video first, then verify the plate, complaint, time, and NYC address before submitting."
 )
+
+fun ComposerUiState.isPhiladelphiaSubmission(): Boolean =
+    CityReportingRules.isPhiladelphiaReport(latitude, longitude, addressQuery.ifBlank { address })
 
 sealed interface ComposerEvent {
     data class ReportSubmitted(val objectId: String) : ComposerEvent
@@ -296,6 +311,7 @@ sealed interface ComposerAction {
     data class PrimaryMediaChosen(val media: SubmissionMedia, val complaintId: String) : ComposerAction
     data class ExtraMediaAdded(val media: SubmissionMedia) : ComposerAction
     data class MediaRemoved(val media: SubmissionMedia) : ComposerAction
+    data class MediaRejected(val media: SubmissionMedia, val message: String) : ComposerAction
     data class VideoProcessingDecision(val process: Boolean) : ComposerAction
     data object VideoProcessingCancelled : ComposerAction
     data object DetectionResultDismissed : ComposerAction
@@ -342,5 +358,17 @@ sealed interface ComposerAction {
         val description: String? = null,
         val notes: String? = null,
         val occurredAtIso: String? = null
+    ) : ComposerAction
+
+    data class PhiladelphiaMobilityAccessChanged(
+        val blockNumber: String? = null,
+        val streetName: String? = null,
+        val zipCode: String? = null,
+        val vehicleMake: String? = null,
+        val vehicleModel: String? = null,
+        val bodyStyle: String? = null,
+        val vehicleColor: String? = null,
+        val violationObserved: String? = null,
+        val frequency: String? = null
     ) : ComposerAction
 }

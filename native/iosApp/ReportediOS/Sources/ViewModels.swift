@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseAnalytics
+import FirebaseCrashlytics
 import ImageIO
 import SharedCore
 import UIKit
@@ -7,9 +8,68 @@ import UniformTypeIdentifiers
 
 private let maxLicensePlateInputLength = 10
 
+enum ReportAddressProvider {
+    case newYorkCity
+    case philadelphia
+
+    var id: String {
+        switch self {
+        case .newYorkCity:
+            "nyc_geosearch"
+        case .philadelphia:
+            "philadelphia_ais"
+        }
+    }
+
+    var searchingLabel: String {
+        switch self {
+        case .newYorkCity:
+            "Searching NYC addresses"
+        case .philadelphia:
+            "Searching Philadelphia addresses"
+        }
+    }
+
+    var noMatchesLabel: String {
+        switch self {
+        case .newYorkCity:
+            "No NYC address matches found."
+        case .philadelphia:
+            "No Philadelphia address matches found."
+        }
+    }
+
+    var reverseLookupLabel: String {
+        switch self {
+        case .newYorkCity:
+            "Finding NYC address"
+        case .philadelphia:
+            "Finding Philadelphia address"
+        }
+    }
+}
+
+extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 enum ReportedAnalytics {
     static func setUser(_ session: UserSession?) {
-        Analytics.setUserID(userId(from: session))
+        let userId = userId(from: session)
+        let email = email(from: session)
+        let emailDomain = emailDomain(from: session)
+        Analytics.setUserID(userId)
+        Analytics.setUserProperty(userId, forName: "reported_user_id")
+        Analytics.setUserProperty(emailDomain, forName: "email_domain")
+
+        let crashlytics = Crashlytics.crashlytics()
+        crashlytics.setUserID(userId ?? "")
+        crashlytics.setCustomValue(userId ?? "", forKey: "reported_user_id")
+        crashlytics.setCustomValue(email ?? "", forKey: "reported_user_email")
+        crashlytics.setCustomValue(emailDomain ?? "", forKey: "email_domain")
     }
 
     static func logLogin(method: String, session: UserSession?) {
@@ -41,21 +101,144 @@ enum ReportedAnalytics {
         plateRegion: String,
         complaintCount: Int,
         mediaCount: Int,
-        hasVideo: Bool
+        hasVideo: Bool,
+        mediaToSubmitMillis: Int64? = nil
     ) {
-        Analytics.logEvent("submit_report", parameters: [
+        var parameters: [String: Any] = [
             "county": county,
             "plate_region": plateRegion,
             "complaint_count": complaintCount,
             "media_count": mediaCount,
             "has_video": hasVideo ? 1 : 0
+        ]
+        if let mediaToSubmitMillis {
+            parameters["media_to_submit_ms"] = mediaToSubmitMillis
+            parameters["media_to_submit_sec"] = Double(mediaToSubmitMillis) / 1000.0
+        }
+        Analytics.logEvent("submit_report", parameters: parameters)
+    }
+
+    static func logVehicleEnrichmentEndpoint(
+        provider: String,
+        success: Bool,
+        reason: String,
+        durationMillis: Int64,
+        operatingSystem: String
+    ) {
+        Analytics.logEvent("vehicle_enrichment_endpoint", parameters: [
+            "provider": firebaseSafeAnalyticsValue(provider),
+            "success": success ? 1 : 0,
+            "reason": firebaseSafeAnalyticsValue(reason),
+            "duration_ms": durationMillis,
+            "operating_system": firebaseSafeAnalyticsValue(operatingSystem)
         ])
     }
 
-    static func logSubmitReportTapped(stage: String, isAuthorized: Bool) {
-        Analytics.logEvent("submit_report_tap", parameters: [
+    static func logVehicleClassificationResult(
+        surface: String,
+        stage: String,
+        success: Bool,
+        reason: String,
+        durationMillis: Int64,
+        platePrefix: String,
+        hasVin: Bool,
+        hasDecodedVin: Bool,
+        operatingSystem: String
+    ) {
+        Analytics.logEvent("vehicle_classification_result", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface),
+            "stage": firebaseSafeAnalyticsValue(stage),
+            "success": success ? 1 : 0,
+            "reason": firebaseSafeAnalyticsValue(reason),
+            "duration_ms": durationMillis,
+            "plate_prefix": firebaseSafeAnalyticsValue(platePrefix),
+            "has_vin": hasVin ? 1 : 0,
+            "has_decoded_vin": hasDecodedVin ? 1 : 0,
+            "operating_system": firebaseSafeAnalyticsValue(operatingSystem)
+        ])
+    }
+
+    static func logSubmitReportFailed(
+        surface: String,
+        stage: String,
+        error: Error,
+        plateRegion: String,
+        complaintCount: Int,
+        mediaCount: Int,
+        hasVideo: Bool,
+        reportCount: Int = 1,
+        session: UserSession? = nil,
+        report: [String: Any]? = nil
+    ) {
+        Analytics.logEvent("submit_report_failed", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface),
+            "stage": firebaseSafeAnalyticsValue(stage),
+            "error_type": firebaseSafeAnalyticsValue(String(describing: type(of: error))),
+            "error_message": firebaseSafeAnalyticsValue(String(describing: error)),
+            "plate_region": firebaseSafeAnalyticsValue(plateRegion),
+            "complaint_count": complaintCount,
+            "media_count": mediaCount,
+            "has_video": hasVideo ? 1 : 0,
+            "report_count": reportCount
+        ])
+        ReportSubmissionFailureLogger.log(
+            surface: surface,
+            stage: stage,
+            error: error,
+            plateRegion: plateRegion,
+            complaintCount: complaintCount,
+            mediaCount: mediaCount,
+            hasVideo: hasVideo,
+            reportCount: reportCount,
+            session: session,
+            report: report
+        )
+    }
+
+    static func userFacingSubmitFailureMessage(
+        for error: Error,
+        fallback: String = "There was an error submitting your report. Please try again."
+    ) -> String {
+        let candidates = [String(describing: error), error.localizedDescription]
+        for candidate in candidates {
+            if let message = duplicateSubmitMessage(from: candidate) {
+                return message
+            }
+        }
+        return fallback
+    }
+
+    private static func duplicateSubmitMessage(from value: String) -> String? {
+        guard value.range(of: "already been submitted", options: .caseInsensitive) != nil else {
+            return nil
+        }
+        if let start = value.range(of: "A report for", options: .caseInsensitive)?.lowerBound {
+            var message = String(value[start...])
+            if let end = message.firstIndex(of: ".") {
+                message = String(message[...end])
+            }
+            return message.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return "A report for this plate and state has already been submitted."
+    }
+
+    static func logSubmitReportTapped(stage: String, isAuthorized: Bool, mediaToSubmitMillis: Int64? = nil) {
+        var parameters: [String: Any] = [
             "stage": stage,
             "is_authorized": isAuthorized ? 1 : 0
+        ]
+        if let mediaToSubmitMillis {
+            parameters["media_to_submit_ms"] = mediaToSubmitMillis
+            parameters["media_to_submit_sec"] = Double(mediaToSubmitMillis) / 1000.0
+        }
+        Analytics.logEvent("submit_report_tap", parameters: parameters)
+    }
+
+    static func logReportMediaAdded(surface: String, mediaCount: Int, hasVideo: Bool) {
+        Analytics.logEvent("report_media_added", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface),
+            "media_count": mediaCount,
+            "has_video": hasVideo ? 1 : 0
         ])
     }
 
@@ -63,6 +246,89 @@ enum ReportedAnalytics {
         Analytics.logEvent("ai_sparkle_tap", parameters: [
             "surface": surface
         ])
+    }
+
+    static func logReportedAiBulkSubmit(
+        surface: String,
+        reportCount: Int,
+        mediaCount: Int,
+        complaintCount: Int,
+        scanToSubmitMillis: Int64? = nil
+    ) {
+        var parameters: [String: Any] = [
+            "surface": surface,
+            "report_count": reportCount,
+            "media_count": mediaCount,
+            "complaint_count": complaintCount
+        ]
+        if let scanToSubmitMillis {
+            parameters["scan_to_submit_ms"] = scanToSubmitMillis
+            parameters["scan_to_submit_sec"] = Double(scanToSubmitMillis) / 1000.0
+        }
+        Analytics.logEvent("reported_ai_bulk_submit", parameters: parameters)
+    }
+
+    static func logAutoReportScanStarted(scanWindow: String) {
+        Analytics.logEvent("auto_report_scan_start", parameters: [
+            "scan_window": firebaseSafeAnalyticsValue(scanWindow)
+        ])
+    }
+
+    static func logAutoReportSummary(
+        count: Int,
+        keptCount: Int,
+        discardedCount: Int,
+        invalidCount: Int,
+        mediaCount: Int,
+        processedPhotoCount: Int
+    ) {
+        Analytics.logEvent("auto_report_summary", parameters: [
+            "count": count,
+            "report_count": count,
+            "kept_count": keptCount,
+            "discarded_count": discardedCount,
+            "invalid_count": invalidCount,
+            "media_count": mediaCount,
+            "processed_photo_count": processedPhotoCount
+        ])
+    }
+
+    static func logAutoReportDecision(
+        keep: Bool,
+        reportIndex: Int,
+        reportCount: Int,
+        keptCount: Int,
+        mediaCount: Int
+    ) {
+        Analytics.logEvent(keep ? "auto_report_keep" : "auto_report_discard", parameters: [
+            "report_index": reportIndex,
+            "report_count": reportCount,
+            "kept_count": keptCount,
+            "media_count": mediaCount
+        ])
+    }
+
+    static func logAutoReportSummarySubmitTapped(
+        reportCount: Int,
+        mediaCount: Int,
+        complaintCount: Int,
+        invalidCount: Int,
+        isAuthorized: Bool,
+        scanToSubmitMillis: Int64? = nil
+    ) {
+        var parameters: [String: Any] = [
+            "count": reportCount,
+            "report_count": reportCount,
+            "media_count": mediaCount,
+            "complaint_count": complaintCount,
+            "invalid_count": invalidCount,
+            "is_authorized": isAuthorized ? 1 : 0
+        ]
+        if let scanToSubmitMillis {
+            parameters["scan_to_submit_ms"] = scanToSubmitMillis
+            parameters["scan_to_submit_sec"] = Double(scanToSubmitMillis) / 1000.0
+        }
+        Analytics.logEvent("auto_report_summary_submit_tap", parameters: parameters)
     }
 
     static func logPlateChooserTapped(candidateCount: Int, hasPlate: Bool) {
@@ -104,6 +370,25 @@ enum ReportedAnalytics {
     static func logSettingsTapped(surface: String) {
         Analytics.logEvent("settings_tap", parameters: [
             "surface": surface
+        ])
+    }
+
+    static func logBuyMeCoffeeTapped(surface: String) {
+        Analytics.logEvent("buy_me_coffee_tap", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface)
+        ])
+    }
+
+    static func logBuyMeCoffeeInfoTapped(surface: String) {
+        Analytics.logEvent("buy_me_coffee_info_tap", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface)
+        ])
+    }
+
+    static func logBuyMeCoffeeOpen(surface: String, source: String) {
+        Analytics.logEvent("buy_me_coffee_open", parameters: [
+            "surface": firebaseSafeAnalyticsValue(surface),
+            "source": firebaseSafeAnalyticsValue(source)
         ])
     }
 
@@ -161,6 +446,32 @@ enum ReportedAnalytics {
             return objectId
         }
         return session.id > 0 ? "\(session.id)" : nil
+    }
+
+    private static func emailDomain(from session: UserSession?) -> String? {
+        guard let email = email(from: session),
+              let atIndex = email.lastIndex(of: "@") else { return nil }
+        let domain = email[email.index(after: atIndex)...]
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return domain.isEmpty ? nil : firebaseSafeAnalyticsValue(domain)
+    }
+
+    private static func email(from session: UserSession?) -> String? {
+        guard let session else { return nil }
+        let email = session.email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return email.isEmpty ? nil : firebaseSafeAnalyticsValue(email.lowercased())
+    }
+
+    private static func firebaseSafeAnalyticsValue(_ value: String) -> String {
+        let trimmed = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= 96 {
+            return trimmed
+        }
+        return String(trimmed.prefix(96))
     }
 }
 
@@ -327,6 +638,31 @@ struct ComposerState {
         let label: String
         let latitude: Double
         let longitude: Double
+        let region: String?
+        let providerId: String?
+        let blockNumber: String?
+        let streetName: String?
+        let zipCode: String?
+
+        init(
+            label: String,
+            latitude: Double,
+            longitude: Double,
+            region: String? = nil,
+            providerId: String? = nil,
+            blockNumber: String? = nil,
+            streetName: String? = nil,
+            zipCode: String? = nil
+        ) {
+            self.label = label
+            self.latitude = latitude
+            self.longitude = longitude
+            self.region = region
+            self.providerId = providerId
+            self.blockNumber = blockNumber
+            self.streetName = streetName
+            self.zipCode = zipCode
+        }
     }
 
     struct ValidationErrors {
@@ -355,6 +691,7 @@ struct ComposerState {
     var primaryMedia: SubmissionMedia?
     var extraMedia: [SubmissionMedia] = []
     var pendingMediaSelection: SubmissionMedia?
+    var firstMediaAddedAt: Date?
     var awaitingVideoProcessingDecision = false
     var detectingPlates = false
     var detectionMessage: String?
@@ -376,6 +713,17 @@ struct ComposerState {
     var address = ""
     var description = ""
     var notes = ""
+    var philadelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(
+        blockNumber: "",
+        streetName: "",
+        zipCode: "",
+        vehicleMake: "",
+        vehicleModel: "",
+        bodyStyle: "",
+        vehicleColor: "",
+        violationObserved: "",
+        frequency: ""
+    )
     var occurredAtIso = ""
     var photoOccurredAtIso: String?
     var complaintCategories: [ComplaintCategory] = Array(Catalogs.shared.complaintCategories)
@@ -390,6 +738,11 @@ struct ComposerState {
     var keptPlateCorrectionRaw: String?
     var validationErrors = ValidationErrors()
     let info = "Media, location, uploads, and notifications are the next native migration slice. This Swift app already shares the live API, use cases, and draft state with the KMP core."
+
+    var mediaToSubmitMillis: Int64? {
+        guard let firstMediaAddedAt else { return nil }
+        return max(0, Int64(Date().timeIntervalSince(firstMediaAddedAt) * 1000))
+    }
 }
 
 enum ComposerAction {
@@ -409,6 +762,7 @@ enum ComposerAction {
     case pendingComplaintConfirmed(String)
     case extraMediaAdded(ComposerState.SubmissionMedia)
     case mediaRemoved(ComposerState.SubmissionMedia)
+    case mediaRejected(ComposerState.SubmissionMedia, message: String)
 
     case videoProcessingDecision(Bool)
     case videoProcessingCancelled
@@ -438,7 +792,8 @@ enum ComposerAction {
         latitude: Double? = nil,
         longitude: Double? = nil,
         inferredState: String? = nil,
-        inferredAddress: String? = nil
+        inferredAddress: String? = nil,
+        addressSuggestion: ComposerState.AddressSuggestion? = nil
     )
     case fieldsChanged(
         plate: String? = nil,
@@ -447,6 +802,17 @@ enum ComposerAction {
         description: String? = nil,
         notes: String? = nil,
         occurredAtIso: String? = nil
+    )
+    case philadelphiaMobilityAccessChanged(
+        blockNumber: String? = nil,
+        streetName: String? = nil,
+        zipCode: String? = nil,
+        vehicleMake: String? = nil,
+        vehicleModel: String? = nil,
+        bodyStyle: String? = nil,
+        vehicleColor: String? = nil,
+        violationObserved: String? = nil,
+        frequency: String? = nil
     )
 
     case plateCorrectionAccepted
@@ -1086,12 +1452,17 @@ final class ComposerViewModel: ObservableObject {
     private var remoteConfigObserver: NSObjectProtocol?
     private let maxSubmissionMediaCount = 3
     private let maxSubmissionVideoCount = 1
+    private let philadelphiaSubmissionMediaCount = 2
     private let maxSubmissionMediaMessage = "You can attach up to 3 photos or videos."
     private let maxSubmissionVideoMessage = "You can attach no more than 1 video."
+    private let philadelphiaSubmissionMediaMessage = "Philadelphia Parking Authority reports can include up to 2 photos and no videos."
+    private let philadelphiaSubmissionVideoMessage = "Philadelphia Parking Authority reports do not accept videos. Add up to 2 JPG or PNG photos instead."
     private let duplicateSubmissionMediaMessage = "That photo or video is already attached."
+    private let vehicleClassificationDebugPrefix = "[DEBUG] Vehicle classification"
+    private var vehicleClassificationDebugTask: Task<Void, Never>?
 
     var remainingMediaSlots: Int {
-        max(0, maxSubmissionMediaCount - mediaItems.count)
+        max(0, (state.isPhiladelphiaSubmission ? philadelphiaSubmissionMediaCount : maxSubmissionMediaCount) - mediaItems.count)
     }
 
     init() {
@@ -1100,7 +1471,9 @@ final class ComposerViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshRemoteConfigValues()
+            Task { @MainActor [weak self] in
+                self?.refreshRemoteConfigValues()
+            }
         }
     }
 
@@ -1108,6 +1481,7 @@ final class ComposerViewModel: ObservableObject {
         if let remoteConfigObserver {
             NotificationCenter.default.removeObserver(remoteConfigObserver)
         }
+        vehicleClassificationDebugTask?.cancel()
     }
 
     func refreshRemoteConfigValues() {
@@ -1148,6 +1522,8 @@ final class ComposerViewModel: ObservableObject {
             return addExtraMedia(media)
         case .mediaRemoved(let media):
             removeMedia(media)
+        case .mediaRejected(let media, let message):
+            rejectMedia(media, message: message)
         case .videoProcessingDecision(let process):
             onVideoProcessingDecision(process)
         case .videoProcessingCancelled:
@@ -1174,14 +1550,15 @@ final class ComposerViewModel: ObservableObject {
             setAddressLookupLoading(loading)
         case .addressChosen(let suggestion):
             chooseAddress(suggestion)
-        case .metadataApplied(let occurredAtIso, let photoOccurredAtIso, let latitude, let longitude, let inferredState, let inferredAddress):
+        case .metadataApplied(let occurredAtIso, let photoOccurredAtIso, let latitude, let longitude, let inferredState, let inferredAddress, let addressSuggestion):
             applyDetectedMetadata(
                 occurredAtIso: occurredAtIso,
                 photoOccurredAtIso: photoOccurredAtIso,
                 latitude: latitude,
                 longitude: longitude,
                 inferredState: inferredState,
-                inferredAddress: inferredAddress
+                inferredAddress: inferredAddress,
+                addressSuggestion: addressSuggestion
             )
         case .fieldsChanged(let plate, let plateRegion, let address, let description, let notes, let occurredAtIso):
             update(
@@ -1191,6 +1568,18 @@ final class ComposerViewModel: ObservableObject {
                 description: description,
                 notes: notes,
                 occurredAtIso: occurredAtIso
+            )
+        case .philadelphiaMobilityAccessChanged(let blockNumber, let streetName, let zipCode, let vehicleMake, let vehicleModel, let bodyStyle, let vehicleColor, let violationObserved, let frequency):
+            updatePhiladelphiaMobilityAccess(
+                blockNumber: blockNumber,
+                streetName: streetName,
+                zipCode: zipCode,
+                vehicleMake: vehicleMake,
+                vehicleModel: vehicleModel,
+                bodyStyle: bodyStyle,
+                vehicleColor: vehicleColor,
+                violationObserved: violationObserved,
+                frequency: frequency
             )
         case .plateCorrectionAccepted:
             acceptPlateCorrection()
@@ -1214,6 +1603,7 @@ final class ComposerViewModel: ObservableObject {
                     state.addressQuery = draft.address
                     state.description = Self.cleanDraftText(draft.description_)
                     state.notes = Self.cleanDraftText(draft.notes)
+                    state.philadelphiaMobilityAccessDetails = draft.philadelphiaMobilityAccessDetails ?? Self.emptyPhiladelphiaMobilityAccessDetails()
                     state.occurredAtIso = draft.occurredAtIso
                     state.selectedComplaintIds = draft.complaintIds
                     state.selectedComplaintId = draft.selectedComplaintId ?? draft.complaintIds.first
@@ -1301,6 +1691,7 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.media = mediaError
             return
         }
+        let hadMedia = !mediaItems.isEmpty
         state.selectedComplaintId = complaintId
         state.selectedComplaintIds = [complaintId]
         state.primaryMedia = media
@@ -1308,6 +1699,7 @@ final class ComposerViewModel: ObservableObject {
         state.awaitingVideoProcessingDecision = media.isVideo
         state.validationErrors.media = nil
         state.validationErrors.complaint = nil
+        markFirstMediaAddedIfNeeded(hadMedia: hadMedia)
         persistDraft()
     }
 
@@ -1316,6 +1708,7 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.media = mediaError
             return
         }
+        let hadMedia = !mediaItems.isEmpty
         state.pendingMediaSelection = media
         state.primaryMedia = media
         state.stage = .verify
@@ -1325,6 +1718,7 @@ final class ComposerViewModel: ObservableObject {
         state.detectionResultMessage = nil
         state.validationErrors.media = nil
         state.complaintSheetOpen = true
+        markFirstMediaAddedIfNeeded(hadMedia: hadMedia)
         persistDraft()
     }
 
@@ -1345,6 +1739,7 @@ final class ComposerViewModel: ObservableObject {
         state.awaitingVideoProcessingDecision = pending.isVideo
         state.validationErrors.media = nil
         state.validationErrors.complaint = nil
+        markFirstMediaAddedIfNeeded(hadMedia: false)
         persistDraft()
     }
 
@@ -1354,14 +1749,16 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.media = mediaError
             return false
         }
+        let hadMedia = !mediaItems.isEmpty
         state.extraMedia.append(media)
         state.validationErrors.media = nil
+        markFirstMediaAddedIfNeeded(hadMedia: hadMedia)
         persistDraft()
         return true
     }
 
     func markMediaLimitReached() {
-        state.validationErrors.media = maxSubmissionMediaMessage
+        state.validationErrors.media = state.isPhiladelphiaSubmission ? philadelphiaSubmissionMediaMessage : maxSubmissionMediaMessage
     }
 
     func removeMedia(_ media: ComposerState.SubmissionMedia) {
@@ -1379,7 +1776,32 @@ final class ComposerViewModel: ObservableObject {
         } else {
             state.extraMedia.removeAll { $0.fileURL == media.fileURL }
         }
+        if mediaItems.isEmpty {
+            state.firstMediaAddedAt = nil
+        }
         persistDraft()
+    }
+
+    func rejectMedia(_ media: ComposerState.SubmissionMedia, message: String) {
+        removeMedia(media)
+        state.awaitingVideoProcessingDecision = false
+        state.detectingPlates = false
+        state.detectionMessage = nil
+        state.detectionResultMessage = nil
+        state.detectionProgress = 0
+        state.detectionFramePreview = nil
+        state.validationErrors.media = message
+        persistDraft()
+    }
+
+    private func markFirstMediaAddedIfNeeded(hadMedia: Bool) {
+        guard !hadMedia, state.firstMediaAddedAt == nil, let primaryMedia = state.primaryMedia else { return }
+        state.firstMediaAddedAt = Date()
+        ReportedAnalytics.logReportMediaAdded(
+            surface: "new_report",
+            mediaCount: mediaItems.count,
+            hasVideo: primaryMedia.isVideo || state.extraMedia.contains { $0.isVideo }
+        )
     }
 
     func onVideoProcessingDecision(_ process: Bool) {
@@ -1464,6 +1886,7 @@ final class ComposerViewModel: ObservableObject {
             state.plateRegion = inferredState
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     func choosePlateCandidate(_ candidate: ComposerState.PlateCandidate) {
@@ -1485,6 +1908,7 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.plateRegion = nil
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     func updateAddressQuery(_ value: String) {
@@ -1518,9 +1942,16 @@ final class ComposerViewModel: ObservableObject {
         state.addressQuery = suggestion.label
         state.latitude = suggestion.latitude
         state.longitude = suggestion.longitude
+        if let region = suggestion.region {
+            state.plateRegion = region
+        }
+        applyPhiladelphiaAddressParts(from: suggestion)
         state.addressSuggestions = []
         state.lookupInFlight = false
         state.validationErrors.address = nil
+        if suggestion.region != nil {
+            state.validationErrors.plateRegion = nil
+        }
         persistDraft()
     }
 
@@ -1530,7 +1961,8 @@ final class ComposerViewModel: ObservableObject {
         latitude: Double? = nil,
         longitude: Double? = nil,
         inferredState: String? = nil,
-        inferredAddress: String? = nil
+        inferredAddress: String? = nil,
+        addressSuggestion: ComposerState.AddressSuggestion? = nil
     ) {
         if let occurredAtIso { state.occurredAtIso = occurredAtIso }
         if let photoOccurredAtIso { state.photoOccurredAtIso = photoOccurredAtIso }
@@ -1538,14 +1970,22 @@ final class ComposerViewModel: ObservableObject {
             state.latitude = latitude
             state.longitude = longitude
         }
-        if let inferredState { state.plateRegion = inferredState }
-        if let inferredAddress {
+        let suggestionState = addressSuggestion?.region
+        if let inferredState = inferredState ?? suggestionState { state.plateRegion = inferredState }
+        if let suggestion = addressSuggestion {
+            state.address = suggestion.label
+            state.addressQuery = suggestion.label
+            state.latitude = suggestion.latitude
+            state.longitude = suggestion.longitude
+            applyPhiladelphiaAddressParts(from: suggestion)
+        } else if let inferredAddress {
             state.address = inferredAddress
             state.addressQuery = inferredAddress
         }
         if occurredAtIso != nil { state.validationErrors.occurredAt = nil }
-        if inferredState != nil { state.validationErrors.plateRegion = nil }
-        if inferredAddress != nil { state.validationErrors.address = nil }
+        if inferredState != nil || suggestionState != nil { state.validationErrors.plateRegion = nil }
+        if inferredAddress != nil || addressSuggestion != nil { state.validationErrors.address = nil }
+        applyPhiladelphiaMediaValidation()
         persistDraft()
     }
 
@@ -1557,10 +1997,12 @@ final class ComposerViewModel: ObservableObject {
         notes: String? = nil,
         occurredAtIso: String? = nil
     ) {
+        var didChangePlate = false
         if let plate {
             let normalizedPlate = Self.normalizedPlateInput(plate)
             if normalizedPlate != state.plate {
                 state.keptPlateCorrectionRaw = nil
+                didChangePlate = true
             }
             state.plate = normalizedPlate
             state.plateCorrectionPrompt = nil
@@ -1578,6 +2020,51 @@ final class ComposerViewModel: ObservableObject {
         if let address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.address = nil }
         if let occurredAtIso, !occurredAtIso.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.occurredAt = nil }
         persistDraft()
+        if didChangePlate {
+            refreshVehicleClassificationDebugNote()
+        }
+    }
+
+    func updatePhiladelphiaMobilityAccess(
+        blockNumber: String? = nil,
+        streetName: String? = nil,
+        zipCode: String? = nil,
+        vehicleMake: String? = nil,
+        vehicleModel: String? = nil,
+        bodyStyle: String? = nil,
+        vehicleColor: String? = nil,
+        violationObserved: String? = nil,
+        frequency: String? = nil
+    ) {
+        let current = state.philadelphiaMobilityAccessDetails
+        state.philadelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(
+            blockNumber: blockNumber ?? current.blockNumber,
+            streetName: streetName ?? current.streetName,
+            zipCode: zipCode ?? current.zipCode,
+            vehicleMake: vehicleMake ?? current.vehicleMake,
+            vehicleModel: vehicleModel ?? current.vehicleModel,
+            bodyStyle: bodyStyle ?? current.bodyStyle,
+            vehicleColor: vehicleColor ?? current.vehicleColor,
+            violationObserved: violationObserved ?? current.violationObserved,
+            frequency: frequency ?? current.frequency
+        )
+        persistDraft()
+    }
+
+    private func applyPhiladelphiaAddressParts(from suggestion: ComposerState.AddressSuggestion) {
+        guard suggestion.providerId == ReportAddressProvider.philadelphia.id else { return }
+        let current = state.philadelphiaMobilityAccessDetails
+        state.philadelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(
+            blockNumber: suggestion.blockNumber ?? current.blockNumber,
+            streetName: suggestion.streetName ?? current.streetName,
+            zipCode: suggestion.zipCode ?? current.zipCode,
+            vehicleMake: current.vehicleMake,
+            vehicleModel: current.vehicleModel,
+            bodyStyle: current.bodyStyle,
+            vehicleColor: current.vehicleColor,
+            violationObserved: current.violationObserved,
+            frequency: current.frequency
+        )
     }
 
     func acceptPlateCorrection() {
@@ -1589,6 +2076,7 @@ final class ComposerViewModel: ObservableObject {
         state.validationErrors.plate = nil
         state.validationErrors.plateRegion = nil
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     func keepPlateCorrection() {
@@ -1602,6 +2090,46 @@ final class ComposerViewModel: ObservableObject {
     func dismissPlateCorrection() {
         state.plateCorrectionPrompt = nil
         state.validationErrors.plate = "Review the plate format before submitting."
+    }
+
+    private func refreshVehicleClassificationDebugNote() {
+        #if DEBUG
+        let normalizedPlate = Self.normalizedPlateInput(state.plate)
+        guard normalizedPlate.count >= 2,
+              normalizedPlate.count <= 10,
+              normalizedPlate.hasPrefix("T") || normalizedPlate.hasPrefix("Y") else {
+            applyVehicleClassificationDebugNote(nil)
+            return
+        }
+        vehicleClassificationDebugTask?.cancel()
+        vehicleClassificationDebugTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            let debugNote = try? await SharedBridge.shared.container.previewVehicleEnrichmentDebugNoteUseCase.execute(
+                plate: normalizedPlate
+            )
+            await MainActor.run { [weak self] in
+                guard let self,
+                      !Task.isCancelled,
+                      Self.normalizedPlateInput(self.state.plate) == normalizedPlate else {
+                    return
+                }
+                self.applyVehicleClassificationDebugNote(debugNote)
+            }
+        }
+        #endif
+    }
+
+    private func applyVehicleClassificationDebugNote(_ debugNote: String?) {
+        #if DEBUG
+        let existingLines = state.notes
+            .components(separatedBy: .newlines)
+            .filter { !$0.hasPrefix(vehicleClassificationDebugPrefix) }
+        let nextLines = existingLines + [debugNote].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        state.notes = nextLines.joined(separator: "\n")
+        persistDraft()
+        #endif
     }
 
     func toggleComplaint(_ complaintId: String) {
@@ -1693,7 +2221,8 @@ final class ComposerViewModel: ObservableObject {
             vehicleImageDescription: nil,
             vehicleColor: nil,
             vehicleMake: nil,
-            vehicleModel: nil
+            vehicleModel: nil,
+            philadelphiaMobilityAccessDetails: state.philadelphiaMobilityAccessDetails
         )
         Task {
             try? await SharedBridge.shared.container.saveDraftUseCase.execute(draft: draft)
@@ -1755,6 +2284,30 @@ final class ComposerViewModel: ObservableObject {
         return abs(latitude) > 0.000001 || abs(longitude) > 0.000001
     }
 
+    static func emptyPhiladelphiaMobilityAccessDetails() -> PhiladelphiaMobilityAccessDetails {
+        PhiladelphiaMobilityAccessDetails(
+            blockNumber: "",
+            streetName: "",
+            zipCode: "",
+            vehicleMake: "",
+            vehicleModel: "",
+            bodyStyle: "",
+            vehicleColor: "",
+            violationObserved: "",
+            frequency: ""
+        )
+    }
+
+    private func submittablePhiladelphiaMobilityAccessDetails() -> PhiladelphiaMobilityAccessDetails? {
+        let submitAddress = state.addressQuery.isEmpty ? state.address : state.addressQuery
+        let isPhiladelphia = reportAddressProvider(
+            latitude: state.latitude,
+            longitude: state.longitude,
+            address: submitAddress
+        ) == .philadelphia
+        return isPhiladelphia ? state.philadelphiaMobilityAccessDetails : nil
+    }
+
     func submit() {
         print("ReportedSubmit: submit requested; validating")
         guard prepareSubmit() else { return }
@@ -1770,20 +2323,44 @@ final class ComposerViewModel: ObservableObject {
         let submitComplaintCount = state.selectedComplaintIds.count
         let submitMediaCount = submittedMedia.count
         let submitHasVideo = submittedMedia.contains { $0.isVideo }
+        let philadelphiaDetails = submittablePhiladelphiaMobilityAccessDetails()
+        let baseFailureReport = ReportSubmissionFailureLogger.reportPayload(
+            plate: state.plate,
+            plateRegion: state.plateRegion,
+            address: submitAddress,
+            complaintIds: state.selectedComplaintIds,
+            timeOfIncidentIso: state.occurredAtIso.isEmpty ? nil : state.occurredAtIso,
+            latitude: state.latitude,
+            longitude: state.longitude,
+            description: state.description,
+            notes: state.notes,
+            mediaFileCount: 0
+        )
         print("ReportedSubmit: validated report; media=\(submittedMedia.count) plate=\(state.plate)/\(state.plateRegion) complaintIds=\(state.selectedComplaintIds)")
         Task {
+            var failureReport = baseFailureReport
             do {
                 await MainActor.run {
                     state.submitProgress = 0.02
                     state.submitMessage = "Uploading media"
                 }
-                let mediaFiles = try await ParseMediaUploader.uploadAll(submittedMedia) { progress in
-                    await MainActor.run {
-                        self.state.submitProgress = min(max(progress.overallFraction * 0.82, 0), 0.82)
-                        self.state.submitMessage = "\(progress.message) (\(Int(progress.fileFraction * 100))%)"
-                    }
-                }
+                let mediaFiles = try await uploadMediaForSubmission(
+                    submittedMedia,
+                    isPhiladelphiaSubmission: philadelphiaDetails != nil
+                )
                 print("ReportedSubmit: media upload complete; parseFiles=\(mediaFiles.count)")
+                failureReport = ReportSubmissionFailureLogger.reportPayload(
+                    plate: state.plate,
+                    plateRegion: state.plateRegion,
+                    address: submitAddress,
+                    complaintIds: state.selectedComplaintIds,
+                    timeOfIncidentIso: state.occurredAtIso.isEmpty ? nil : state.occurredAtIso,
+                    latitude: state.latitude,
+                    longitude: state.longitude,
+                    description: state.description,
+                    notes: state.notes,
+                    mediaFileCount: mediaFiles.count
+                )
                 let command = SubmitReportCommand(
                     plate: state.plate,
                     plateRegion: state.plateRegion,
@@ -1795,11 +2372,15 @@ final class ComposerViewModel: ObservableObject {
                     latitude: state.latitude.map { KotlinDouble(double: $0) },
                     longitude: state.longitude.map { KotlinDouble(double: $0) },
                     vehicleImageDescription: nil,
-                    vehicleColor: nil,
-                    vehicleMake: nil,
-                    vehicleModel: nil,
+                    vehicleColor: philadelphiaDetails?.vehicleColor.nilIfBlank,
+                    vehicleMake: philadelphiaDetails?.vehicleMake.nilIfBlank,
+                    vehicleModel: philadelphiaDetails?.vehicleModel.nilIfBlank,
                     mediaUrls: [],
-                    mediaFiles: mediaFiles
+                    mediaFiles: mediaFiles,
+                    vehicleVin: nil,
+                    vehicleYear: nil,
+                    vehicleBodyClass: philadelphiaDetails?.bodyStyle.nilIfBlank,
+                    philadelphiaMobilityAccessDetails: philadelphiaDetails
                 )
                 await MainActor.run {
                     state.submitProgress = 0.88
@@ -1812,23 +2393,71 @@ final class ComposerViewModel: ObservableObject {
                     state.submitMessage = "Cleaning up"
                 }
                 try? await SharedBridge.shared.container.clearDraftUseCase.execute()
+                IOSMediaScannerSettings.markSubmittedAutoReportMediaURLs(submittedMedia.map(\.fileURL))
                 PersistentMediaStore.deleteStoredMedia(submittedMediaURLs)
                 ReportedAnalytics.logSubmitReport(
                     county: submitCounty,
                     plateRegion: submitPlateRegion,
                     complaintCount: submitComplaintCount,
                     mediaCount: submitMediaCount,
-                    hasVideo: submitHasVideo
+                    hasVideo: submitHasVideo,
+                    mediaToSubmitMillis: state.mediaToSubmitMillis
                 )
                 print("ReportedSubmit: submit flow finished successfully")
                 state = ComposerState()
                 submittedReportObjectId = submittedObjectId
             } catch {
                 print("ReportedSubmit: submit flow failed \(error)")
+                let failedSession = try? await SharedBridge.shared.container.loadSessionUseCase.execute()
+                ReportedAnalytics.logSubmitReportFailed(
+                    surface: "new_report",
+                    stage: state.stage == .verify ? "verify" : "pick_media",
+                    error: error,
+                    plateRegion: submitPlateRegion,
+                    complaintCount: submitComplaintCount,
+                    mediaCount: submitMediaCount,
+                    hasVideo: submitHasVideo,
+                    session: failedSession,
+                    report: failureReport
+                )
                 state.loading = false
                 state.submitProgress = nil
                 state.submitMessage = nil
-                state.error = "There was an error submitting your report. Please try again."
+                state.error = ReportedAnalytics.userFacingSubmitFailureMessage(for: error)
+            }
+        }
+    }
+
+    private func uploadMediaForSubmission(
+        _ submittedMedia: [ComposerState.SubmissionMedia],
+        isPhiladelphiaSubmission: Bool
+    ) async throws -> [SubmitReportMediaFile] {
+        if isPhiladelphiaSubmission {
+            return try await uploadPhiladelphiaMedia(submittedMedia)
+        }
+        return try await uploadParseMedia(submittedMedia, messagePrefix: "Uploading media")
+    }
+
+    private func uploadPhiladelphiaMedia(
+        _ submittedMedia: [ComposerState.SubmissionMedia]
+    ) async throws -> [SubmitReportMediaFile] {
+        if submittedMedia.contains(where: { $0.isVideo }) {
+            throw ReportedSubmissionValidationError(message: philadelphiaSubmissionVideoMessage)
+        }
+        if submittedMedia.count > philadelphiaSubmissionMediaCount {
+            throw ReportedSubmissionValidationError(message: philadelphiaSubmissionMediaMessage)
+        }
+        return try await uploadParseMedia(submittedMedia, messagePrefix: "Uploading Philadelphia photos")
+    }
+
+    private func uploadParseMedia(
+        _ submittedMedia: [ComposerState.SubmissionMedia],
+        messagePrefix: String
+    ) async throws -> [SubmitReportMediaFile] {
+        try await ParseMediaUploader.uploadAll(submittedMedia) { progress in
+            await MainActor.run {
+                self.state.submitProgress = min(max(progress.overallFraction * 0.82, 0), 0.82)
+                self.state.submitMessage = "\(messagePrefix) (\(Int(progress.fileFraction * 100))%)"
             }
         }
     }
@@ -1874,6 +2503,12 @@ final class ComposerViewModel: ObservableObject {
             media: {
                 if state.primaryMedia == nil {
                     return "Add at least one photo or video."
+                }
+                if state.isPhiladelphiaSubmission && mediaItems.contains(where: { $0.isVideo }) {
+                    return philadelphiaSubmissionVideoMessage
+                }
+                if state.isPhiladelphiaSubmission && mediaItems.count > philadelphiaSubmissionMediaCount {
+                    return philadelphiaSubmissionMediaMessage
                 }
                 if mediaItems.count > maxSubmissionMediaCount {
                     return maxSubmissionMediaMessage
@@ -1923,6 +2558,15 @@ final class ComposerViewModel: ObservableObject {
         if existingMedia.contains(where: { $0.fileURL == media.fileURL }) {
             return duplicateSubmissionMediaMessage
         }
+        if state.isPhiladelphiaSubmission && media.isVideo {
+            return philadelphiaSubmissionVideoMessage
+        }
+        if state.isPhiladelphiaSubmission && existingMedia.contains(where: { $0.isVideo }) {
+            return philadelphiaSubmissionVideoMessage
+        }
+        if state.isPhiladelphiaSubmission && existingMedia.count + 1 > philadelphiaSubmissionMediaCount {
+            return philadelphiaSubmissionMediaMessage
+        }
         if existingMedia.count + 1 > maxSubmissionMediaCount {
             return maxSubmissionMediaMessage
         }
@@ -1930,6 +2574,33 @@ final class ComposerViewModel: ObservableObject {
             return maxSubmissionVideoMessage
         }
         return nil
+    }
+
+    private func applyPhiladelphiaMediaValidation() {
+        guard state.isPhiladelphiaSubmission else { return }
+        if mediaItems.contains(where: { $0.isVideo }) {
+            state.validationErrors.media = philadelphiaSubmissionVideoMessage
+        } else if mediaItems.count > philadelphiaSubmissionMediaCount {
+            state.validationErrors.media = philadelphiaSubmissionMediaMessage
+        }
+    }
+}
+
+extension ComposerState {
+    var isPhiladelphiaSubmission: Bool {
+        reportAddressProvider(
+            latitude: latitude,
+            longitude: longitude,
+            address: addressQuery.isEmpty ? address : addressQuery
+        ) == .philadelphia
+    }
+}
+
+private struct ReportedSubmissionValidationError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
     }
 }
 

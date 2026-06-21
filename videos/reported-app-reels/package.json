@@ -1,0 +1,11 @@
+{
+  "name": "reported-app-reels",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.6.118 preview",
+    "check": "npx --yes hyperframes@0.6.118 lint && npx --yes hyperframes@0.6.118 validate && npx --yes hyperframes@0.6.118 inspect",
+    "render": "npx --yes hyperframes@0.6.118 render",
+    "publish": "npx --yes hyperframes@0.6.118 publish"
+  }
+}

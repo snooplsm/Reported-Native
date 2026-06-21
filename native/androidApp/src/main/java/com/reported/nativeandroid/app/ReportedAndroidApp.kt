@@ -1,5 +1,8 @@
 package com.reported.nativeandroid.app
 
+import android.content.Context
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -9,6 +12,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -18,6 +23,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -27,11 +33,14 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -40,6 +49,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,7 +65,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -67,6 +81,7 @@ import androidx.navigation.compose.rememberNavController
 import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.navigation.AuthDestination
 import com.reported.nativeandroid.navigation.TabDestination
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.auth.SocialAuthDeepLinks
 import com.reported.nativeandroid.remoteconfig.ReportedRemoteConfig
 import com.reported.shared.model.AppThemeMode
@@ -92,6 +107,10 @@ private enum class DrawerTarget {
     Open
 }
 
+private const val SYSTEM_NOTICE_PREFS = "reported.system_notice"
+private const val DISMISSED_SYSTEM_NOTICE_KEY = "dismissed_notice"
+private const val BUY_ME_A_COFFEE_URL = "https://www.buymeacoffee.com/reported"
+
 @Composable
 fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     val navController = rememberNavController()
@@ -102,6 +121,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     var authOverlay by remember { mutableStateOf<AuthOverlayDestination?>(null) }
     var afterAuthAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val systemDark = isSystemInDarkTheme()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         sessionViewModel.onAction(SessionAction.Load)
@@ -134,9 +154,13 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
             StartupLoadingScreen()
         } else if (inMainShell) {
             val remoteConfigSnapshot by ReportedRemoteConfig.snapshot.collectAsState()
+            val systemNotice = remoteConfigSnapshot.systemNotice.trim()
+            var dismissedSystemNotice by remember { mutableStateOf(readDismissedSystemNotice(context)) }
+            val visibleSystemNotice = systemNotice.takeIf {
+                it.isNotBlank() && it != dismissedSystemNotice
+            }
             val items = buildList {
                 add(TabDestination.Report)
-                add(TabDestination.Batch)
                 add(TabDestination.AutoReport)
                 if (remoteConfigSnapshot.enableLive) add(TabDestination.Live)
                 add(TabDestination.Reports)
@@ -226,13 +250,28 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                         )
                     },
                     centerContent = { onOpenMenu ->
-                        NavHost(
-                            navController = mainNavController,
-                            startDestination = TabDestination.Report.route,
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(MaterialTheme.colorScheme.background)
                         ) {
+                            visibleSystemNotice?.let { notice ->
+                                SystemNoticeBanner(
+                                    message = notice,
+                                    onDismiss = {
+                                        dismissedSystemNotice = notice
+                                        saveDismissedSystemNotice(context, notice)
+                                    }
+                                )
+                            }
+                            NavHost(
+                                navController = mainNavController,
+                                startDestination = TabDestination.Report.route,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .background(MaterialTheme.colorScheme.background)
+                            ) {
                                     composable(TabDestination.Report.route) {
                                         ReportComposerScreen(
                                             isAuthorized = isAuthorized,
@@ -267,13 +306,6 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                     onOpenedReport = { pendingOpenReportObjectId = null }
                                 )
                             }
-                            composable(TabDestination.Batch.route) {
-                                BatchScreen(
-                                    isAuthorized = isAuthorized,
-                                    onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
-                                    onOpenMenu = onOpenMenu
-                                )
-                            }
                             composable(TabDestination.AutoReport.route) {
                                 BatchScreen(
                                     isAuthorized = isAuthorized,
@@ -299,6 +331,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                     onThemeModeSelected = { themeViewModel.onAction(ThemeAction.ModeChanged(it)) },
                                     onOpenMenu = onOpenMenu
                                 )
+                            }
                             }
                         }
 
@@ -417,6 +450,63 @@ private fun StartupLoadingScreen() {
 }
 
 @Composable
+private fun SystemNoticeBanner(
+    message: String,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, top = 8.dp, end = 6.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Text(
+                text = message,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 5.dp),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Dismiss system notice",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private fun readDismissedSystemNotice(context: Context): String =
+    context.applicationContext
+        .getSharedPreferences(SYSTEM_NOTICE_PREFS, Context.MODE_PRIVATE)
+        .getString(DISMISSED_SYSTEM_NOTICE_KEY, "")
+        .orEmpty()
+
+private fun saveDismissedSystemNotice(context: Context, notice: String) {
+    context.applicationContext
+        .getSharedPreferences(SYSTEM_NOTICE_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(DISMISSED_SYSTEM_NOTICE_KEY, notice)
+        .apply()
+}
+
+@Composable
 private fun SliderNavShell(
     modifier: Modifier = Modifier,
     drawerWidth: androidx.compose.ui.unit.Dp = 116.dp,
@@ -485,6 +575,32 @@ private fun LeftGliderNavRail(
     closeDrawer: () -> Unit,
     onSelected: (TabDestination, () -> Unit) -> Unit
 ) {
+    val uriHandler = LocalUriHandler.current
+    var showCoffeeInfo by remember { mutableStateOf(false) }
+    if (showCoffeeInfo) {
+        AlertDialog(
+            onDismissRequest = { showCoffeeInfo = false },
+            title = { Text("Buy us coffee!!") },
+            text = { Text("Reported is free to use, but we do have infrastructure costs.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCoffeeInfo = false
+                        ReportedAnalytics.logBuyMeCoffeeOpen(surface = "left_nav", source = "info_dialog")
+                        uriHandler.openUri(BUY_ME_A_COFFEE_URL)
+                        closeDrawer()
+                    }
+                ) {
+                    Text("Open Buy Me a Coffee")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCoffeeInfo = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
     Surface(
         modifier = Modifier
             .fillMaxHeight()
@@ -519,7 +635,6 @@ private fun LeftGliderNavRail(
                 ) {
                     val image = when (item) {
                         TabDestination.Report -> Icons.Outlined.AddCircle
-                        TabDestination.Batch -> Icons.Outlined.Collections
                         TabDestination.AutoReport -> Icons.Outlined.AutoAwesome
                         TabDestination.Live -> Icons.Outlined.Videocam
                         TabDestination.Reports -> Icons.AutoMirrored.Outlined.List
@@ -535,6 +650,51 @@ private fun LeftGliderNavRail(
                         text = item.label,
                         color = if (selected) androidx.compose.material3.MaterialTheme.colorScheme.primary else androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                         style = androidx.compose.material3.MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            ReportedAnalytics.logBuyMeCoffeeTapped(surface = "left_nav")
+                            ReportedAnalytics.logBuyMeCoffeeOpen(surface = "left_nav", source = "primary")
+                            uriHandler.openUri(BUY_ME_A_COFFEE_URL)
+                            closeDrawer()
+                        }
+                        .padding(vertical = 13.dp, horizontal = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.bmc_logo_no_background),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Text(
+                        text = "Buy us\ncoffee!!",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                }
+                IconButton(
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    onClick = {
+                        ReportedAnalytics.logBuyMeCoffeeInfoTapped(surface = "left_nav")
+                        showCoffeeInfo = true
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Why support Reported",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }

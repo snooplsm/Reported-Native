@@ -1,6 +1,10 @@
 package com.reported.shared
 
 import com.reported.shared.api.ReportedApi
+import com.reported.shared.api.AlwaysAttemptVehicleEnrichmentPolicy
+import com.reported.shared.api.NoOpVehicleEnrichmentTracker
+import com.reported.shared.api.VehicleEnrichmentPolicy
+import com.reported.shared.api.VehicleEnrichmentTracker
 import com.reported.shared.auth.AuthRepository
 import com.reported.shared.auth.ForgotPasswordUseCase
 import com.reported.shared.auth.LoadSessionUseCase
@@ -19,6 +23,7 @@ import com.reported.shared.reports.FetchReportDetailUseCase
 import com.reported.shared.reports.FetchReportStatsUseCase
 import com.reported.shared.reports.FetchReportsUseCase
 import com.reported.shared.reports.LoadDraftUseCase
+import com.reported.shared.reports.PreviewVehicleEnrichmentDebugNoteUseCase
 import com.reported.shared.reports.ReportsRepository
 import com.reported.shared.reports.SaveDraftUseCase
 import com.reported.shared.reports.SubmitReportUseCase
@@ -40,7 +45,9 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 class ReportedShared(
-    val config: ReportedConfig = ReportedConfig()
+    val config: ReportedConfig = ReportedConfig(),
+    private val vehicleEnrichmentTracker: VehicleEnrichmentTracker = NoOpVehicleEnrichmentTracker,
+    private val vehicleEnrichmentPolicy: VehicleEnrichmentPolicy = AlwaysAttemptVehicleEnrichmentPolicy
 ) {
     val environment: AppEnvironment = config.environment
     private val json = Json {
@@ -68,6 +75,8 @@ class ReportedShared(
         operatingSystem = config.operatingSystem,
         client = client,
         sessionStore = sessionStore,
+        vehicleEnrichmentTracker = vehicleEnrichmentTracker,
+        vehicleEnrichmentPolicy = vehicleEnrichmentPolicy,
         json = json
     )
     private val authRepository = AuthRepository(api = api, sessionStore = sessionStore)
@@ -89,6 +98,7 @@ class ReportedShared(
     val fetchReportDetailUseCase = FetchReportDetailUseCase(reportsRepository)
     val fetchReportStatsUseCase = FetchReportStatsUseCase(reportsRepository)
     val submitReportUseCase = SubmitReportUseCase(reportsRepository, submittedPlateRepository)
+    val previewVehicleEnrichmentDebugNoteUseCase = PreviewVehicleEnrichmentDebugNoteUseCase(reportsRepository)
     val changeReportStatusUseCase = ChangeReportStatusUseCase(reportsRepository)
     val deleteReportUseCase = DeleteReportUseCase(reportsRepository, submittedPlateRepository)
     val loadDraftUseCase = LoadDraftUseCase(draftRepository)

@@ -9,12 +9,28 @@ import UserNotifications
 
 private let reportedMediaScannerLogTag = "ReportedMediaScanner"
 
+private func reportedMediaContentHash(for url: URL) -> String? {
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return SHA256.hash(data: data)
+        .map { String(format: "%02x", $0) }
+        .joined()
+}
+
 enum IOSMediaScannerSettings {
     private static let notificationsEnabledKey = "reported.ios.mediaScanner.notificationsEnabled"
     private static let scannerEnabledKey = "reported.ios.mediaScanner.enabled"
     private static let offlineProcessingEnabledKey = "reported.ios.mediaScanner.offlineProcessingEnabled"
     private static let lastScanDateKey = "reported.ios.mediaScanner.lastScanDate"
     private static let seenAssetIdsKey = "reported.ios.mediaScanner.seenAssetIds"
+    private static let submittedAutoReportContentHashesKey = "reported.ios.mediaScanner.submittedAutoReportContentHashes"
+    private static let autoReportPlateConfidenceThresholdKey = "reported.ios.mediaScanner.autoReportPlateConfidenceThreshold"
+    private static let autoReportPostInferencePlateConfidenceThresholdKey = "reported.ios.mediaScanner.autoReportPostInferencePlateConfidenceThreshold"
+    private static let autoReportStateConfidenceThresholdKey = "reported.ios.mediaScanner.autoReportStateConfidenceThreshold"
+    private static let autoReportComplaintConfidenceThresholdKey = "reported.ios.mediaScanner.autoReportComplaintConfidenceThreshold"
+
+    static let defaultAutoReportConfidenceThreshold = 0.65
+    static let minimumAutoReportConfidenceThreshold = 0.50
+    static let maximumAutoReportConfidenceThreshold = 0.99
 
     static var notificationsEnabled: Bool {
         get { UserDefaults.standard.object(forKey: notificationsEnabledKey) as? Bool ?? true }
@@ -41,6 +57,33 @@ enum IOSMediaScannerSettings {
         }
     }
 
+    static var autoReportPlateConfidenceThreshold: Double {
+        get { confidenceThreshold(forKey: autoReportPlateConfidenceThresholdKey) }
+        set { setConfidenceThreshold(newValue, forKey: autoReportPlateConfidenceThresholdKey) }
+    }
+
+    static var autoReportPostInferencePlateConfidenceThreshold: Double {
+        get { confidenceThreshold(forKey: autoReportPostInferencePlateConfidenceThresholdKey) }
+        set { setConfidenceThreshold(newValue, forKey: autoReportPostInferencePlateConfidenceThresholdKey) }
+    }
+
+    static var autoReportStateConfidenceThreshold: Double {
+        get { confidenceThreshold(forKey: autoReportStateConfidenceThresholdKey) }
+        set { setConfidenceThreshold(newValue, forKey: autoReportStateConfidenceThresholdKey) }
+    }
+
+    static var autoReportComplaintConfidenceThreshold: Double {
+        get { confidenceThreshold(forKey: autoReportComplaintConfidenceThresholdKey) }
+        set { setConfidenceThreshold(newValue, forKey: autoReportComplaintConfidenceThresholdKey) }
+    }
+
+    static func resetAutoReportConfidenceThresholds() {
+        UserDefaults.standard.removeObject(forKey: autoReportPlateConfidenceThresholdKey)
+        UserDefaults.standard.removeObject(forKey: autoReportPostInferencePlateConfidenceThresholdKey)
+        UserDefaults.standard.removeObject(forKey: autoReportStateConfidenceThresholdKey)
+        UserDefaults.standard.removeObject(forKey: autoReportComplaintConfidenceThresholdKey)
+    }
+
     static var lastScanDate: Date? {
         get { UserDefaults.standard.object(forKey: lastScanDateKey) as? Date }
         set { UserDefaults.standard.set(newValue, forKey: lastScanDateKey) }
@@ -59,8 +102,46 @@ enum IOSMediaScannerSettings {
         UserDefaults.standard.set(Array(ids), forKey: seenAssetIdsKey)
     }
 
+    static func hasSubmittedAutoReportContentHash(_ hash: String) -> Bool {
+        submittedAutoReportContentHashes.contains(hash)
+    }
+
+    static func markSubmittedAutoReportContentHashes(_ hashes: [String]) {
+        let cleanHashes = hashes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !cleanHashes.isEmpty else { return }
+        var stored = submittedAutoReportContentHashes
+        cleanHashes.forEach { stored.insert($0) }
+        if stored.count > 2_500 {
+            stored = Set(Array(stored).suffix(2_000))
+        }
+        UserDefaults.standard.set(Array(stored), forKey: submittedAutoReportContentHashesKey)
+    }
+
+    static func markSubmittedAutoReportMediaURLs(_ urls: [URL]) {
+        markSubmittedAutoReportContentHashes(urls.compactMap(reportedMediaContentHash(for:)))
+    }
+
     private static var seenAssetIds: Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: seenAssetIdsKey) ?? [])
+    }
+
+    private static var submittedAutoReportContentHashes: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: submittedAutoReportContentHashesKey) ?? [])
+    }
+
+    private static func confidenceThreshold(forKey key: String) -> Double {
+        let storedValue = (UserDefaults.standard.object(forKey: key) as? NSNumber)?.doubleValue
+        return clampAutoReportConfidenceThreshold(storedValue ?? defaultAutoReportConfidenceThreshold)
+    }
+
+    private static func setConfidenceThreshold(_ value: Double, forKey key: String) {
+        UserDefaults.standard.set(clampAutoReportConfidenceThreshold(value), forKey: key)
+    }
+
+    private static func clampAutoReportConfidenceThreshold(_ value: Double) -> Double {
+        min(maximumAutoReportConfidenceThreshold, max(minimumAutoReportConfidenceThreshold, value))
     }
 
     static func effectiveNotificationsEnabled() async -> Bool {
@@ -216,7 +297,8 @@ struct IOSDetectedInfraction: Codable {
             vehicleImageDescription: nil,
             vehicleColor: nil,
             vehicleMake: nil,
-            vehicleModel: nil
+            vehicleModel: nil,
+            philadelphiaMobilityAccessDetails: nil
         )
     }
 }
@@ -377,7 +459,9 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         for (index, asset) in assets.enumerated() {
             guard !Task.isCancelled else { break }
             let result = await processAutoReport(asset: asset)
-            processedPhotos.append(result.photo)
+            if let photo = result.photo {
+                processedPhotos.append(photo)
+            }
             if let detected = result.detected,
                autoReportComplaintIds.contains(detected.complaintId) {
                 matches.append(detected)
@@ -386,7 +470,7 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         }
         return IOSAutoReportScanSummary(
             photoAccessGranted: true,
-            scannedCount: assets.count,
+            scannedCount: processedPhotos.count,
             matches: matches,
             processedPhotos: processedPhotos
         )
@@ -536,6 +620,13 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             print("\(reportedMediaScannerLogTag): skipping asset: unable to copy image data")
             return nil
         }
+        let contentHash = reportedMediaContentHash(for: media.fileURL)
+        if let contentHash,
+           IOSMediaScannerSettings.hasSubmittedAutoReportContentHash(contentHash) {
+            print("\(reportedMediaScannerLogTag): skipping asset: content hash was already submitted")
+            PersistentMediaStore.deleteStoredMedia([media.fileURL])
+            return nil
+        }
         let candidates = await NativeAlprEngine.shared.detectLicensePlates(media: media)
         print("\(reportedMediaScannerLogTag): detected \(candidates.count) plate candidate(s)")
         guard let bestPlate = candidates.bestMediaScannerCandidate() else {
@@ -545,10 +636,13 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         print(
             "\(reportedMediaScannerLogTag): best plate \(bestPlate.plate) state=\(bestPlate.state ?? "") plateConfidence=\(bestPlate.confidence) stateConfidence=\(bestPlate.stateConfidence ?? 0)"
         )
-        guard let complaintId = await NativeAlprEngine.shared.inferComplaintId(media: media) else {
+        let complaintInferenceResult = await NativeAlprEngine.shared.inferComplaint(media: media)
+        guard complaintInferenceResult.acceptedAutoReportComplaint,
+              let complaintInference = complaintInferenceResult else {
             print("\(reportedMediaScannerLogTag): skipping asset: complaint inference did not meet threshold")
             return nil
         }
+        let complaintId = complaintInference.complaintId
         let metadata = await extractSubmissionMetadata(from: media)
         let latitude = metadata.latitude ?? asset.location?.coordinate.latitude
         let longitude = metadata.longitude ?? asset.location?.coordinate.longitude
@@ -556,7 +650,6 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             await IOSMediaScanner.reverseGeocode(latitude: lat, longitude: lon)
         } ?? ""
         let occurredAtIso = metadata.occurredAtIso ?? asset.creationDate.map { scannerIsoStringUTC(from: $0) } ?? scannerIsoStringUTC(from: Date())
-        let contentHash = mediaContentHash(for: media.fileURL)
         let plateRegion = bestPlate.state ?? "NY"
         let detectedId = detectedInfractionId(
             plate: bestPlate.plate,
@@ -572,7 +665,7 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             plateConfidence: bestPlate.confidence,
             stateConfidence: bestPlate.stateConfidence ?? 0,
             complaintId: complaintId,
-            complaintConfidence: nil,
+            complaintConfidence: Double(complaintInference.confidence),
             occurredAtIso: occurredAtIso,
             address: address,
             latitude: latitude,
@@ -587,7 +680,7 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         return detected
     }
 
-    private func processAutoReport(asset: PHAsset) async -> (photo: IOSAutoReportProcessedPhoto, detected: IOSDetectedInfraction?) {
+    private func processAutoReport(asset: PHAsset) async -> (photo: IOSAutoReportProcessedPhoto?, detected: IOSDetectedInfraction?) {
         print("\(reportedMediaScannerLogTag): auto-report processing asset \(asset.localIdentifier)")
         guard let media = await copyImageAsset(asset) else {
             return (
@@ -600,6 +693,13 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
                 ),
                 nil
             )
+        }
+        let contentHash = reportedMediaContentHash(for: media.fileURL)
+        if let contentHash,
+           IOSMediaScannerSettings.hasSubmittedAutoReportContentHash(contentHash) {
+            print("\(reportedMediaScannerLogTag): auto-report skipping asset: content hash was already submitted")
+            PersistentMediaStore.deleteStoredMedia([media.fileURL])
+            return (nil, nil)
         }
 
         let candidates = await NativeAlprEngine.shared.detectLicensePlates(media: media)
@@ -619,9 +719,8 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         }
 
         let complaintInferenceResult = await NativeAlprEngine.shared.inferComplaint(media: media)
-        guard let complaintInference = complaintInferenceResult,
-              complaintInference.accepted,
-              autoReportComplaintIds.contains(complaintInference.complaintId) else {
+        guard complaintInferenceResult.acceptedAutoReportComplaint,
+              let complaintInference = complaintInferenceResult else {
             return (
                 IOSAutoReportProcessedPhoto(
                     id: asset.localIdentifier,
@@ -642,7 +741,6 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             await IOSMediaScanner.reverseGeocode(latitude: lat, longitude: lon)
         } ?? ""
         let occurredAtIso = metadata.occurredAtIso ?? asset.creationDate.map { scannerIsoStringUTC(from: $0) } ?? scannerIsoStringUTC(from: Date())
-        let contentHash = mediaContentHash(for: media.fileURL)
         let plateRegion = bestPlate.state ?? "NY"
         let detectedId = detectedInfractionId(
             plate: bestPlate.plate,
@@ -710,13 +808,6 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
         }
     }
 
-    private func mediaContentHash(for url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
     private func showDetectedNotification(_ infraction: IOSDetectedInfraction) async {
         guard await IOSMediaScannerSettings.effectiveNotificationsEnabled() else {
             print("\(reportedMediaScannerLogTag): skipping detection notification: notifications disabled")
@@ -755,8 +846,32 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
             await showNeedsEditNotification(candidateId: candidateId, reason: "Sign in to submit this detected report.")
             return
         }
+        var failureReport = ReportSubmissionFailureLogger.reportPayload(
+            plate: infraction.plate,
+            plateRegion: infraction.plateRegion,
+            address: infraction.address,
+            complaintIds: [infraction.complaintId],
+            timeOfIncidentIso: infraction.occurredAtIso,
+            latitude: infraction.latitude,
+            longitude: infraction.longitude,
+            description: "",
+            notes: "",
+            mediaFileCount: 0
+        )
         do {
             let mediaFiles = try await ParseMediaUploader.uploadAll([infraction.media])
+            failureReport = ReportSubmissionFailureLogger.reportPayload(
+                plate: infraction.plate,
+                plateRegion: infraction.plateRegion,
+                address: infraction.address,
+                complaintIds: [infraction.complaintId],
+                timeOfIncidentIso: infraction.occurredAtIso,
+                latitude: infraction.latitude,
+                longitude: infraction.longitude,
+                description: "",
+                notes: "",
+                mediaFileCount: mediaFiles.count
+            )
             _ = try await SharedBridge.shared.container.submitReportUseCase.execute(command: SubmitReportCommand(
                 plate: infraction.plate,
                 plateRegion: infraction.plateRegion,
@@ -772,13 +887,29 @@ final class IOSMediaScanner: NSObject, PHPhotoLibraryChangeObserver, UNUserNotif
                 vehicleMake: nil,
                 vehicleModel: nil,
                 mediaUrls: [],
-                mediaFiles: mediaFiles
+                mediaFiles: mediaFiles,
+                vehicleVin: nil,
+                vehicleYear: nil,
+                vehicleBodyClass: nil,
+                philadelphiaMobilityAccessDetails: nil
             ))
+            IOSMediaScannerSettings.markSubmittedAutoReportContentHashes([infraction.contentHash].compactMap { $0 })
             PersistentMediaStore.deleteStoredMedia([infraction.mediaURL])
             IOSDetectedInfractionStore.remove(id: candidateId)
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [candidateId])
         } catch {
             print("\(reportedMediaScannerLogTag): detected infraction submit failed \(error)")
+            ReportedAnalytics.logSubmitReportFailed(
+                surface: "detected_infraction_notification",
+                stage: "background_submit",
+                error: error,
+                plateRegion: infraction.plateRegion,
+                complaintCount: infraction.complaintId.isEmpty ? 0 : 1,
+                mediaCount: 1,
+                hasVideo: infraction.media.isVideo,
+                session: session,
+                report: failureReport
+            )
             try? await SharedBridge.shared.container.saveDraftUseCase.execute(draft: infraction.toDraft())
             await showNeedsEditNotification(candidateId: candidateId, reason: "Open Reported to review this detected report.")
         }
@@ -856,12 +987,10 @@ private func notificationComplaintLabel(for complaintId: String) -> String {
 }
 
 private let autoReportComplaintIds: Set<String> = ["Z8vjWz8uYr", "GzRxlMN1vl"]
-private let autoReportStandardPlateConfidenceThreshold = 0.65
-private let autoReportPostInferencePlateConfidenceThreshold = 0.65
-private let autoReportStateConfidenceThreshold = 0.65
-private let autoReportComplaintConfidenceThreshold = 0.65
 
-let autoReportConfidenceThresholdSummary = "Thresholds: plate \(scannerConfidencePercent(autoReportStandardPlateConfidenceThreshold))+, state \(scannerConfidencePercent(autoReportStateConfidenceThreshold))+, infraction \(scannerConfidencePercent(autoReportComplaintConfidenceThreshold))+."
+var autoReportConfidenceThresholdSummary: String {
+    "Thresholds: plate \(scannerConfidencePercent(IOSMediaScannerSettings.autoReportPlateConfidenceThreshold))+, state \(scannerConfidencePercent(IOSMediaScannerSettings.autoReportStateConfidenceThreshold))+, infraction \(scannerConfidencePercent(IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold))+."
+}
 
 private func ifLet<A, B, T>(_ a: A?, _ b: B?, transform: (A, B) async -> T?) async -> T? {
     guard let a, let b else { return nil }
@@ -872,7 +1001,7 @@ private extension Array where Element == ComposerState.PlateCandidate {
     func bestMediaScannerCandidate() -> ComposerState.PlateCandidate? {
         filter { candidate in
             candidate.confidence >= candidate.mediaScannerPlateThreshold &&
-                (candidate.stateConfidence ?? 0) >= autoReportStateConfidenceThreshold &&
+                (candidate.stateConfidence ?? 0) >= IOSMediaScannerSettings.autoReportStateConfidenceThreshold &&
                 candidate.state?.isEmpty == false
         }
         .max { lhs, rhs in
@@ -893,7 +1022,7 @@ private extension ComposerState.PlateCandidate {
     }
 
     var mediaScannerPlateThreshold: Double {
-        hasPostInferredNyForHirePlate ? autoReportPostInferencePlateConfidenceThreshold : autoReportStandardPlateConfidenceThreshold
+        hasPostInferredNyForHirePlate ? IOSMediaScannerSettings.autoReportPostInferencePlateConfidenceThreshold : IOSMediaScannerSettings.autoReportPlateConfidenceThreshold
     }
 
     var mediaScannerScore: Double {
@@ -901,18 +1030,19 @@ private extension ComposerState.PlateCandidate {
     }
 
     var mediaScannerConfidenceSummary: String {
-        "\(plate) \(state ?? "") plate \(scannerConfidencePercent(confidence)) (needs \(scannerConfidencePercent(mediaScannerPlateThreshold))), state \(scannerConfidencePercent(stateConfidence ?? 0)) (needs \(scannerConfidencePercent(autoReportStateConfidenceThreshold)))"
+        "\(plate) \(state ?? "") plate \(scannerConfidencePercent(confidence)) (needs \(scannerConfidencePercent(mediaScannerPlateThreshold))), state \(scannerConfidencePercent(stateConfidence ?? 0)) (needs \(scannerConfidencePercent(IOSMediaScannerSettings.autoReportStateConfidenceThreshold)))"
     }
 }
 
 private extension Optional where Wrapped == ComplaintInferenceResult {
     var acceptedAutoReportComplaint: Bool {
         guard let result = self else { return false }
-        return result.accepted && autoReportComplaintIds.contains(result.complaintId)
+        return Double(result.confidence) >= IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold &&
+            autoReportComplaintIds.contains(result.complaintId)
     }
 
     func autoReportComplaintConfidenceSummary(matched: Bool) -> String {
-        let required = scannerConfidencePercent(autoReportComplaintConfidenceThreshold)
+        let required = scannerConfidencePercent(IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold)
         guard let result = self else {
             return "Reported infraction model returned no blocked bike lane/crosswalk detection score (needs \(required))."
         }

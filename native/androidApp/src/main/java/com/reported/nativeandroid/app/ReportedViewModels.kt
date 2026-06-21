@@ -2,21 +2,28 @@ package com.reported.nativeandroid.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.os.SystemClock
 import android.util.Log
+import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.analytics.ReportedAnalytics
+import com.reported.nativeandroid.batch.BatchSubmitStore
 import com.reported.nativeandroid.di.AppGraph
 import com.reported.nativeandroid.media.LocalSubmissionMediaCleaner
 import com.reported.nativeandroid.media.ParseMediaUploader
 import com.reported.nativeandroid.remoteconfig.ReportedRemoteConfig
 import com.reported.shared.model.AppThemeMode
 import com.reported.shared.model.Catalogs
+import com.reported.shared.model.CityReportingRules
 import com.reported.shared.model.DraftMedia
 import com.reported.shared.model.DraftPlateCandidate
+import com.reported.shared.model.PhiladelphiaMobilityAccessCatalogs
+import com.reported.shared.model.PhiladelphiaMobilityAccessDetails
 import com.reported.shared.model.PlatePatternClassifier
 import com.reported.shared.model.ReportDraft
 import com.reported.shared.model.ReportFilter
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.SubmitReportCommand
+import com.reported.shared.model.SubmitReportMediaFile
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,6 +31,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -696,6 +705,7 @@ class ComposerViewModel : ViewModel() {
     val state: StateFlow<ComposerUiState> = _state.asStateFlow()
     private val _events = MutableSharedFlow<ComposerEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<ComposerEvent> = _events.asSharedFlow()
+    private var vehicleClassificationDebugJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -727,6 +737,7 @@ class ComposerViewModel : ViewModel() {
             is ComposerAction.PrimaryMediaChosen -> onPrimaryMediaChosen(action.media, action.complaintId)
             is ComposerAction.ExtraMediaAdded -> addExtraMedia(action.media)
             is ComposerAction.MediaRemoved -> removeMedia(action.media)
+            is ComposerAction.MediaRejected -> rejectMedia(action.media, action.message)
             is ComposerAction.VideoProcessingDecision -> onVideoProcessingDecision(action.process)
             ComposerAction.VideoProcessingCancelled -> cancelVideoProcessing()
             ComposerAction.DetectionResultDismissed -> _state.update { it.copy(detectionResultMessage = null) }
@@ -766,6 +777,17 @@ class ComposerViewModel : ViewModel() {
                 description = action.description ?: _state.value.description,
                 notes = action.notes ?: _state.value.notes,
                 occurredAtIso = action.occurredAtIso ?: _state.value.occurredAtIso
+            )
+            is ComposerAction.PhiladelphiaMobilityAccessChanged -> updatePhiladelphiaMobilityAccess(
+                blockNumber = action.blockNumber,
+                streetName = action.streetName,
+                zipCode = action.zipCode,
+                vehicleMake = action.vehicleMake,
+                vehicleModel = action.vehicleModel,
+                bodyStyle = action.bodyStyle,
+                vehicleColor = action.vehicleColor,
+                violationObserved = action.violationObserved,
+                frequency = action.frequency
             )
         }
     }
@@ -807,6 +829,8 @@ class ComposerViewModel : ViewModel() {
                             model = draft.vehicleModel
                         )
                     } ?: current.vehicleDescription,
+                    philadelphiaMobilityAccessDetails = draft?.philadelphiaMobilityAccessDetails
+                        ?: current.philadelphiaMobilityAccessDetails,
                     draftLoaded = true,
                     error = null
                 )
@@ -858,9 +882,10 @@ class ComposerViewModel : ViewModel() {
                 complaintSheetOpen = true,
                 error = null,
                 validationErrors = it.validationErrors.copy(media = null)
-            )
+            ).withMediaAddedTiming(previous = it)
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     fun confirmPendingComplaint(complaintId: String) {
@@ -915,7 +940,7 @@ class ComposerViewModel : ViewModel() {
                 photoOccurredAtIso = null,
                 photoAddressSuggestion = null,
                 validationErrors = it.validationErrors.copy(media = null, complaint = null)
-            )
+            ).withMediaAddedTiming(previous = it)
         }
         persistDraft()
     }
@@ -943,7 +968,7 @@ class ComposerViewModel : ViewModel() {
                 photoOccurredAtIso = null,
                 photoAddressSuggestion = null,
                 validationErrors = it.validationErrors.copy(media = null)
-            )
+            ).withMediaAddedTiming(previous = it)
         }
         persistDraft()
     }
@@ -957,14 +982,22 @@ class ComposerViewModel : ViewModel() {
             it.copy(
                 extraMedia = it.extraMedia + media,
                 validationErrors = it.validationErrors.copy(media = null)
-            )
+            ).withMediaAddedTiming(previous = it)
         }
         persistDraft()
     }
 
     fun removeExtraMedia(media: SubmissionMedia) {
         _state.update {
-            it.copy(extraMedia = it.extraMedia.filterNot { candidate -> candidate == media })
+            val remainingExtras = it.extraMedia.filterNot { candidate -> candidate == media }
+            it.copy(
+                extraMedia = remainingExtras,
+                firstMediaAddedElapsedRealtimeMs = if (it.primaryMedia != null || remainingExtras.isNotEmpty()) {
+                    it.firstMediaAddedElapsedRealtimeMs
+                } else {
+                    null
+                }
+            )
         }
         persistDraft()
     }
@@ -976,9 +1009,15 @@ class ComposerViewModel : ViewModel() {
                     val nextPrimary = current.extraMedia.firstOrNull()
                     val remainingExtras = if (nextPrimary != null) current.extraMedia.drop(1) else emptyList()
                     val mediaError = if (nextPrimary != null) null else current.validationErrors.media
+                    val hasRemainingMedia = nextPrimary != null || remainingExtras.isNotEmpty()
                     current.copy(
                         primaryMedia = nextPrimary,
                         extraMedia = remainingExtras,
+                        firstMediaAddedElapsedRealtimeMs = if (hasRemainingMedia) {
+                            current.firstMediaAddedElapsedRealtimeMs
+                        } else {
+                            null
+                        },
                         stage = if (nextPrimary != null || current.hasComplaintData()) {
                             SubmissionStage.VERIFY
                         } else {
@@ -1005,8 +1044,36 @@ class ComposerViewModel : ViewModel() {
                         validationErrors = current.validationErrors.copy(media = mediaError)
                     )
                 }
-                else -> current.copy(extraMedia = current.extraMedia.filterNot { candidate -> candidate == media })
+                else -> {
+                    val remainingExtras = current.extraMedia.filterNot { candidate -> candidate == media }
+                    current.copy(
+                        extraMedia = remainingExtras,
+                        firstMediaAddedElapsedRealtimeMs = if (current.primaryMedia != null || remainingExtras.isNotEmpty()) {
+                            current.firstMediaAddedElapsedRealtimeMs
+                        } else {
+                            null
+                        }
+                    )
+                }
             }
+        }
+        persistDraft()
+        refreshVehicleClassificationDebugNote()
+    }
+
+    private fun rejectMedia(media: SubmissionMedia, message: String) {
+        removeMedia(media)
+        _state.update {
+            it.copy(
+                awaitingVideoProcessingDecision = false,
+                pendingVideoProcessingMedia = null,
+                detectingPlates = false,
+                detectionMessage = null,
+                detectionResultMessage = null,
+                detectionProgress = 0f,
+                detectionFramePreviewUri = null,
+                validationErrors = it.validationErrors.copy(media = message)
+            )
         }
         persistDraft()
     }
@@ -1101,12 +1168,15 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     fun applyVehicleDescription(vehicleDescription: VehicleDescription) {
         _state.update { current ->
             current.copy(
                 vehicleDescription = vehicleDescription,
+                philadelphiaMobilityAccessDetails = current.philadelphiaMobilityAccessDetails
+                    .prefilledFrom(vehicleDescription),
                 notes = if (current.notes.isBlank()) {
                     vehicleDescription.formattedForNotes()
                 } else {
@@ -1142,6 +1212,7 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     fun updateAddressQuery(value: String) {
@@ -1180,6 +1251,7 @@ class ComposerViewModel : ViewModel() {
                 latitude = suggestion.latitude,
                 longitude = suggestion.longitude,
                 plateRegion = suggestion.region ?: it.plateRegion,
+                philadelphiaMobilityAccessDetails = it.philadelphiaMobilityAccessDetails.withAddressSuggestion(suggestion),
                 addressSuggestions = emptyList(),
                 lookupInFlight = false,
                 validationErrors = it.validationErrors.copy(
@@ -1201,7 +1273,7 @@ class ComposerViewModel : ViewModel() {
         photoAddressSuggestion: AddressSuggestion? = null
     ) {
         _state.update {
-            it.copy(
+            val updated = it.copy(
                 occurredAtIso = occurredAtIso ?: it.occurredAtIso,
                 photoOccurredAtIso = photoOccurredAtIso ?: it.photoOccurredAtIso,
                 latitude = latitude ?: it.latitude,
@@ -1210,18 +1282,67 @@ class ComposerViewModel : ViewModel() {
                 plateRegion = inferredState ?: it.plateRegion,
                 address = inferredAddress ?: it.address,
                 addressQuery = inferredAddress ?: it.addressQuery,
+                philadelphiaMobilityAccessDetails = photoAddressSuggestion
+                    ?.let { suggestion -> it.philadelphiaMobilityAccessDetails.withAddressSuggestion(suggestion) }
+                    ?: it.philadelphiaMobilityAccessDetails,
                 validationErrors = it.validationErrors.copy(
                     plateRegion = if (inferredState != null) null else it.validationErrors.plateRegion,
                     address = if (inferredAddress != null) null else it.validationErrors.address,
                     occurredAt = if (occurredAtIso != null) null else it.validationErrors.occurredAt
                 )
             )
+            updated.withPhiladelphiaMediaValidation()
         }
         persistDraft()
     }
 
     fun clearComposerError() {
         _state.update { it.copy(error = null) }
+    }
+
+    private fun refreshVehicleClassificationDebugNote() {
+        if (!BuildConfig.DEBUG) return
+        val normalizedPlate = PlatePatternClassifier.normalizePlateInput(_state.value.plate)
+            .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
+        if (
+            normalizedPlate.length < 2 ||
+            (normalizedPlate.firstOrNull() != 'T' && normalizedPlate.firstOrNull() != 'Y')
+        ) {
+            applyVehicleClassificationDebugNote(null)
+            return
+        }
+
+        vehicleClassificationDebugJob?.cancel()
+        vehicleClassificationDebugJob = viewModelScope.launch {
+            delay(350)
+            val debugNote = runCatching {
+                AppGraph.shared.previewVehicleEnrichmentDebugNoteUseCase.execute(normalizedPlate)
+            }.getOrNull()
+            val latestPlate = PlatePatternClassifier.normalizePlateInput(_state.value.plate)
+                .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
+            if (latestPlate == normalizedPlate) {
+                applyVehicleClassificationDebugNote(debugNote)
+            }
+        }
+    }
+
+    private fun applyVehicleClassificationDebugNote(debugNote: String?) {
+        if (!BuildConfig.DEBUG) return
+        _state.update { current ->
+            val nextLines = if (current.notes.isBlank()) {
+                mutableListOf()
+            } else {
+                current.notes
+                    .lineSequence()
+                    .filterNot { it.startsWith(VehicleClassificationDebugPrefix) }
+                    .toMutableList()
+            }
+            debugNote?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let(nextLines::add)
+            current.copy(notes = nextLines.joinToString("\n"))
+        }
+        persistDraft()
     }
 
     fun update(
@@ -1234,6 +1355,7 @@ class ComposerViewModel : ViewModel() {
     ) {
         val normalizedPlate = PlatePatternClassifier.normalizePlateInput(plate)
             .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
+        val didChangePlate = normalizedPlate != _state.value.plate
         _state.update {
             it.copy(
                 plate = normalizedPlate,
@@ -1254,6 +1376,39 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
+        if (didChangePlate) {
+            refreshVehicleClassificationDebugNote()
+        }
+    }
+
+    private fun updatePhiladelphiaMobilityAccess(
+        blockNumber: String? = null,
+        streetName: String? = null,
+        zipCode: String? = null,
+        vehicleMake: String? = null,
+        vehicleModel: String? = null,
+        bodyStyle: String? = null,
+        vehicleColor: String? = null,
+        violationObserved: String? = null,
+        frequency: String? = null
+    ) {
+        _state.update { current ->
+            val details = current.philadelphiaMobilityAccessDetails
+            current.copy(
+                philadelphiaMobilityAccessDetails = details.copy(
+                    blockNumber = blockNumber ?: details.blockNumber,
+                    streetName = streetName ?: details.streetName,
+                    zipCode = zipCode ?: details.zipCode,
+                    vehicleMake = vehicleMake ?: details.vehicleMake,
+                    vehicleModel = vehicleModel ?: details.vehicleModel,
+                    bodyStyle = bodyStyle ?: details.bodyStyle,
+                    vehicleColor = vehicleColor ?: details.vehicleColor,
+                    violationObserved = violationObserved ?: details.violationObserved,
+                    frequency = frequency ?: details.frequency
+                )
+            )
+        }
+        persistDraft()
     }
 
     private fun acceptPlateCorrection() {
@@ -1268,6 +1423,7 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
+        refreshVehicleClassificationDebugNote()
     }
 
     private fun keepPlateCorrection() {
@@ -1315,7 +1471,8 @@ class ComposerViewModel : ViewModel() {
                     vehicleImageDescription = snapshot.vehicleDescription?.imageDescription,
                     vehicleColor = snapshot.vehicleDescription?.color,
                     vehicleMake = snapshot.vehicleDescription?.make,
-                    vehicleModel = snapshot.vehicleDescription?.model
+                    vehicleModel = snapshot.vehicleDescription?.model,
+                    philadelphiaMobilityAccessDetails = snapshot.philadelphiaMobilityAccessDetails
                 )
             )
         }
@@ -1344,50 +1501,46 @@ class ComposerViewModel : ViewModel() {
                     error = null
                 )
             }
+            var lastSubmitCommand: SubmitReportCommand? = null
             runCatching {
                 val snapshot = _state.value
                 val submittedMedia = listOfNotNull(snapshot.primaryMedia) + snapshot.extraMedia
+                val philadelphiaDetails = snapshot.submittablePhiladelphiaMobilityAccessDetails()
+                var attemptedCommand = SubmitReportCommand(
+                    plate = snapshot.plate,
+                    plateRegion = snapshot.plateRegion,
+                    description = snapshot.description,
+                    notes = snapshot.notes,
+                    address = snapshot.addressQuery.ifBlank { snapshot.address },
+                    complaintIds = snapshot.selectedComplaintIds,
+                    timeOfIncidentIso = snapshot.occurredAtIso.ifBlank { null },
+                    latitude = snapshot.latitude,
+                    longitude = snapshot.longitude,
+                    vehicleImageDescription = snapshot.vehicleDescription?.imageDescription,
+                    vehicleColor = philadelphiaDetails?.vehicleColor?.ifBlank { null }
+                        ?: snapshot.vehicleDescription?.color,
+                    vehicleMake = philadelphiaDetails?.vehicleMake?.ifBlank { null }
+                        ?: snapshot.vehicleDescription?.make,
+                    vehicleModel = philadelphiaDetails?.vehicleModel?.ifBlank { null }
+                        ?: snapshot.vehicleDescription?.model,
+                    vehicleBodyClass = philadelphiaDetails?.bodyStyle?.ifBlank { null },
+                    philadelphiaMobilityAccessDetails = philadelphiaDetails
+                )
+                lastSubmitCommand = attemptedCommand
                 Log.d(
                     "ReportedSubmit",
                     "Validated report; media=${submittedMedia.size} plate=${snapshot.plate}/${snapshot.plateRegion} complaintIds=${snapshot.selectedComplaintIds}"
                 )
                 _state.update { it.copy(submitMessage = "Uploading media", submitProgress = 0.02f) }
-                val mediaFiles = ParseMediaUploader.uploadAll(
-                    AppGraph.applicationContext,
-                    submittedMedia
-                ) { progress ->
-                    val totalFiles = progress.totalFiles.coerceAtLeast(1)
-                    val overall = ((progress.currentFileIndex.toFloat() + progress.fraction) / totalFiles.toFloat())
-                        .coerceIn(0f, 1f)
-                    _state.update {
-                        it.copy(
-                            submitProgress = overall * 0.82f,
-                            submitMessage = "${progress.message} (${(progress.fraction * 100).toInt()}%)"
-                        )
-                    }
-                }
+                val mediaFiles = uploadMediaForSubmission(snapshot, submittedMedia)
                 Log.d("ReportedSubmit", "Media upload complete; parseFiles=${mediaFiles.size}")
                 _state.update { it.copy(submitMessage = "Submitting report", submitProgress = 0.88f) }
-                val submittedObjectId = AppGraph.shared.submitReportUseCase.execute(
-                    SubmitReportCommand(
-                        plate = snapshot.plate,
-                        plateRegion = snapshot.plateRegion,
-                        description = snapshot.description,
-                        notes = snapshot.notes,
-                        address = snapshot.addressQuery.ifBlank { snapshot.address },
-                        complaintIds = snapshot.selectedComplaintIds,
-                        timeOfIncidentIso = snapshot.occurredAtIso.ifBlank { null },
-                        latitude = snapshot.latitude,
-                        longitude = snapshot.longitude,
-                        vehicleImageDescription = snapshot.vehicleDescription?.imageDescription,
-                        vehicleColor = snapshot.vehicleDescription?.color,
-                        vehicleMake = snapshot.vehicleDescription?.make,
-                        vehicleModel = snapshot.vehicleDescription?.model,
-                        mediaFiles = mediaFiles
-                    )
-                )
+                attemptedCommand = attemptedCommand.copy(mediaFiles = mediaFiles)
+                lastSubmitCommand = attemptedCommand
+                val submittedObjectId = AppGraph.shared.submitReportUseCase.execute(attemptedCommand)
                 Log.d("ReportedSubmit", "Parse submission complete; cleaning local media")
                 _state.update { it.copy(submitMessage = "Cleaning up", submitProgress = 0.96f) }
+                BatchSubmitStore.markSubmittedAutoReportMedia(AppGraph.applicationContext, submittedMedia)
                 LocalSubmissionMediaCleaner.cleanupAfterSuccessfulSubmit(
                     context = AppGraph.applicationContext,
                     media = submittedMedia,
@@ -1399,7 +1552,8 @@ class ComposerViewModel : ViewModel() {
                     plateRegion = snapshot.plateRegion,
                     complaintCount = snapshot.selectedComplaintIds.size,
                     mediaCount = submittedMedia.size,
-                    hasVideo = submittedMedia.any { it.isVideo }
+                    hasVideo = submittedMedia.any { it.isVideo },
+                    mediaToSubmitMillis = snapshot.mediaToSubmitMillis()
                 )
             }.onSuccess { result ->
                 ReportedAnalytics.logSubmitReport(
@@ -1407,7 +1561,8 @@ class ComposerViewModel : ViewModel() {
                     plateRegion = result.plateRegion,
                     complaintCount = result.complaintCount,
                     mediaCount = result.mediaCount,
-                    hasVideo = result.hasVideo
+                    hasVideo = result.hasVideo,
+                    mediaToSubmitMillis = result.mediaToSubmitMillis
                 )
                 Log.d("ReportedSubmit", "Submit flow finished successfully")
                 AppGraph.shared.clearDraftUseCase.execute()
@@ -1419,6 +1574,46 @@ class ComposerViewModel : ViewModel() {
                 _events.tryEmit(ComposerEvent.ReportSubmitted(result.objectId))
             }.onFailure { error ->
                 Log.e("ReportedSubmit", "Submit flow failed", error)
+                val failedSnapshot = _state.value
+                val failedMedia = listOfNotNull(failedSnapshot.primaryMedia) + failedSnapshot.extraMedia
+                ReportedAnalytics.logSubmitReportFailed(
+                    surface = "new_report",
+                    stage = if (failedSnapshot.stage == SubmissionStage.VERIFY) "verify" else "pick_media",
+                    error = error,
+                    plateRegion = failedSnapshot.plateRegion,
+                    complaintCount = failedSnapshot.selectedComplaintIds.size,
+                    mediaCount = failedMedia.size,
+                    hasVideo = failedMedia.any { it.isVideo },
+                    session = runCatching { AppGraph.shared.loadSessionUseCase.execute() }.getOrNull(),
+                    command = lastSubmitCommand ?: SubmitReportCommand(
+                        plate = failedSnapshot.plate,
+                        plateRegion = failedSnapshot.plateRegion,
+                        description = failedSnapshot.description,
+                        notes = failedSnapshot.notes,
+                        address = failedSnapshot.addressQuery.ifBlank { failedSnapshot.address },
+                        complaintIds = failedSnapshot.selectedComplaintIds,
+                        timeOfIncidentIso = failedSnapshot.occurredAtIso.ifBlank { null },
+                        latitude = failedSnapshot.latitude,
+                        longitude = failedSnapshot.longitude,
+                        vehicleImageDescription = failedSnapshot.vehicleDescription?.imageDescription,
+                        vehicleColor = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
+                            ?.vehicleColor
+                            ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleDescription?.color,
+                        vehicleMake = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
+                            ?.vehicleMake
+                            ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleDescription?.make,
+                        vehicleModel = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
+                            ?.vehicleModel
+                            ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleDescription?.model,
+                        vehicleBodyClass = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
+                            ?.bodyStyle
+                            ?.ifBlank { null },
+                        philadelphiaMobilityAccessDetails = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
+                    )
+                )
                 _state.update { current ->
                     current.copy(
                         submitting = false,
@@ -1430,6 +1625,43 @@ class ComposerViewModel : ViewModel() {
             }
         }
     }
+
+    private suspend fun uploadMediaForSubmission(
+        snapshot: ComposerUiState,
+        submittedMedia: List<SubmissionMedia>
+    ): List<SubmitReportMediaFile> =
+        if (snapshot.isPhiladelphiaSubmission()) {
+            uploadPhiladelphiaMedia(submittedMedia)
+        } else {
+            uploadParseMedia(submittedMedia, "Uploading media")
+        }
+
+    private suspend fun uploadPhiladelphiaMedia(
+        submittedMedia: List<SubmissionMedia>
+    ): List<SubmitReportMediaFile> {
+        require(submittedMedia.none { it.isVideo }) { PhiladelphiaSubmissionVideoMessage }
+        require(submittedMedia.size <= PhiladelphiaSubmissionMediaCount) { PhiladelphiaSubmissionMediaMessage }
+        return uploadParseMedia(submittedMedia, "Uploading Philadelphia photos")
+    }
+
+    private suspend fun uploadParseMedia(
+        submittedMedia: List<SubmissionMedia>,
+        messagePrefix: String
+    ): List<SubmitReportMediaFile> =
+        ParseMediaUploader.uploadAll(
+            AppGraph.applicationContext,
+            submittedMedia
+        ) { progress ->
+            val totalFiles = progress.totalFiles.coerceAtLeast(1)
+            val overall = ((progress.currentFileIndex.toFloat() + progress.fraction) / totalFiles.toFloat())
+                .coerceIn(0f, 1f)
+            _state.update {
+                it.copy(
+                    submitProgress = overall * 0.82f,
+                    submitMessage = "$messagePrefix (${(progress.fraction * 100).toInt()}%)"
+                )
+            }
+        }
 
     fun prepareSubmit(): Boolean {
         val suggestion = PlatePatternClassifier.suggestedCorrection(_state.value.plate)
@@ -1469,6 +1701,8 @@ class ComposerViewModel : ViewModel() {
         ComposerValidationErrors(
             media = when {
                 state.primaryMedia == null -> "Add at least one photo or video."
+                state.isPhiladelphiaSubmission() && state.mediaItems().any { it.isVideo } -> PhiladelphiaSubmissionVideoMessage
+                state.isPhiladelphiaSubmission() && state.mediaItems().size > PhiladelphiaSubmissionMediaCount -> PhiladelphiaSubmissionMediaMessage
                 state.mediaItems().size > MaxSubmissionMediaCount -> MaxSubmissionMediaMessage
                 state.mediaItems().count { it.isVideo } > MaxSubmissionVideoCount -> MaxSubmissionVideoMessage
                 else -> null
@@ -1555,6 +1789,7 @@ private const val MaxSubmissionVideoCount = 1
 private const val MaxSubmissionMediaMessage = "You can attach up to 3 photos or videos."
 private const val MaxSubmissionVideoMessage = "You can attach no more than 1 video."
 private const val DuplicateSubmissionMediaMessage = "That photo or video is already attached."
+private const val VehicleClassificationDebugPrefix = "[DEBUG] Vehicle classification"
 
 private data class SubmitAnalyticsPayload(
     val objectId: String,
@@ -1562,7 +1797,8 @@ private data class SubmitAnalyticsPayload(
     val plateRegion: String,
     val complaintCount: Int,
     val mediaCount: Int,
-    val hasVideo: Boolean
+    val hasVideo: Boolean,
+    val mediaToSubmitMillis: Long?
 )
 
 private fun inferCounty(address: String): String {
@@ -1586,17 +1822,51 @@ private fun inferCounty(address: String): String {
 private fun ComposerUiState.mediaItems(): List<SubmissionMedia> =
     listOfNotNull(primaryMedia) + extraMedia
 
+private fun ComposerUiState.withMediaAddedTiming(previous: ComposerUiState): ComposerUiState {
+    if (
+        previous.mediaItems().isEmpty() &&
+        previous.firstMediaAddedElapsedRealtimeMs == null &&
+        mediaItems().isNotEmpty()
+    ) {
+        val items = mediaItems()
+        ReportedAnalytics.logReportMediaAdded(
+            surface = "new_report",
+            mediaCount = items.size,
+            hasVideo = items.any { it.isVideo }
+        )
+        return copy(firstMediaAddedElapsedRealtimeMs = SystemClock.elapsedRealtime())
+    }
+    return this
+}
+
+private fun ComposerUiState.mediaToSubmitMillis(): Long? =
+    firstMediaAddedElapsedRealtimeMs?.let { (SystemClock.elapsedRealtime() - it).coerceAtLeast(0L) }
+
 private fun ComposerUiState.mediaLimitErrorFor(
     media: SubmissionMedia,
     replacingPrimary: Boolean
 ): String? {
     val existingMedia = if (replacingPrimary) extraMedia else mediaItems()
+    val isPhiladelphia = isPhiladelphiaSubmission()
     return when {
         existingMedia.any { it.uri == media.uri } -> DuplicateSubmissionMediaMessage
+        isPhiladelphia && media.isVideo -> PhiladelphiaSubmissionVideoMessage
+        isPhiladelphia && existingMedia.any { it.isVideo } -> PhiladelphiaSubmissionVideoMessage
+        isPhiladelphia && existingMedia.size + 1 > PhiladelphiaSubmissionMediaCount -> PhiladelphiaSubmissionMediaMessage
         existingMedia.size + 1 > MaxSubmissionMediaCount -> MaxSubmissionMediaMessage
         media.isVideo && existingMedia.count { it.isVideo } >= MaxSubmissionVideoCount -> MaxSubmissionVideoMessage
         else -> null
     }
+}
+
+private fun ComposerUiState.withPhiladelphiaMediaValidation(): ComposerUiState {
+    if (!isPhiladelphiaSubmission()) return this
+    val mediaError = when {
+        mediaItems().any { it.isVideo } -> PhiladelphiaSubmissionVideoMessage
+        mediaItems().size > PhiladelphiaSubmissionMediaCount -> PhiladelphiaSubmissionMediaMessage
+        else -> validationErrors.media
+    }
+    return copy(validationErrors = validationErrors.copy(media = mediaError))
 }
 
 private fun ReportSummary.reportKey(): String =
@@ -1609,6 +1879,7 @@ private fun ReportDraft.hasComplaintData(): Boolean =
         address.isNotBlank() ||
         description.isNotBlank() ||
         notes.isNotBlank() ||
+        philadelphiaMobilityAccessDetails?.hasAnyValue == true ||
         occurredAtIso.isNotBlank() ||
         primaryMedia != null ||
         extraMedia.isNotEmpty() ||
@@ -1623,8 +1894,44 @@ private fun ComposerUiState.hasComplaintData(): Boolean =
         addressQuery.isNotBlank() ||
         description.isNotBlank() ||
         notes.isNotBlank() ||
+        philadelphiaMobilityAccessDetails.hasAnyValue ||
         occurredAtIso.isNotBlank() ||
         primaryMedia != null ||
         extraMedia.isNotEmpty() ||
         latitude != null ||
         longitude != null
+
+private fun PhiladelphiaMobilityAccessDetails.withAddressSuggestion(
+    suggestion: AddressSuggestion
+): PhiladelphiaMobilityAccessDetails =
+    copy(
+        blockNumber = suggestion.blockNumber ?: blockNumber,
+        streetName = suggestion.streetName ?: streetName,
+        zipCode = suggestion.zipCode ?: zipCode
+    )
+
+private fun PhiladelphiaMobilityAccessDetails.prefilledFrom(
+    vehicleDescription: VehicleDescription
+): PhiladelphiaMobilityAccessDetails =
+    copy(
+        vehicleMake = vehicleMake.ifBlank {
+            PhiladelphiaMobilityAccessCatalogs.canonicalVehicleMake(vehicleDescription.make).orEmpty()
+        },
+        vehicleModel = vehicleModel.ifBlank { vehicleDescription.model.orEmpty() },
+        vehicleColor = vehicleColor.ifBlank {
+            vehicleDescription.color
+                ?.let { detectedColor ->
+                    PhiladelphiaMobilityAccessCatalogs.vehicleColors
+                        .firstOrNull { it.equals(detectedColor, ignoreCase = true) }
+                }
+                .orEmpty()
+        }
+    )
+
+private fun ComposerUiState.submittablePhiladelphiaMobilityAccessDetails(): PhiladelphiaMobilityAccessDetails? {
+    val submitAddress = addressQuery.ifBlank { address }
+    if (!CityReportingRules.isPhiladelphiaReport(latitude, longitude, submitAddress)) return null
+    return philadelphiaMobilityAccessDetails
+        .takeIf { it.hasAnyValue }
+        ?: PhiladelphiaMobilityAccessDetails()
+}

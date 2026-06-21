@@ -39,7 +39,7 @@ class SubmitReportUseCase(private val repository: ReportsRepository) {
         if (tracker != null) {
             val normalized = normalizedPlateKey(command.plate, command.plateRegion)
             println("ReportedSubmit: checking local duplicate cache")
-            val localDuplicate = tracker.contains(command.plate, command.plateRegion)
+            val localDuplicate = tracker.contains(command)
             println("ReportedSubmit: fetching existing reports for duplicate check")
             val existingReports = repository.fetchReports(
                 filter = ReportFilter(license = command.plate),
@@ -47,22 +47,26 @@ class SubmitReportUseCase(private val repository: ReportsRepository) {
                 forCurrentUser = true
             ).reports
             println("ReportedSubmit: duplicate check returned ${existingReports.size} report(s)")
-            if (existingReports.any { normalizedPlateKey(it.plate, it.plateRegion) == normalized }) {
-                tracker.add(command)
+            if (existingReports.any { isDuplicateSubmission(it, command, normalized) }) {
                 println("ReportedSubmit: duplicate found from server report list")
                 throw DuplicateReportException(command.plate, command.plateRegion)
             }
             if (localDuplicate) {
                 println("ReportedSubmit: removing stale local duplicate cache entry")
-                tracker.remove(command.plate, command.plateRegion)
+                tracker.remove(command)
             }
         }
         println("ReportedSubmit: sending Parse submission")
         val objectId = repository.submitReport(command)
         println("ReportedSubmit: Parse submission sent objectId=$objectId")
-        tracker?.add(command)
+        tracker?.add(command, objectId)
         return objectId
     }
+}
+
+class PreviewVehicleEnrichmentDebugNoteUseCase(private val repository: ReportsRepository) {
+    @Throws(Exception::class)
+    suspend fun execute(plate: String): String? = repository.previewVehicleEnrichmentDebugNote(plate)
 }
 
 class ChangeReportStatusUseCase(private val repository: ReportsRepository) {

@@ -22,7 +22,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>cab.reported</string>
+			<string>com.reported.reported</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>reported</string>
@@ -33,18 +33,18 @@
 			<string>Google Sign-In</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois</string>
+				<string>com.googleusercontent.apps.131272311428-4jjr2un9bb6stj1pbvpd9a73qnp64hvh</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GIDClientID</key>
-	<string>131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois.apps.googleusercontent.com</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Reported may save temporary report media generated while preparing a submission.</string>
+	<string>131272311428-4jjr2un9bb6stj1pbvpd9a73qnp64hvh.apps.googleusercontent.com</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Reported uses the microphone when you choose to talk through report fields.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Reported may save temporary report media generated while preparing a submission.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Reported uses your photo library to attach report media, read photo time and location metadata, and run optional on-device infraction detection.</string>
 	<key>UIApplicationSceneManifest</key>

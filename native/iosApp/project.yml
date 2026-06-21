@@ -31,7 +31,7 @@ targets:
         CFBundleDisplayName: Reported
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        GIDClientID: 131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois.apps.googleusercontent.com
+        GIDClientID: 131272311428-4jjr2un9bb6stj1pbvpd9a73qnp64hvh.apps.googleusercontent.com
         NSPhotoLibraryUsageDescription: Reported uses your photo library to attach report media, read photo time and location metadata, and run optional on-device infraction detection.
         NSPhotoLibraryAddUsageDescription: Reported may save temporary report media generated while preparing a submission.
         NSMicrophoneUsageDescription: Reported uses the microphone when you choose to talk through report fields.
@@ -41,12 +41,12 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleURLTypes:
-          - CFBundleURLName: cab.reported
+          - CFBundleURLName: com.reported.reported
             CFBundleURLSchemes:
               - reported
           - CFBundleURLName: Google Sign-In
             CFBundleURLSchemes:
-              - com.googleusercontent.apps.131272311428-nfcdup2bd2vhnh3obo9l3kjn7nlmkois
+              - com.googleusercontent.apps.131272311428-4jjr2un9bb6stj1pbvpd9a73qnp64hvh
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -55,19 +55,21 @@ targets:
       path: ReportediOS/Resources/ReportediOS.entitlements
       properties:
         keychain-access-groups:
-          - $(AppIdentifierPrefix)cab.reported
+          - $(AppIdentifierPrefix)com.reported.reported
+        com.apple.security.application-groups:
+          - group.cab.reported.nyc
         com.apple.developer.applesignin:
           - Default
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cab.reported
+        PRODUCT_BUNDLE_IDENTIFIER: com.reported.reported
         PRODUCT_NAME: ReportediOS
         SWIFT_VERSION: "5.10"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: B5M5MPWY89
-        MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 97
+        DEVELOPMENT_TEAM: 5GB9SD339W
+        MARKETING_VERSION: 3.1.6
+        CURRENT_PROJECT_VERSION: 62
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
@@ -82,6 +84,8 @@ targets:
         product: FirebaseCrashlytics
       - package: Firebase
         product: FirebaseRemoteConfig
+      - package: Firebase
+        product: FirebaseFirestore
       - package: Lottie
         product: Lottie
       - package: GoogleSignIn
@@ -94,12 +98,17 @@ targets:
         embed: true
     preBuildScripts:
       - name: Build SharedCore
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/SharedCoreBuild.stamp
         script: |
           export JAVA_HOME=$(/usr/libexec/java_home)
           cd "$SRCROOT/.."
-          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-daemon
+          touch "${DERIVED_FILE_DIR}/SharedCoreBuild.stamp"
     postBuildScripts:
       - name: Normalize Embedded Framework Minimum OS
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/NormalizeOnnxMinimumOS.stamp
         script: |
           ONNX_FRAMEWORK="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework"
           ONNX_PLIST="${ONNX_FRAMEWORK}/Info.plist"
@@ -110,6 +119,7 @@ targets:
               /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none --generate-entitlement-der "$ONNX_FRAMEWORK"
             fi
           fi
+          touch "${DERIVED_FILE_DIR}/NormalizeOnnxMinimumOS.stamp"
   ReportedShareExtension:
     type: app-extension
     platform: iOS
@@ -131,13 +141,16 @@ targets:
               NSExtensionActivationSupportsMovieWithMaxCount: 20
     entitlements:
       path: ReportedShareExtension/Resources/ReportedShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.cab.reported.nyc
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: cab.reported.shareextension
+        PRODUCT_BUNDLE_IDENTIFIER: com.reported.reported.shareextension
         PRODUCT_NAME: ReportedShareExtension
         SWIFT_VERSION: "5.10"
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: B5M5MPWY89
-        MARKETING_VERSION: 3.0.8
-        CURRENT_PROJECT_VERSION: 97
+        DEVELOPMENT_TEAM: 5GB9SD339W
+        MARKETING_VERSION: 3.1.6
+        CURRENT_PROJECT_VERSION: 62

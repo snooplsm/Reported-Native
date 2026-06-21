@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,6 +35,9 @@ import com.reported.nativeandroid.screens.ReportedField
 import com.reported.nativeandroid.screens.ScreenSection
 import com.reported.shared.model.AppThemeMode
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+
+private const val REPORTED_ROBOFLOW_PROJECT_URL = "https://app.roboflow.com/reported/reported/13"
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -173,6 +177,7 @@ fun SettingsScreen(
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     val backgroundScanningSupported = MediaScannerSettings.supportsBackgroundLibraryScanning()
@@ -188,6 +193,9 @@ fun SettingsScreen(
     var notificationsEnabled by remember {
         mutableStateOf(MediaScannerSettings.isNotificationsEnabled(context) && MediaScannerSettings.hasNotificationPermission(context))
     }
+    var autoReportPlateThreshold by remember { mutableStateOf(AutoReportThresholds.plateConfidence(context)) }
+    var autoReportStateThreshold by remember { mutableStateOf(AutoReportThresholds.stateConfidence(context)) }
+    var autoReportComplaintThreshold by remember { mutableStateOf(AutoReportThresholds.complaintConfidence(context)) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -384,14 +392,57 @@ fun SettingsScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text("Confidence thresholds", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                AutoReportThresholds.summary(),
+                                AutoReportThresholds.summary(context),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Text(
+                                "Trained with Reported data.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(onClick = { uriHandler.openUri(REPORTED_ROBOFLOW_PROJECT_URL) }) {
+                                Text("View Roboflow project")
+                            }
+                            SettingsThresholdSlider(
+                                title = "Plate",
+                                value = autoReportPlateThreshold,
+                                onValueChange = { value ->
+                                    autoReportPlateThreshold = value
+                                    AutoReportThresholds.setPlateConfidence(context, value)
+                                    AutoReportThresholds.setPostInferencePlateConfidence(context, value)
+                                }
+                            )
+                            SettingsThresholdSlider(
+                                title = "State",
+                                value = autoReportStateThreshold,
+                                onValueChange = { value ->
+                                    autoReportStateThreshold = value
+                                    AutoReportThresholds.setStateConfidence(context, value)
+                                }
+                            )
+                            SettingsThresholdSlider(
+                                title = "Infraction",
+                                value = autoReportComplaintThreshold,
+                                onValueChange = { value ->
+                                    autoReportComplaintThreshold = value
+                                    AutoReportThresholds.setComplaintConfidence(context, value)
+                                }
+                            )
+                            TextButton(
+                                onClick = {
+                                    AutoReportThresholds.reset(context)
+                                    autoReportPlateThreshold = AutoReportThresholds.plateConfidence(context)
+                                    autoReportStateThreshold = AutoReportThresholds.stateConfidence(context)
+                                    autoReportComplaintThreshold = AutoReportThresholds.complaintConfidence(context)
+                                }
+                            ) {
+                                Text("Reset thresholds")
+                            }
                         }
                     }
 
@@ -500,6 +551,37 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsThresholdSlider(
+    title: String,
+    value: Float,
+    onValueChange: (Float) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                AutoReportThresholds.percent(value),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = { next ->
+                val rounded = (next * 100f).roundToInt() / 100f
+                onValueChange(rounded.coerceIn(AutoReportThresholds.MIN_CONFIDENCE, AutoReportThresholds.MAX_CONFIDENCE))
+            },
+            valueRange = AutoReportThresholds.MIN_CONFIDENCE..AutoReportThresholds.MAX_CONFIDENCE,
+            steps = 48
+        )
     }
 }
 

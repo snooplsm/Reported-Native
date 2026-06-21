@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreGraphics
+import Darwin
 import FirebaseAnalytics
 import ImageIO
 import LiteRTLM
@@ -30,6 +31,12 @@ private func currentInterfaceIsLandscape(fallbackSize: CGSize) -> Bool {
 }
 
 private let preferredPlateRegions = ["NY", "NJ", "CT", "PA", "FL", "OTHER"]
+private let dismissedSystemNoticeKey = "reported.dismissed_system_notice"
+private let buyMeACoffeeURL = URL(string: "https://www.buymeacoffee.com/reported")!
+private let reportedRoboflowProjectURL = URL(string: "https://app.roboflow.com/reported/reported/13")!
+private let philadelphiaSubmissionVideoMessage = "Philadelphia Parking Authority reports do not accept videos. Add up to 2 JPG or PNG photos instead."
+private let reportedAiFabDiameter: CGFloat = 58
+private let reportedAiFabBottomPadding: CGFloat = 24
 private let allPlateRegions = [
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
@@ -314,6 +321,8 @@ struct MainShellView: View {
     @State private var reportSubmitBarVisible = false
     @State private var submittedSnackbarObjectId: String?
     @State private var pendingOpenReportObjectId: String?
+    @State private var systemNotice = RemoteConfigOverrides.shared.systemNotice
+    @State private var dismissedSystemNotice = UserDefaults.standard.string(forKey: dismissedSystemNoticeKey) ?? ""
     @GestureState private var navigationDragTranslation: CGFloat = 0
 
     var body: some View {
@@ -338,6 +347,9 @@ struct MainShellView: View {
                 selection = .report
                 closeNavigation()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reportedRemoteConfigUpdated)) { _ in
+            refreshSystemNotice()
         }
     }
 
@@ -396,6 +408,14 @@ struct MainShellView: View {
                 reportOwnsToolbar: reportOwnsToolbar,
                 profileLogoutUsesToolbar: profileLogoutUsesToolbar
             )
+            if let notice = visibleSystemNotice {
+                SystemNoticeBanner(message: notice) {
+                    dismissSystemNotice(notice)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             destinationContent(
                 reportOwnsToolbar: reportOwnsToolbar,
                 profileLogoutUsesToolbar: profileLogoutUsesToolbar
@@ -404,6 +424,24 @@ struct MainShellView: View {
         }
         .frame(width: size.width, height: size.height)
         .background(Color(.systemBackground))
+        .animation(.easeInOut(duration: 0.2), value: visibleSystemNotice)
+    }
+
+    private var visibleSystemNotice: String? {
+        let notice = systemNotice.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !notice.isEmpty, notice != dismissedSystemNotice else {
+            return nil
+        }
+        return notice
+    }
+
+    private func refreshSystemNotice() {
+        systemNotice = RemoteConfigOverrides.shared.systemNotice
+    }
+
+    private func dismissSystemNotice(_ notice: String) {
+        dismissedSystemNotice = notice
+        UserDefaults.standard.set(notice, forKey: dismissedSystemNoticeKey)
     }
 
     @ViewBuilder
@@ -412,7 +450,6 @@ struct MainShellView: View {
             MainShellToolbar(
                 title: selection.title,
                 showClear: selection == .report && reportHasDraftContent,
-                onVoiceAssist: selection == .report ? { reportVoiceAssistRequest += 1 } : nil,
                 trailingActionTitle: profileLogoutUsesToolbar ? "Logout" : nil,
                 trailingAction: profileLogoutUsesToolbar ? { sessionViewModel.onAction(.logout) } : nil,
                 onMenuTapped: { toggleNavigation() },
@@ -621,12 +658,18 @@ private struct MainShellToolbar: View {
                     if let onVoiceAssist {
                         Button(action: onVoiceAssist) {
                             AnimatedSparkleIcon(size: compact ? 17 : 19)
-                                .frame(width: compact ? 30 : 34, height: compact ? 30 : 34)
+                                .frame(width: compact ? 32 : 36, height: compact ? 32 : 36)
+                                .background(Color.reportedOrange.opacity(0.14))
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.reportedOrange.opacity(0.35), lineWidth: 1)
+                                )
+                                .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.reportedOrange)
                         .accessibilityLabel("Reported AI")
-                        .offset(x: compact ? 31 : 35)
+                        .offset(x: compact ? 32 : 37)
                     }
                 }
 
@@ -653,6 +696,44 @@ private struct MainShellToolbar: View {
     }
 }
 
+private struct SystemNoticeBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color.reportedOrange)
+                .padding(.top, 1)
+
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Dismiss system notice")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.reportedOrange.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.reportedOrange.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 private struct AnimatedSparkleIcon: View {
     let size: CGFloat
     var color: Color = .reportedOrange
@@ -675,6 +756,8 @@ private struct AnimatedSparkleIcon: View {
 struct LeftGliderNavView: View {
     let selection: MainShellDestination
     let onSelect: (MainShellDestination) -> Void
+    @Environment(\.openURL) private var openURL
+    @State private var showCoffeeInfo = false
 
     var body: some View {
         let destinations = MainShellDestination.allCases
@@ -707,10 +790,65 @@ struct LeftGliderNavView: View {
                 }
             }
             .padding(.top, topPadding)
+
+            VStack(spacing: 0) {
+                Spacer()
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        ReportedAnalytics.logBuyMeCoffeeTapped(surface: "left_nav")
+                        ReportedAnalytics.logBuyMeCoffeeOpen(surface: "left_nav", source: "primary")
+                        openURL(buyMeACoffeeURL)
+                    } label: {
+                        VStack(spacing: 7) {
+                            Image("BuyMeACoffeeLogo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 28, height: 28)
+                            Text("Buy us\ncoffee!!")
+                                .font(.caption2.weight(.semibold))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                        .foregroundStyle(Color.reportedOrange)
+                        .frame(width: 92)
+                        .frame(minHeight: 70)
+                        .background(Color.reportedOrange.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Buy us coffee")
+
+                    Button {
+                        ReportedAnalytics.logBuyMeCoffeeInfoTapped(surface: "left_nav")
+                        showCoffeeInfo = true
+                    } label: {
+                        Image(systemName: "info.circle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.reportedOrange)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Why support Reported")
+                    .zIndex(1)
+                }
+                .padding(.bottom, 18)
+            }
+            .frame(maxHeight: .infinity)
         }
         .frame(width: 116)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
+        .alert("Buy us coffee!!", isPresented: $showCoffeeInfo) {
+            Button("OK", role: .cancel) {}
+            Button("Open Buy Me a Coffee") {
+                ReportedAnalytics.logBuyMeCoffeeOpen(surface: "left_nav", source: "info_dialog")
+                openURL(buyMeACoffeeURL)
+            }
+        } message: {
+            Text("Reported is free to use, but we do have infrastructure costs.")
+        }
     }
 }
 
@@ -950,6 +1088,7 @@ struct ComposerScreen: View {
     @State private var tutorialNotificationsEnabled = true
     @State private var isLandscapeComposer = false
     @State private var isKeyboardVisible = false
+    @State private var fullScreenTextEditorField: ReportLongTextField?
 #if DEBUG
     @State private var debugMediaImportConsumed = false
 #endif
@@ -1032,6 +1171,9 @@ struct ComposerScreen: View {
         let hasImageTimeSource = viewModel.state.primaryMedia?.isVideo == false
         var view = AnyView(composerContent)
         view = AnyView(view.overlay(alignment: .bottom) { detectionProgressChip })
+        view = AnyView(view.overlay(alignment: .bottomTrailing) {
+            reportedAiFloatingButton
+        })
         view = AnyView(view.sheet(isPresented: $showOccurredAtPicker) {
             ReportedDateTimeSheet(
                 isoValue: viewModel.state.occurredAtIso,
@@ -1082,6 +1224,11 @@ struct ComposerScreen: View {
                     set: { viewModel.onAction(.addressQueryChanged($0)) }
                 ),
                 suggestions: viewModel.state.addressSuggestions,
+                addressProvider: reportAddressProvider(
+                    latitude: viewModel.state.latitude,
+                    longitude: viewModel.state.longitude,
+                    address: viewModel.state.addressQuery.isEmpty ? viewModel.state.address : viewModel.state.addressQuery
+                ),
                 isLoading: viewModel.state.lookupInFlight,
                 isError: viewModel.state.validationErrors.address != nil,
                 imageAddressSuggestion: refreshedPhotoAddressSuggestion,
@@ -1131,82 +1278,16 @@ struct ComposerScreen: View {
                 }
             )
         })
-        view = AnyView(view.sheet(isPresented: $showVoiceAssistSheet, onDismiss: {
-            voiceImageContextTask?.cancel()
-            voiceImageContextTask = nil
-            _ = voiceAudio.stopRecording()
-        }) {
-            VoiceReportAssistantSheet(
-                audio: voiceAudio,
-                transcript: voiceTranscript,
-                draft: voiceDraft,
-                changeRows: voiceDraft?.changeRows(currentState: viewModel.state, complaintOptions: complaintOptions) ?? [],
-                isProcessing: voiceProcessing,
-                isMinimized: isVoiceAssistSheetMinimized,
-                modelInstalled: voiceModelInstalled,
-                modelDownloading: voiceModelDownloading,
-                modelDownloadProgress: voiceModelDownloadProgress,
-                modelDownloadSizeLabel: OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel,
-                accelerationMessage: OnDeviceGemmaVoiceDraftEngine.accelerationMessage,
-                error: voiceError,
-                onRequestPermission: {
-                    Task {
-                        let granted = await voiceAudio.requestPermissions()
-                        if !granted {
-                            voiceError = voiceAudio.errorMessage ?? "Microphone access is needed to talk through report fields."
-                        } else {
-                            voiceError = nil
-                        }
-                    }
-                },
-                onDownloadModel: {
-                    Task {
-                        await downloadVoiceModel()
-                    }
-                },
-                onTalk: {
-                    Task {
-                        await startVoiceAssistantCapture()
-                    }
-                },
-                onStop: {
-                    Task {
-                        await stopVoiceAssistantCapture()
-                    }
-                },
-                onClear: {
-                    resetVoiceAssistant()
-                },
-                onApply: { draft in
-                    applyVoiceDraft(draft)
-                },
-                onDismiss: {
-                    voiceImageContextTask?.cancel()
-                    voiceImageContextTask = nil
-                    _ = voiceAudio.stopRecording()
-                    showVoiceAssistSheet = false
+        view = AnyView(view.fullScreenCover(item: $fullScreenTextEditorField) { field in
+            FullScreenReportTextEditor(
+                title: field.title,
+                placeholder: field.placeholder,
+                text: reportTextBinding(for: field),
+                onDone: {
+                    fullScreenTextEditorField = nil
+                    viewModel.onAction(.draftPersistenceRequested)
                 }
             )
-            .presentationDetents(
-                voiceAssistantSheetDetents,
-                selection: $voiceAssistSheetDetent
-            )
-            .presentationContentInteraction(.resizes)
-            .presentationDragIndicator(.hidden)
-            .presentationBackground(Color(.systemBackground))
-            .presentationBackgroundInteraction(.enabled)
-            .onChange(of: voiceAudio.isRecording) { _, isRecording in
-                guard !isRecording else { return }
-                withAnimation(.snappy) {
-                    voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
-                }
-            }
-            .onChange(of: voiceProcessing) { _, isProcessing in
-                guard isProcessing else { return }
-                withAnimation(.snappy) {
-                    voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
-                }
-            }
         })
         view = AnyView(view.sheet(isPresented: $showReportTutorial) {
             NewReportTutorialSheet(
@@ -1229,6 +1310,9 @@ struct ComposerScreen: View {
             if showsBottomSubmitBar {
                 submitBottomBar()
             }
+        })
+        view = AnyView(view.overlay(alignment: .bottom) {
+            voiceAssistantFloatingOverlay
         })
         view = AnyView(view.onAppear {
             onSubmitBarVisibilityChanged(showsBottomSubmitBar)
@@ -1317,8 +1401,9 @@ struct ComposerScreen: View {
             pickedItem: $pickedItem,
             pickedItems: $pickedItems,
             maxSelectionCount: max(1, viewModel.remainingMediaSlots),
+            allowsVideos: !viewModel.state.isPhiladelphiaSubmission,
             handlePickedItem: handlePickedItem,
-            handleAdditionalPickedItem: handleAdditionalPickedItem
+            handlePickedItems: handlePickedItems
         )))
         view = AnyView(view.task(id: "\(sharedMediaImportId ?? "")-\(viewModel.state.draftLoaded)") {
             guard let importId = sharedMediaImportId else { return }
@@ -1424,18 +1509,11 @@ struct ComposerScreen: View {
         startVoiceImageContextWarmup()
     }
 
-    private var voiceAssistantSheetDetents: Set<PresentationDetent> {
-        if voiceAudio.isRecording {
-            return [
-                .height(voiceAssistantMinimizedSheetHeight),
-                .height(voiceAssistantCompactSheetHeight),
-                .large
-            ]
-        }
-        return [
-            .height(voiceAssistantCompactSheetHeight),
-            .large
-        ]
+    private func dismissVoiceAssistant() {
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        _ = voiceAudio.stopRecording()
+        showVoiceAssistSheet = false
     }
 
     private var isVoiceAssistSheetMinimized: Bool {
@@ -1605,6 +1683,118 @@ struct ComposerScreen: View {
         viewModel.state.stage == .verify && !isDetectionSheetVisible && !isLandscapeComposer && !isKeyboardVisible
     }
 
+    private var isReportedAiFabVisible: Bool {
+        viewModel.state.primaryMedia != nil && !isKeyboardVisible
+    }
+
+    @ViewBuilder
+    private var reportedAiFloatingButton: some View {
+        if isReportedAiFabVisible {
+            Button(action: openVoiceAssistant) {
+                AnimatedSparkleIcon(size: 21, color: .white)
+                    .frame(width: reportedAiFabDiameter, height: reportedAiFabDiameter)
+                    .background(Color.reportedOrange)
+                    .clipShape(Circle())
+                    .shadow(color: Color.black.opacity(0.22), radius: 12, x: 0, y: 6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Reported AI")
+            .padding(.trailing, isLandscapeComposer ? 24 : 20)
+            .padding(.bottom, reportedAiFabBottomPadding)
+        }
+    }
+
+    @ViewBuilder
+    private var voiceAssistantFloatingOverlay: some View {
+        if showVoiceAssistSheet {
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    voiceAssistantSheetContent
+                        .frame(height: voiceAssistantOverlayHeight(for: geometry.size.height))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.snappy, value: showVoiceAssistSheet)
+            .animation(.snappy, value: voiceAssistSheetDetent)
+        }
+    }
+
+    private var voiceAssistantSheetContent: some View {
+        VoiceReportAssistantSheet(
+            audio: voiceAudio,
+            transcript: voiceTranscript,
+            draft: voiceDraft,
+            changeRows: voiceDraft?.changeRows(currentState: viewModel.state, complaintOptions: complaintOptions) ?? [],
+            isProcessing: voiceProcessing,
+            isMinimized: isVoiceAssistSheetMinimized,
+            modelInstalled: voiceModelInstalled,
+            modelDownloading: voiceModelDownloading,
+            modelDownloadProgress: voiceModelDownloadProgress,
+            modelDownloadSizeLabel: OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel,
+            accelerationMessage: OnDeviceGemmaVoiceDraftEngine.accelerationMessage,
+            error: voiceError,
+            onRequestPermission: {
+                Task {
+                    let granted = await voiceAudio.requestPermissions()
+                    if !granted {
+                        voiceError = voiceAudio.errorMessage ?? "Microphone access is needed to talk through report fields."
+                    } else {
+                        voiceError = nil
+                    }
+                }
+            },
+            onDownloadModel: {
+                Task {
+                    await downloadVoiceModel()
+                }
+            },
+            onTalk: {
+                Task {
+                    await startVoiceAssistantCapture()
+                }
+            },
+            onStop: {
+                Task {
+                    await stopVoiceAssistantCapture()
+                }
+            },
+            onClear: {
+                resetVoiceAssistant()
+            },
+            onApply: { draft in
+                applyVoiceDraft(draft)
+            },
+            onDismiss: dismissVoiceAssistant
+        )
+        .onChange(of: voiceAudio.isRecording) { _, isRecording in
+            guard !isRecording else { return }
+            withAnimation(.snappy) {
+                voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
+            }
+        }
+        .onChange(of: voiceProcessing) { _, isProcessing in
+            guard isProcessing else { return }
+            withAnimation(.snappy) {
+                voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
+            }
+        }
+    }
+
+    private func voiceAssistantOverlayHeight(for availableHeight: CGFloat) -> CGFloat {
+        let desiredHeight: CGFloat
+        if voiceAssistSheetDetent == .large {
+            desiredHeight = availableHeight - 18
+        } else if isVoiceAssistSheetMinimized {
+            desiredHeight = voiceAssistantMinimizedSheetHeight
+        } else {
+            desiredHeight = voiceAssistantCompactSheetHeight
+        }
+        let maximumHeight = max(voiceAssistantMinimizedSheetHeight, availableHeight - 6)
+        return min(max(desiredHeight, voiceAssistantMinimizedSheetHeight), maximumHeight)
+    }
+
     private var composerContent: some View {
         GeometryReader { geometry in
             let isLandscape = currentInterfaceIsLandscape(fallbackSize: geometry.size)
@@ -1615,7 +1805,8 @@ struct ComposerScreen: View {
                 let trailingPadding = horizontalPadding + (isLandscape ? horizontalUnsafeAreaWidth : 0)
                 let landscapeLeftColumnWidth = landscapeMediaColumnWidth(for: geometry.size.width)
                 let landscapeColumnSpacing: CGFloat = 14
-                let bottomPadding: CGFloat = viewModel.state.stage == .verify ? (isLandscape ? 24 + geometry.safeAreaInsets.bottom : 16) : 8
+                let fabSpacerHeight = isReportedAiFabVisible ? reportedAiFabDiameter : 0
+                let bottomPadding: CGFloat = (viewModel.state.stage == .verify ? (isLandscape ? 24 + geometry.safeAreaInsets.bottom : 16) : 8) + fabSpacerHeight
                 let content = ScrollView {
                     Group {
                         switch viewModel.state.stage {
@@ -1706,7 +1897,12 @@ struct ComposerScreen: View {
             viewModel.onAction(.addressLookupLoadingChanged(true))
             try? await Task.sleep(for: .milliseconds(250))
             if Task.isCancelled { return }
-            let suggestions = await searchNycAddresses(query: newValue)
+            let suggestions = await searchReportAddresses(
+                query: newValue,
+                latitude: viewModel.state.latitude,
+                longitude: viewModel.state.longitude,
+                address: viewModel.state.address
+            )
             if Task.isCancelled { return }
             viewModel.onAction(.addressSuggestionsChanged(suggestions))
         }
@@ -1817,7 +2013,7 @@ struct ComposerScreen: View {
                         ) {
                             ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "pick_media")
                             pendingComplaintId = option.id
-                            singlePickerPresented = true
+                            presentMediaPicker()
                         }
                     }
                     UploadMediaTile(
@@ -1826,7 +2022,7 @@ struct ComposerScreen: View {
                         titleFont: availableWidth >= 700 ? .title2.weight(.semibold) : .subheadline.weight(.semibold)
                     ) {
                         pendingComplaintId = nil
-                        singlePickerPresented = true
+                        presentMediaPicker()
                     }
                 }
             }
@@ -2207,18 +2403,17 @@ struct ComposerScreen: View {
     }
 
     private var addMoreMediaButton: some View {
-        SecondaryButton(title: viewModel.state.primaryMedia == nil ? "Add photo or video" : "Add more photos or videos") {
+        SecondaryButton(title: addMediaButtonTitle) {
             pendingComplaintId = viewModel.state.selectedComplaintId
-            if viewModel.state.primaryMedia != nil {
-                if viewModel.remainingMediaSlots > 0 {
-                    multiPickerPresented = true
-                } else {
-                    viewModel.onAction(.mediaLimitReached)
-                }
-            } else {
-                singlePickerPresented = true
-            }
+            presentMediaPicker()
         }
+    }
+
+    private var addMediaButtonTitle: String {
+        if viewModel.state.isPhiladelphiaSubmission {
+            return viewModel.state.primaryMedia == nil ? "Add photo" : "Add another photo"
+        }
+        return viewModel.state.primaryMedia == nil ? "Add photo or video" : "Add more photos or videos"
     }
 
     private var submitInlineButton: some View {
@@ -2296,129 +2491,91 @@ struct ComposerScreen: View {
 
     @ViewBuilder
     private func verifyFormContent(isLandscape: Bool, isTablet: Bool) -> some View {
-        let complaintMaxWidth: CGFloat = isLandscape ? .infinity : (isTablet ? 312 : 156)
-        let complaintMinWidth: CGFloat = isLandscape ? 160 : (isTablet ? 260 : 130)
-        let plateWidth: CGFloat = isLandscape || isTablet ? 150 : 134
-        let stateWidth: CGFloat = isLandscape || isTablet ? 76 : 62
-        let multilineFieldMinHeight: CGFloat? = isLandscape || isTablet ? 104 : nil
-
-        HStack(alignment: .top, spacing: 12) {
-            ComplaintPickerField(
-                value: complaintOptions.first(where: { $0.id == viewModel.state.selectedComplaintId })?.title ?? "Select complaint",
-                isError: viewModel.state.validationErrors.complaint != nil
-            ) {
+        ReportVerifyFields(
+            complaintValue: complaintOptions.first(where: { $0.id == viewModel.state.selectedComplaintId })?.title ?? "Select complaint",
+            plateValue: viewModel.state.plate,
+            plateCandidateCount: viewModel.state.plateCandidates.count,
+            plateRegionValue: viewModel.state.plateRegion,
+            addressValue: viewModel.state.addressQuery,
+            occurredAtValue: viewModel.state.occurredAtIso.reportDateTimeDisplay,
+            validationErrors: viewModel.state.validationErrors,
+            descriptionText: Binding(get: { viewModel.state.description }, set: { viewModel.onAction(.fieldsChanged(description: $0)) }),
+            notesText: Binding(get: { viewModel.state.notes }, set: { viewModel.onAction(.fieldsChanged(notes: $0)) }),
+            philadelphiaDetails: viewModel.state.isPhiladelphiaSubmission ? viewModel.state.philadelphiaMobilityAccessDetails : nil,
+            isLandscape: isLandscape,
+            isTablet: isTablet,
+            onComplaintTapped: {
                 ReportedAnalytics.logComplaintChooserTapped(
                     surface: "verify",
                     selectedComplaintId: viewModel.state.selectedComplaintId
                 )
                 showComplaintChooser = true
-            }
-            .frame(minWidth: complaintMinWidth, maxWidth: complaintMaxWidth)
-            PlateInputField(
-                text: viewModel.state.plate,
-                isError: viewModel.state.validationErrors.plate != nil,
-                candidateCount: viewModel.state.plateCandidates.count,
-                onEdit: {
-                    ReportedAnalytics.logPlateChooserTapped(
-                        candidateCount: viewModel.state.plateCandidates.count,
-                        hasPlate: !viewModel.state.plate.isEmpty
-                    )
-                    showPlateEntryScreen = true
-                }
-            )
-            .frame(width: plateWidth)
-            PickerField(
-                title: "State",
-                value: viewModel.state.plateRegion,
-                isError: viewModel.state.validationErrors.plateRegion != nil,
-                showsChevron: false,
-                alignment: .center
-            ) {
+            },
+            onPlateTapped: {
+                ReportedAnalytics.logPlateChooserTapped(
+                    candidateCount: viewModel.state.plateCandidates.count,
+                    hasPlate: !viewModel.state.plate.isEmpty
+                )
+                showPlateEntryScreen = true
+            },
+            onStateTapped: {
                 ReportedAnalytics.logStateChooserTapped(currentRegion: viewModel.state.plateRegion)
                 showAllPlateRegions = false
                 showPlateRegionSheet = true
+            },
+            onAddressTapped: {
+                    openAddressSearchScreen()
+            },
+            onAddressClear: {
+                viewModel.onAction(.addressQueryChanged(""))
+            },
+            onAddressMapTapped: {
+                openAddressMapSheet()
+            },
+            onOccurredAtTapped: {
+            refreshOccurredAtImageTime()
+            showOccurredAtPicker = true
+            },
+            onDescriptionTapped: {
+                fullScreenTextEditorField = .description
+            },
+            onNotesTapped: {
+                fullScreenTextEditorField = .notes
+            },
+            onPhiladelphiaMobilityAccessChanged: { details in
+                viewModel.onAction(.philadelphiaMobilityAccessChanged(
+                    blockNumber: details.blockNumber,
+                    streetName: details.streetName,
+                    zipCode: details.zipCode,
+                    vehicleMake: details.vehicleMake,
+                    vehicleModel: details.vehicleModel,
+                    bodyStyle: details.bodyStyle,
+                    vehicleColor: details.vehicleColor,
+                    violationObserved: details.violationObserved,
+                    frequency: details.frequency
+                ))
+            },
+            onDescriptionChanged: {
+                viewModel.onAction(.draftPersistenceRequested)
+            },
+            onNotesChanged: {
+                viewModel.onAction(.draftPersistenceRequested)
             }
-            .frame(width: stateWidth)
-        }
-        FieldErrorGroup([
-            viewModel.state.validationErrors.complaint,
-            viewModel.state.validationErrors.plate,
-            viewModel.state.validationErrors.plateRegion
-        ])
-        if isLandscape {
-            HStack(alignment: .top, spacing: 12) {
-                addressPickerField
-                occurredAtField
-            }
-        } else {
-            addressPickerField
-            occurredAtField
-        }
-        if isLandscape {
-            HStack(alignment: .top, spacing: 12) {
-                InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.onAction(.fieldsChanged(description: $0)) }), fieldMinHeight: multilineFieldMinHeight)
-                    .onChange(of: viewModel.state.description) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
-                InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.onAction(.fieldsChanged(notes: $0)) }), fieldMinHeight: multilineFieldMinHeight)
-                    .onChange(of: viewModel.state.notes) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
-            }
-        } else {
-            InputField(title: "Description (public facing)", text: Binding(get: { viewModel.state.description }, set: { viewModel.onAction(.fieldsChanged(description: $0)) }), fieldMinHeight: multilineFieldMinHeight)
-                .onChange(of: viewModel.state.description) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
-            InputField(title: "Notes (for your records)", text: Binding(get: { viewModel.state.notes }, set: { viewModel.onAction(.fieldsChanged(notes: $0)) }), fieldMinHeight: multilineFieldMinHeight)
-                .onChange(of: viewModel.state.notes) { _, _ in viewModel.onAction(.draftPersistenceRequested) }
-        }
+        )
     }
 
-    private var addressPickerField: some View {
-        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
-            ReportedFieldLabel(title: "Address", isError: viewModel.state.validationErrors.address != nil)
-            HStack(spacing: 10) {
-                Button {
-                    openAddressSearchScreen()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Text(viewModel.state.addressQuery.isEmpty ? "Search address" : viewModel.state.addressQuery)
-                            .foregroundStyle(viewModel.state.addressQuery.isEmpty ? Color(.placeholderText) : .primary)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if !viewModel.state.addressQuery.isEmpty {
-                    Button {
-                        viewModel.onAction(.addressQueryChanged(""))
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear address")
-                }
-                Button {
-                    openAddressMapSheet()
-                } label: {
-                    Image(systemName: "map")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Show Map")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(minHeight: 46)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.systemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(viewModel.state.validationErrors.address != nil ? Color.red : Color(.separator), lineWidth: 1)
+    private func reportTextBinding(for field: ReportLongTextField) -> Binding<String> {
+        switch field {
+        case .description:
+            Binding(
+                get: { viewModel.state.description },
+                set: { viewModel.onAction(.fieldsChanged(description: $0)) }
             )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case .notes:
+            Binding(
+                get: { viewModel.state.notes },
+                set: { viewModel.onAction(.fieldsChanged(notes: $0)) }
+            )
         }
     }
 
@@ -2430,17 +2587,6 @@ struct ComposerScreen: View {
     private func openAddressMapSheet() {
         refreshAddressImageLocation()
         showAddressMapSheet = true
-    }
-
-    private var occurredAtField: some View {
-        PickerField(
-            title: "Occurred At",
-            value: viewModel.state.occurredAtIso.reportDateTimeDisplay,
-            isError: viewModel.state.validationErrors.occurredAt != nil
-        ) {
-            refreshOccurredAtImageTime()
-            showOccurredAtPicker = true
-        }
     }
 
     private func refreshAddressImageLocation() {
@@ -2489,7 +2635,8 @@ struct ComposerScreen: View {
     private func submitReport() {
         ReportedAnalytics.logSubmitReportTapped(
             stage: viewModel.state.stage == .verify ? "verify" : "pick_media",
-            isAuthorized: isAuthorized
+            isAuthorized: isAuthorized,
+            mediaToSubmitMillis: viewModel.state.mediaToSubmitMillis
         )
         guard viewModel.onAction(.submitValidationRequested) else { return }
         if isAuthorized {
@@ -2499,74 +2646,71 @@ struct ComposerScreen: View {
         }
     }
 
-    private func handlePickedItem(_ item: PhotosPickerItem) async {
-        guard let media = await loadSubmissionMedia(from: item) else { return }
-        if let complaintId = pendingComplaintId {
-            viewModel.onAction(.primaryMediaChosen(media, complaintId: complaintId))
-        } else if viewModel.state.stage == .verify, viewModel.state.selectedComplaintId != nil {
-            guard viewModel.onAction(.extraMediaAdded(media)) else {
-                pendingComplaintId = nil
-                return
-            }
-        } else {
-            viewModel.onAction(.uploadMediaChosen(media))
+    private func presentMediaPicker() {
+        guard viewModel.remainingMediaSlots > 0 else {
+            viewModel.onAction(.mediaLimitReached)
+            return
         }
+        multiPickerPresented = true
+    }
+
+    private func handlePickedItem(_ item: PhotosPickerItem) async {
+        await handlePickedItems([item])
+    }
+
+    private func handlePickedItems(_ items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        var mediaItems: [ComposerState.SubmissionMedia] = []
+        for item in items {
+            if let media = await loadSubmissionMedia(from: item) {
+                mediaItems.append(media)
+            }
+        }
+        let complaintId = pendingComplaintId
         pendingComplaintId = nil
-        metadataTask?.cancel()
-        metadataTask = Task {
-            viewModel.onAction(.detectionProgressChanged(message: "Reading media metadata", progress: 0.1))
-            let metadata = await extractSubmissionMetadata(from: media)
-            let inferredState = metadata.latitude != nil && metadata.longitude != nil ? "NY" : nil
-            let inferredAddress: String?
-            if let latitude = metadata.latitude, let longitude = metadata.longitude {
-                viewModel.onAction(.detectionProgressChanged(message: "Finding NYC address", progress: 0.35))
-                inferredAddress = await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
-            } else {
-                inferredAddress = nil
+        await applyPickedMedia(mediaItems, preferredComplaintId: complaintId)
+    }
+
+    private func applyPickedMedia(_ mediaItems: [ComposerState.SubmissionMedia], preferredComplaintId: String?) async {
+        guard let primary = mediaItems.first else { return }
+
+        if viewModel.state.primaryMedia != nil {
+            for media in mediaItems {
+                guard viewModel.onAction(.extraMediaAdded(media)) else { break }
+                await inspectExtraMediaForPhiladelphiaVideo(media)
             }
-            if Task.isCancelled { return }
-            viewModel.onAction(.metadataApplied(
-                occurredAtIso: metadata.occurredAtIso,
-                photoOccurredAtIso: media.isVideo ? nil : metadata.occurredAtIso,
-                latitude: metadata.latitude,
-                longitude: metadata.longitude,
-                inferredState: inferredState,
-                inferredAddress: inferredAddress
-            ))
-            if !media.isVideo {
-                viewModel.onAction(.detectionProgressChanged(message: "Detecting plates", progress: 0.65))
-                let candidates = await NativeAlprEngine.shared.detectLicensePlates(
-                    media: media,
-                    expectedComplaintHint: selectedComplaintDetectionHint
-                )
-                if !Task.isCancelled {
-                    viewModel.onAction(.detectionFinished(
-                        candidates: candidates,
-                        inferredPlate: candidates.first?.plate,
-                        inferredState: inferredState
-                    ))
-                }
-            }
+            return
+        }
+
+        if let complaintId = preferredComplaintId {
+            viewModel.onAction(.primaryMediaChosen(primary, complaintId: complaintId))
+        } else {
+            viewModel.onAction(.uploadMediaChosen(primary))
+        }
+        for media in mediaItems.dropFirst() {
+            guard viewModel.onAction(.extraMediaAdded(media)) else { break }
+            await inspectExtraMediaForPhiladelphiaVideo(media)
+        }
+        await processMetadataAndDetection(for: primary)
+    }
+
+    private func inspectExtraMediaForPhiladelphiaVideo(_ media: ComposerState.SubmissionMedia) async {
+        guard media.isVideo else { return }
+        let metadata = await extractSubmissionMetadata(from: media)
+        guard let latitude = metadata.latitude,
+              let longitude = metadata.longitude,
+              reportAddressProvider(latitude: latitude, longitude: longitude, address: "") == .philadelphia else {
+            return
+        }
+        await MainActor.run {
+            _ = viewModel.onAction(.mediaRejected(media, message: philadelphiaSubmissionVideoMessage))
         }
     }
 
     private func handleSharedMediaImport(id: String) async {
         let mediaItems = SharedMediaImportStore.consumeImport(id: id)
         guard !mediaItems.isEmpty else { return }
-
-        if viewModel.state.primaryMedia != nil {
-            mediaItems.forEach { viewModel.onAction(.extraMediaAdded($0)) }
-            return
-        }
-
-        let primary = mediaItems[0]
-        if let complaintId = viewModel.state.selectedComplaintId {
-            viewModel.onAction(.primaryMediaChosen(primary, complaintId: complaintId))
-        } else {
-            viewModel.onAction(.uploadMediaChosen(primary))
-        }
-        mediaItems.dropFirst().forEach { viewModel.onAction(.extraMediaAdded($0)) }
-        await processMetadataAndDetection(for: primary)
+        await applyPickedMedia(mediaItems, preferredComplaintId: viewModel.state.selectedComplaintId)
     }
 
 #if DEBUG
@@ -2634,22 +2778,30 @@ struct ComposerScreen: View {
         metadataTask = Task {
             viewModel.onAction(.detectionProgressChanged(message: "Reading media metadata", progress: 0.1))
             let metadata = await extractSubmissionMetadata(from: media)
-            let inferredState = metadata.latitude != nil && metadata.longitude != nil ? "NY" : nil
-            let inferredAddress: String?
+            let addressSuggestion: ComposerState.AddressSuggestion?
             if let latitude = metadata.latitude, let longitude = metadata.longitude {
-                viewModel.onAction(.detectionProgressChanged(message: "Finding NYC address", progress: 0.35))
-                inferredAddress = await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
+                let provider = reportAddressProvider(latitude: latitude, longitude: longitude, address: "")
+                viewModel.onAction(.detectionProgressChanged(message: provider.reverseLookupLabel, progress: 0.35))
+                addressSuggestion = await reverseGeocodeAddress(latitude: latitude, longitude: longitude)
             } else {
-                inferredAddress = nil
+                addressSuggestion = nil
             }
             if Task.isCancelled { return }
+            if media.isVideo,
+               let latitude = metadata.latitude,
+               let longitude = metadata.longitude,
+               reportAddressProvider(latitude: latitude, longitude: longitude, address: "") == .philadelphia {
+                viewModel.onAction(.mediaRejected(media, message: philadelphiaSubmissionVideoMessage))
+                return
+            }
             viewModel.onAction(.metadataApplied(
                 occurredAtIso: metadata.occurredAtIso,
                 photoOccurredAtIso: media.isVideo ? nil : metadata.occurredAtIso,
                 latitude: metadata.latitude,
                 longitude: metadata.longitude,
-                inferredState: inferredState,
-                inferredAddress: inferredAddress
+                inferredState: addressSuggestion?.region,
+                inferredAddress: addressSuggestion?.label,
+                addressSuggestion: addressSuggestion
             ))
             if !media.isVideo {
                 viewModel.onAction(.detectionProgressChanged(message: "Detecting plates", progress: 0.65))
@@ -2667,17 +2819,13 @@ struct ComposerScreen: View {
                     viewModel.onAction(.detectionFinished(
                         candidates: candidates,
                         inferredPlate: candidates.first?.plate,
-                        inferredState: inferredState
+                        inferredState: addressSuggestion?.region
                     ))
                 }
             }
         }
     }
 
-    private func handleAdditionalPickedItem(_ item: PhotosPickerItem) async {
-        guard let media = await loadSubmissionMedia(from: item) else { return }
-        viewModel.onAction(.extraMediaAdded(media))
-    }
 }
 
 private struct ComposerPickerModifier: ViewModifier {
@@ -2686,22 +2834,23 @@ private struct ComposerPickerModifier: ViewModifier {
     @Binding var pickedItem: PhotosPickerItem?
     @Binding var pickedItems: [PhotosPickerItem]
     let maxSelectionCount: Int
+    let allowsVideos: Bool
     let handlePickedItem: (PhotosPickerItem) async -> Void
-    let handleAdditionalPickedItem: (PhotosPickerItem) async -> Void
+    let handlePickedItems: ([PhotosPickerItem]) async -> Void
 
     func body(content: Self.Content) -> some View {
         content
             .photosPicker(
                 isPresented: $singlePickerPresented,
                 selection: $pickedItem,
-                matching: .any(of: [.images, .videos]),
+                matching: mediaFilter,
                 preferredItemEncoding: .current
             )
             .photosPicker(
                 isPresented: $multiPickerPresented,
                 selection: $pickedItems,
                 maxSelectionCount: maxSelectionCount,
-                matching: .any(of: [.images, .videos]),
+                matching: mediaFilter,
                 preferredItemEncoding: .current
             )
             .onChange(of: pickedItem) { _, newItem in
@@ -2714,12 +2863,14 @@ private struct ComposerPickerModifier: ViewModifier {
             .onChange(of: pickedItems) { _, newItems in
                 guard !newItems.isEmpty else { return }
                 Task {
-                    for item in newItems {
-                        await handleAdditionalPickedItem(item)
-                    }
+                    await handlePickedItems(newItems)
                     pickedItems = []
                 }
             }
+    }
+
+    private var mediaFilter: PHPickerFilter {
+        allowsVideos ? .any(of: [.images, .videos]) : .images
     }
 }
 
@@ -4018,11 +4169,28 @@ private func loadSubmissionMedia(from item: PhotosPickerItem) async -> ComposerS
 func extractSubmissionMetadata(from media: ComposerState.SubmissionMedia) async -> ExtractedSubmissionMetadata {
     if media.isVideo {
         let asset = AVURLAsset(url: media.fileURL)
-        let creationDate = try? await asset.load(.creationDate)
+        let creationDateMetadata = try? await asset.load(.creationDate)
+        let creationDate: Date?
+        if let creationDateMetadata {
+            creationDate = try? await creationDateMetadata.load(.dateValue)
+        } else {
+            creationDate = nil
+        }
+        let metadataItems = (try? await asset.load(.metadata)) ?? []
+        let locationItem = AVMetadataItem
+            .metadataItems(from: metadataItems, filteredByIdentifier: .commonIdentifierLocation)
+            .first
+        let rawLocation: String?
+        if let locationItem {
+            rawLocation = try? await locationItem.load(.stringValue)
+        } else {
+            rawLocation = nil
+        }
+        let coordinate = parseIso6709Location(rawLocation)
         return ExtractedSubmissionMetadata(
-            occurredAtIso: creationDate?.dateValue?.ISO8601Format(),
-            latitude: nil,
-            longitude: nil
+            occurredAtIso: creationDate?.ISO8601Format(),
+            latitude: coordinate?.latitude,
+            longitude: coordinate?.longitude
         )
     }
 
@@ -4050,6 +4218,27 @@ func extractSubmissionMetadata(from media: ComposerState.SubmissionMedia) async 
         latitude: latitude,
         longitude: longitude
     )
+}
+
+private func parseIso6709Location(_ raw: String?) -> (latitude: Double, longitude: Double)? {
+    guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    let pattern = #"([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let nsRange = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+    guard let match = regex.firstMatch(in: raw, range: nsRange), match.numberOfRanges >= 3 else { return nil }
+
+    func group(_ index: Int) -> String? {
+        let range = match.range(at: index)
+        guard let swiftRange = Range(range, in: raw) else { return nil }
+        return String(raw[swiftRange])
+    }
+
+    guard let latitude = group(1).flatMap(Double.init),
+          let longitude = group(2).flatMap(Double.init),
+          isValidReportCoordinate(latitude: latitude, longitude: longitude) else {
+        return nil
+    }
+    return (latitude, longitude)
 }
 
 private func extractExifDateTimeIso(
@@ -4158,6 +4347,78 @@ private extension String {
     }
 }
 
+func reportAddressProvider(latitude: Double?, longitude: Double?, address: String) -> ReportAddressProvider {
+    if let latitude, let longitude, isValidReportCoordinate(latitude: latitude, longitude: longitude) {
+        if CityBoundaryIndex.shared.contains(cityId: "philadelphia", latitude: latitude, longitude: longitude) {
+            return .philadelphia
+        }
+        if CityBoundaryIndex.shared.contains(cityId: "nyc", latitude: latitude, longitude: longitude) {
+            return .newYorkCity
+        }
+        return .newYorkCity
+    }
+    return isPhiladelphiaAddressText(address) ? .philadelphia : .newYorkCity
+}
+
+private func isValidReportCoordinate(latitude: Double, longitude: Double) -> Bool {
+    latitude.isFinite &&
+        longitude.isFinite &&
+        abs(latitude) <= 90 &&
+        abs(longitude) <= 180 &&
+        (abs(latitude) > 0.000001 || abs(longitude) > 0.000001)
+}
+
+private func isPhiladelphiaAddressText(_ address: String) -> Bool {
+    let value = address.lowercased()
+    if value.contains("philadelphia") || value.contains("phila") || value.contains("philly") {
+        return true
+    }
+    return philadelphiaZipCodes.contains { value.contains($0) }
+}
+
+private let philadelphiaZipCodes: Set<String> = [
+    "19102", "19103", "19104", "19106", "19107", "19111", "19112", "19113",
+    "19114", "19115", "19116", "19118", "19119", "19120", "19121", "19122",
+    "19123", "19124", "19125", "19126", "19127", "19128", "19129", "19130",
+    "19131", "19132", "19133", "19134", "19135", "19136", "19137", "19138",
+    "19139", "19140", "19141", "19142", "19143", "19144", "19145", "19146",
+    "19147", "19148", "19149", "19150", "19151", "19152", "19153", "19154"
+]
+
+private func reverseGeocodeAddress(latitude: Double, longitude: Double) async -> ComposerState.AddressSuggestion? {
+    let provider = reportAddressProvider(latitude: latitude, longitude: longitude, address: "")
+    switch provider {
+    case .philadelphia:
+        if let suggestion = await reverseGeocodePhiladelphiaAis(latitude: latitude, longitude: longitude) {
+            return suggestion
+        }
+        if let suggestion = await reverseGeocodeNyc(latitude: latitude, longitude: longitude) {
+            return suggestion
+        }
+        return await reverseGeocodePlatform(latitude: latitude, longitude: longitude)
+    case .newYorkCity:
+        if let suggestion = await reverseGeocodeNyc(latitude: latitude, longitude: longitude) {
+            return suggestion
+        }
+        return await reverseGeocodePlatform(latitude: latitude, longitude: longitude)
+    }
+}
+
+private func searchReportAddresses(
+    query: String,
+    latitude: Double?,
+    longitude: Double?,
+    address: String
+) async -> [ComposerState.AddressSuggestion] {
+    switch reportAddressProvider(latitude: latitude, longitude: longitude, address: address.isEmpty ? query : address) {
+    case .philadelphia:
+        let suggestions = await searchPhiladelphiaAisAddresses(query: query)
+        return suggestions.isEmpty ? await searchNycAddresses(query: query) : suggestions
+    case .newYorkCity:
+        return await searchNycAddresses(query: query)
+    }
+}
+
 private func reverseGeocodeNyc(latitude: Double, longitude: Double) async -> ComposerState.AddressSuggestion? {
     var components = URLComponents(string: "https://geosearch.planninglabs.nyc/v2/reverse")
     components?.queryItems = [
@@ -4177,7 +4438,13 @@ private func reverseGeocodeNyc(latitude: Double, longitude: Double) async -> Com
         ?? (properties["name"] as? String)
         ?? (properties["address"] as? String)
     guard let label else { return nil }
-    return ComposerState.AddressSuggestion(label: label, latitude: latitude, longitude: longitude)
+    return ComposerState.AddressSuggestion(
+        label: label,
+        latitude: latitude,
+        longitude: longitude,
+        region: "NY",
+        providerId: ReportAddressProvider.newYorkCity.id
+    )
 }
 
 private func addressSuggestionFromImageMetadata(_ metadata: ExtractedSubmissionMetadata) async -> ComposerState.AddressSuggestion? {
@@ -4187,7 +4454,7 @@ private func addressSuggestionFromImageMetadata(_ metadata: ExtractedSubmissionM
     guard abs(latitude) > 0.000001 || abs(longitude) > 0.000001 else { return nil }
     let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     guard CLLocationCoordinate2DIsValid(coordinate) else { return nil }
-    return await reverseGeocodeNyc(latitude: latitude, longitude: longitude)
+    return await reverseGeocodeAddress(latitude: latitude, longitude: longitude)
         ?? coordinateAddressSuggestion(latitude: latitude, longitude: longitude)
 }
 
@@ -4230,8 +4497,278 @@ private func searchNycAddresses(query: String) async -> [ComposerState.AddressSu
         return ComposerState.AddressSuggestion(
             label: label,
             latitude: coordinates[1],
-            longitude: coordinates[0]
+            longitude: coordinates[0],
+            region: "NY",
+            providerId: ReportAddressProvider.newYorkCity.id
         )
+    }
+}
+
+private func searchPhiladelphiaAisAddresses(query: String) async -> [ComposerState.AddressSuggestion] {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty,
+          let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+          let json = await fetchPhiladelphiaAisJson("https://api.phila.gov/ais/v1/search/\(encoded)"),
+          let features = json["features"] as? [[String: Any]] else {
+        return []
+    }
+    return features.compactMap { philadelphiaAisFeatureToSuggestion($0) }
+}
+
+private func reverseGeocodePhiladelphiaAis(latitude: Double, longitude: Double) async -> ComposerState.AddressSuggestion? {
+    guard let json = await fetchPhiladelphiaAisJson(
+        "https://api.phila.gov/ais/v1/reverse_geocode/\(longitude),\(latitude)?srid=4326&search_radius=500"
+    ),
+          let features = json["features"] as? [[String: Any]],
+          let first = features.first else {
+        return nil
+    }
+    return philadelphiaAisFeatureToSuggestion(first, fallbackLatitude: latitude, fallbackLongitude: longitude)
+}
+
+private func fetchPhiladelphiaAisJson(_ urlString: String) async -> [String: Any]? {
+    guard let url = URL(string: urlString) else { return nil }
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 5
+    if let key = philadelphiaAisGatekeeperKey() {
+        request.setValue("Gatekeeper-Key \(key)", forHTTPHeaderField: "Authorization")
+    }
+    guard let (data, response) = try? await URLSession.shared.data(for: request),
+          let httpResponse = response as? HTTPURLResponse,
+          (200...299).contains(httpResponse.statusCode) else {
+        return nil
+    }
+    return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+}
+
+private func philadelphiaAisGatekeeperKey() -> String? {
+    let environmentValue = ProcessInfo.processInfo.environment["REPORTED_PHILADELPHIA_AIS_GATEKEEPER_KEY"]
+    let plistValue = Bundle.main.object(forInfoDictionaryKey: "REPORTED_PHILADELPHIA_AIS_GATEKEEPER_KEY") as? String
+    return (environmentValue ?? plistValue)?.nilIfBlank
+}
+
+private func philadelphiaAisFeatureToSuggestion(
+    _ feature: [String: Any],
+    fallbackLatitude: Double? = nil,
+    fallbackLongitude: Double? = nil
+) -> ComposerState.AddressSuggestion? {
+    guard let properties = feature["properties"] as? [String: Any] else { return nil }
+    let coordinates = (feature["geometry"] as? [String: Any])?["coordinates"] as? [Any]
+    let longitude = doubleValue(coordinates?.first) ?? fallbackLongitude
+    let latitude = doubleValue((coordinates?.count ?? 0) > 1 ? coordinates?[1] : nil) ?? fallbackLatitude
+    guard let latitude, let longitude else { return nil }
+    let streetAddress = stringValue(properties["street_address"])
+        ?? stringValue(properties["address"])
+        ?? stringValue(properties["opa_address"])
+    let zipCode = stringValue(properties["zip_code"]) ?? stringValue(properties["zip"])
+    var label = streetAddress ?? "Philadelphia address"
+    if !label.localizedCaseInsensitiveContains("Philadelphia") {
+        label += ", Philadelphia"
+    }
+    if !label.localizedCaseInsensitiveContains(", PA") {
+        label += ", PA"
+    }
+    if let zipCode, !label.contains(zipCode) {
+        label += " \(zipCode)"
+    }
+    return ComposerState.AddressSuggestion(
+        label: label,
+        latitude: latitude,
+        longitude: longitude,
+        region: "PA",
+        providerId: ReportAddressProvider.philadelphia.id,
+        blockNumber: stringValue(properties["address_low"]) ?? streetAddress?.firstStreetNumber,
+        streetName: stringValue(properties["street_full"]),
+        zipCode: zipCode
+    )
+}
+
+private func reverseGeocodePlatform(latitude: Double, longitude: Double) async -> ComposerState.AddressSuggestion? {
+    let location = CLLocation(latitude: latitude, longitude: longitude)
+    guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
+        return nil
+    }
+    let label = [
+        placemark.name,
+        placemark.locality,
+        placemark.administrativeArea,
+        placemark.postalCode
+    ]
+        .compactMap { $0?.nilIfBlank }
+        .joined(separator: ", ")
+    guard !label.isEmpty else { return nil }
+    return ComposerState.AddressSuggestion(
+        label: label,
+        latitude: latitude,
+        longitude: longitude,
+        region: placemark.administrativeArea?.uppercased()
+    )
+}
+
+private final class CityBoundaryIndex {
+    static let shared = CityBoundaryIndex()
+
+    private let lock = NSLock()
+    private var cache: [String: CityBoundary] = [:]
+    private var missing: Set<String> = []
+
+    func contains(cityId: String, latitude: Double, longitude: Double) -> Bool {
+        guard isValidReportCoordinate(latitude: latitude, longitude: longitude),
+              let boundary = boundary(for: cityId) else {
+            return false
+        }
+        return boundary.contains(longitude: longitude, latitude: latitude)
+    }
+
+    private func boundary(for cityId: String) -> CityBoundary? {
+        lock.lock()
+        if let cached = cache[cityId] {
+            lock.unlock()
+            return cached
+        }
+        if missing.contains(cityId) {
+            lock.unlock()
+            return nil
+        }
+        lock.unlock()
+
+        let loaded = load(cityId: cityId)
+
+        lock.lock()
+        if let loaded {
+            cache[cityId] = loaded
+        } else {
+            missing.insert(cityId)
+        }
+        lock.unlock()
+        return loaded
+    }
+
+    private func load(cityId: String) -> CityBoundary? {
+        let fileName: String
+        switch cityId {
+        case "philadelphia":
+            fileName = "philadelphia"
+        case "nyc":
+            fileName = "nyc"
+        default:
+            return nil
+        }
+        let url = Bundle.main.url(forResource: fileName, withExtension: "geojson", subdirectory: "CityBoundaries")
+            ?? Bundle.main.url(forResource: fileName, withExtension: "geojson")
+        guard let url,
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let features = json["features"] as? [[String: Any]] else {
+            return nil
+        }
+        let bbox = ((json["properties"] as? [String: Any])?["bbox"] as? [Any])?
+            .compactMap(doubleValue)
+        let polygons = features.flatMap { feature -> [[[BoundaryPoint]]] in
+            guard let geometry = feature["geometry"] as? [String: Any] else { return [] }
+            return parseBoundaryGeometry(geometry)
+        }
+        return CityBoundary(bbox: bbox?.count == 4 ? bbox : nil, polygons: polygons)
+    }
+}
+
+private struct CityBoundary {
+    let bbox: [Double]?
+    let polygons: [[[BoundaryPoint]]]
+
+    func contains(longitude: Double, latitude: Double) -> Bool {
+        if let bbox,
+           longitude < bbox[0] || latitude < bbox[1] || longitude > bbox[2] || latitude > bbox[3] {
+            return false
+        }
+        return polygons.contains { polygonContains($0, longitude: longitude, latitude: latitude) }
+    }
+}
+
+private struct BoundaryPoint {
+    let longitude: Double
+    let latitude: Double
+}
+
+private func parseBoundaryGeometry(_ geometry: [String: Any]) -> [[[BoundaryPoint]]] {
+    guard let type = geometry["type"] as? String else { return [] }
+    let coordinates = geometry["coordinates"]
+    switch type {
+    case "Polygon":
+        return parseBoundaryPolygon(coordinates).map { [$0] } ?? []
+    case "MultiPolygon":
+        guard let polygons = coordinates as? [Any] else { return [] }
+        return polygons.compactMap(parseBoundaryPolygon)
+    default:
+        return []
+    }
+}
+
+private func parseBoundaryPolygon(_ value: Any?) -> [[BoundaryPoint]]? {
+    guard let rings = value as? [Any] else { return nil }
+    let parsed = rings.compactMap { ringValue -> [BoundaryPoint]? in
+        guard let points = ringValue as? [Any] else { return nil }
+        let ring = points.compactMap { pointValue -> BoundaryPoint? in
+            guard let point = pointValue as? [Any],
+                  point.count >= 2,
+                  let longitude = doubleValue(point[0]),
+                  let latitude = doubleValue(point[1]) else {
+                return nil
+            }
+            return BoundaryPoint(longitude: longitude, latitude: latitude)
+        }
+        return ring.isEmpty ? nil : ring
+    }
+    return parsed.isEmpty ? nil : parsed
+}
+
+private func polygonContains(_ polygon: [[BoundaryPoint]], longitude: Double, latitude: Double) -> Bool {
+    guard let outer = polygon.first, ringContains(outer, longitude: longitude, latitude: latitude) else {
+        return false
+    }
+    return polygon.dropFirst().allSatisfy { !ringContains($0, longitude: longitude, latitude: latitude) }
+}
+
+private func ringContains(_ ring: [BoundaryPoint], longitude: Double, latitude: Double) -> Bool {
+    guard ring.count >= 3 else { return false }
+    var inside = false
+    var previous = ring[ring.count - 1]
+    for current in ring {
+        let intersects = (current.latitude > latitude) != (previous.latitude > latitude) &&
+            longitude < (previous.longitude - current.longitude) *
+            (latitude - current.latitude) /
+            (previous.latitude - current.latitude) +
+            current.longitude
+        if intersects {
+            inside.toggle()
+        }
+        previous = current
+    }
+    return inside
+}
+
+private func doubleValue(_ value: Any?) -> Double? {
+    if let value = value as? Double { return value }
+    if let value = value as? NSNumber { return value.doubleValue }
+    if let value = value as? String { return Double(value) }
+    return nil
+}
+
+private func stringValue(_ value: Any?) -> String? {
+    if let value = value as? String {
+        return value.nilIfBlank
+    }
+    if let value = value as? NSNumber {
+        return value.stringValue.nilIfBlank
+    }
+    return nil
+}
+
+private extension String {
+    var firstStreetNumber: String? {
+        let pattern = #"^\s*(\d+[A-Za-z]?)"#
+        guard let range = range(of: pattern, options: .regularExpression) else { return nil }
+        return String(self[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -4848,6 +5385,7 @@ struct AutoReportScreen: View {
     @State private var message: String?
     @State private var scanTask: Task<Void, Never>?
     @State private var showingReviewSheet = false
+    @State private var scanStartedAt: Date?
 
     var body: some View {
         ScrollView {
@@ -4934,11 +5472,14 @@ struct AutoReportScreen: View {
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+            .presentationBackground(Color(.systemBackground))
         }
     }
 
     private func startScan() {
         scanTask?.cancel()
+        scanStartedAt = Date()
+        ReportedAnalytics.logAutoReportScanStarted(scanWindow: scanWindow.id)
         scanning = true
         showingReviewSheet = false
         message = nil
@@ -4967,7 +5508,7 @@ struct AutoReportScreen: View {
                 if !summary.photoAccessGranted {
                     message = "Photo library permission is needed to scan \(selectedWindow.sentenceLabel) without opening the gallery."
                 } else if summary.scannedCount == 0 {
-                    message = "No photos from \(selectedWindow.sentenceLabel) were available to scan."
+                    message = "No new photos from \(selectedWindow.sentenceLabel) were available to scan."
                 } else if incidents.isEmpty {
                     message = "Scanned \(summary.scannedCount) photo\(summary.scannedCount == 1 ? "" : "s") and did not find a blocked bike lane or blocked crosswalk report to review."
                 } else {
@@ -4986,6 +5527,7 @@ struct AutoReportScreen: View {
         scanTask?.cancel()
         scanTask = nil
         scanning = false
+        scanStartedAt = nil
         processed = 0
         total = 0
         message = "Photo scan cancelled."
@@ -4994,7 +5536,18 @@ struct AutoReportScreen: View {
     private func submitSelected() {
         let selectedIncidents = incidents.filter { $0.selected && $0.good }
         guard !selectedIncidents.isEmpty else { return }
+        let selectedMediaCount = selectedIncidents.reduce(0) { $0 + $1.media.count }
+        let selectedComplaintCount = selectedIncidents.reduce(0) { $0 + ($1.complaintId.isEmpty ? 0 : 1) }
         let invalidCount = selectedIncidents.filter { !$0.isSubmittable }.count
+        let scanToSubmitMillis = scanStartedAt.map { max(0, Int64(Date().timeIntervalSince($0) * 1000)) }
+        ReportedAnalytics.logAutoReportSummarySubmitTapped(
+            reportCount: selectedIncidents.count,
+            mediaCount: selectedMediaCount,
+            complaintCount: selectedComplaintCount,
+            invalidCount: invalidCount,
+            isAuthorized: isAuthorized,
+            scanToSubmitMillis: scanToSubmitMillis
+        )
         guard invalidCount == 0 else {
             message = "\(invalidCount) kept auto-report\(invalidCount == 1 ? "" : "s") need edits before submission."
             showingReviewSheet = true
@@ -5004,14 +5557,47 @@ struct AutoReportScreen: View {
             onRequireLogin()
             return
         }
+        ReportedAnalytics.logReportedAiBulkSubmit(
+            surface: "auto_report_review",
+            reportCount: selectedIncidents.count,
+            mediaCount: selectedMediaCount,
+            complaintCount: selectedComplaintCount,
+            scanToSubmitMillis: scanToSubmitMillis
+        )
         submitting = true
         message = nil
         Task {
+            var failureReports = selectedIncidents.map { incident in
+                ReportSubmissionFailureLogger.reportPayload(
+                    plate: incident.plate,
+                    plateRegion: incident.plateRegion,
+                    address: incident.address,
+                    complaintIds: [incident.complaintId],
+                    timeOfIncidentIso: incident.occurredAtIso,
+                    latitude: incident.latitude,
+                    longitude: incident.longitude,
+                    description: incident.description,
+                    notes: incident.notes,
+                    mediaFileCount: 0
+                )
+            }
             do {
                 var submittedObjectId: String?
-                for incident in selectedIncidents {
+                for (index, incident) in selectedIncidents.enumerated() {
                     let media = incident.media
                     let mediaFiles = try await ParseMediaUploader.uploadAll(media)
+                    failureReports[index] = ReportSubmissionFailureLogger.reportPayload(
+                        plate: incident.plate,
+                        plateRegion: incident.plateRegion,
+                        address: incident.address,
+                        complaintIds: [incident.complaintId],
+                        timeOfIncidentIso: incident.occurredAtIso,
+                        latitude: incident.latitude,
+                        longitude: incident.longitude,
+                        description: incident.description,
+                        notes: incident.notes,
+                        mediaFileCount: mediaFiles.count
+                    )
                     let objectId = try await SharedBridge.shared.container.submitReportUseCase.execute(command: SubmitReportCommand(
                         plate: incident.plate,
                         plateRegion: incident.plateRegion,
@@ -5027,9 +5613,14 @@ struct AutoReportScreen: View {
                         vehicleMake: nil,
                         vehicleModel: nil,
                         mediaUrls: [],
-                        mediaFiles: mediaFiles
+                        mediaFiles: mediaFiles,
+                        vehicleVin: nil,
+                        vehicleYear: nil,
+                        vehicleBodyClass: nil,
+                        philadelphiaMobilityAccessDetails: nil
                     ))
                     submittedObjectId = objectId
+                    IOSMediaScannerSettings.markSubmittedAutoReportContentHashes(incident.infractions.compactMap(\.contentHash))
                     PersistentMediaStore.deleteStoredMedia(media.map(\.fileURL))
                     incident.infractions.forEach { IOSDetectedInfractionStore.remove(id: $0.id) }
                 }
@@ -5042,12 +5633,31 @@ struct AutoReportScreen: View {
                     if let submittedObjectId {
                         onReportSubmitted(submittedObjectId)
                     }
+                    scanStartedAt = nil
                     message = "Submitted \(selectedIncidents.count) auto-report\(selectedIncidents.count == 1 ? "" : "s")."
                 }
             } catch {
+                let failedSession = try? await SharedBridge.shared.container.loadSessionUseCase.execute()
+                await MainActor.run {
+                    ReportedAnalytics.logSubmitReportFailed(
+                        surface: "auto_report",
+                        stage: "bulk_review",
+                        error: error,
+                        plateRegion: selectedIncidents.first?.plateRegion ?? "unknown",
+                        complaintCount: selectedIncidents.reduce(0) { $0 + ($1.complaintId.isEmpty ? 0 : 1) },
+                        mediaCount: selectedIncidents.reduce(0) { $0 + $1.media.count },
+                        hasVideo: false,
+                        reportCount: selectedIncidents.count,
+                        session: failedSession,
+                        report: ["reports": failureReports]
+                    )
+                }
                 await MainActor.run {
                     submitting = false
-                    message = "Auto-Report submission failed. Review the selected reports and try again."
+                    message = ReportedAnalytics.userFacingSubmitFailureMessage(
+                        for: error,
+                        fallback: "Auto-Report submission failed. Review the selected reports and try again."
+                    )
                 }
             }
         }
@@ -5169,6 +5779,10 @@ private struct AutoReportReviewSheet: View {
     let processedPhotos: [IOSAutoReportProcessedPhoto]
     let submitting: Bool
     let onSubmit: () -> Void
+    @State private var selectedIndex: Int? = 0
+    @State private var loggedSummarySignature: String?
+
+    private let pageCardInset: CGFloat = 14
 
     private var keptIncidents: [AutoReportIncident] {
         incidents.filter { $0.selected && $0.good }
@@ -5180,6 +5794,14 @@ private struct AutoReportReviewSheet: View {
 
     private var invalidKeptCount: Int {
         keptIncidents.filter { !$0.isSubmittable }.count
+    }
+
+    private var pageCount: Int {
+        incidents.count + 1
+    }
+
+    private var currentIndex: Int {
+        min(max(selectedIndex ?? 0, 0), max(pageCount - 1, 0))
     }
 
     var body: some View {
@@ -5195,30 +5817,49 @@ private struct AutoReportReviewSheet: View {
                 Spacer()
             }
 
-            TabView {
-                ForEach($incidents) { $incident in
-                    GeometryReader { geometry in
-                        AutoReportIncidentCard(incident: $incident)
-                            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+            GeometryReader { proxy in
+                let pageWidth = max(proxy.size.width, 1)
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(incidents.indices, id: \.self) { index in
+                            AutoReportReviewCarouselPage(width: pageWidth, cardInset: pageCardInset) {
+                                AutoReportIncidentCard(incident: $incidents[index])
+                            }
+                            .id(index)
+                        }
+                        AutoReportReviewCarouselPage(width: pageWidth, cardInset: pageCardInset) {
+                            AutoReportSubmissionSummaryCard(
+                                incidents: incidents,
+                                processedPhotos: processedPhotos
+                            )
+                        }
+                        .id(incidents.count)
                     }
+                    .scrollTargetLayout()
                 }
-                GeometryReader { geometry in
-                    AutoReportSubmissionSummaryCard(
-                        incidents: incidents,
-                        processedPhotos: processedPhotos,
-                        submitting: submitting,
-                        onSubmit: onSubmit
-                    )
-                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $selectedIndex)
             }
-            .tabViewStyle(.page(indexDisplayMode: .automatic))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            reviewActionControls
+            reviewPageIndicator
         }
         .padding(.top, 16)
         .padding(.horizontal, 16)
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(.systemBackground))
+        .onChange(of: incidents.count) { _, count in
+            selectedIndex = min(currentIndex, count)
+        }
+        .onChange(of: currentIndex) { _, _ in
+            logSummaryIfNeeded()
+        }
+        .onAppear {
+            logSummaryIfNeeded()
+        }
     }
 
     private var reviewSubtitle: String {
@@ -5228,14 +5869,172 @@ private struct AutoReportReviewSheet: View {
         }
         return "\(submitCount) kept, \(discarded) discarded"
     }
+
+    private var reviewPageIndicator: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 7) {
+                ForEach(0..<pageCount, id: \.self) { index in
+                    Circle()
+                        .fill(index == currentIndex ? Color.reportedOrange : Color.reportedOrange.opacity(0.28))
+                        .frame(width: index == currentIndex ? 8 : 6, height: index == currentIndex ? 8 : 6)
+                }
+            }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedIndex = incidents.count
+                }
+            } label: {
+                Text("Summary")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(currentIndex == incidents.count ? .white : Color.reportedOrange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(currentIndex == incidents.count ? Color.reportedOrange : Color.reportedOrange.opacity(0.12))
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(currentIndex == incidents.count)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityLabel(reviewPageAccessibilityLabel)
+    }
+
+    private var reviewPageAccessibilityLabel: String {
+        if currentIndex == incidents.count {
+            return "Submission summary page"
+        }
+        return "Auto-report \(currentIndex + 1) of \(incidents.count)"
+    }
+
+    @ViewBuilder
+    private var reviewActionControls: some View {
+        if incidents.indices.contains(currentIndex) {
+            let isKept = incidents[currentIndex].good && incidents[currentIndex].selected
+            HStack(spacing: 10) {
+                Button {
+                    setCurrentIncidentKept(true)
+                } label: {
+                    Text("Keep")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(isKept ? Color.reportedOrange : Color(.tertiarySystemFill))
+
+                Button {
+                    setCurrentIncidentKept(false)
+                } label: {
+                    Text("Discard")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(isKept ? Color.secondary : Color.red)
+            }
+            .padding(.horizontal, pageCardInset)
+            .transition(.opacity)
+        } else if currentIndex == incidents.count {
+            Button {
+                onSubmit()
+            } label: {
+                HStack {
+                    if submitting {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(submitting ? "Submitting..." : "Submit \(keptIncidents.count) Report\(keptIncidents.count == 1 ? "" : "s")")
+                        .font(.body.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.reportedOrange)
+            .disabled(keptIncidents.isEmpty || invalidKeptCount > 0 || submitting)
+            .padding(.horizontal, pageCardInset)
+        } else {
+            Color.clear
+                .frame(height: 42)
+        }
+    }
+
+    private func logSummaryIfNeeded() {
+        guard currentIndex == incidents.count, !incidents.isEmpty else { return }
+        let signature = incidents.map(\.id).joined(separator: "|")
+        guard loggedSummarySignature != signature else { return }
+        loggedSummarySignature = signature
+        ReportedAnalytics.logAutoReportSummary(
+            count: incidents.count,
+            keptCount: submitCount,
+            discardedCount: max(0, incidents.count - submitCount),
+            invalidCount: invalidKeptCount,
+            mediaCount: incidents.reduce(0) { $0 + $1.media.count },
+            processedPhotoCount: processedPhotos.count
+        )
+    }
+
+    private func setCurrentIncidentKept(_ keep: Bool) {
+        guard incidents.indices.contains(currentIndex) else { return }
+        incidents[currentIndex].good = keep
+        incidents[currentIndex].selected = keep
+        ReportedAnalytics.logAutoReportDecision(
+            keep: keep,
+            reportIndex: currentIndex + 1,
+            reportCount: incidents.count,
+            keptCount: keptIncidents.count,
+            mediaCount: incidents[currentIndex].media.count
+        )
+    }
+}
+
+private struct AutoReportReviewCarouselPage<Content: View>: View {
+    let width: CGFloat
+    let cardInset: CGFloat
+    @ViewBuilder let content: () -> Content
+    private let verticalInset: CGFloat = 6
+
+    var body: some View {
+        let innerWidth = max(width - (cardInset * 2), 1)
+        GeometryReader { proxy in
+            let innerHeight = max(proxy.size.height - (verticalInset * 2), 1)
+            let cardShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            content()
+                .frame(width: innerWidth, height: innerHeight)
+                .clipShape(cardShape)
+                .overlay(
+                    cardShape
+                        .strokeBorder(Color.reportedOrange.opacity(0.5), lineWidth: 1.8)
+                        .allowsHitTesting(false)
+                )
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .clipped()
+    }
 }
 
 private struct AutoReportIncidentCard: View {
     @Binding var incident: AutoReportIncident
     @State private var showComplaintChooser = false
+    @State private var showPlateEntryScreen = false
     @State private var showPlateRegionSheet = false
     @State private var showAllPlateRegions = false
+    @State private var showAddressSearchScreen = false
+    @State private var showAddressMapSheet = false
     @State private var showOccurredAtPicker = false
+    @State private var addressQuery = ""
+    @State private var addressSuggestions: [ComposerState.AddressSuggestion] = []
+    @State private var addressLookupInFlight = false
+    @State private var addressSearchTask: Task<Void, Never>?
+    @State private var selectedPhotoIndex = 0
+    @State private var fullScreenTextEditorField: ReportLongTextField?
 
     private var complaintOptions: [ComplaintOption] {
         complaintOptionsFor(Array(Catalogs.shared.complaintCategories))
@@ -5245,119 +6044,107 @@ private struct AutoReportIncidentCard: View {
         incident.validationErrors
     }
 
+    private var plateCandidates: [ComposerState.PlateCandidate] {
+        incident.infractions.flatMap { infraction in
+            infraction.composerPlateCandidates(loadCropPreviews: true)
+        }
+    }
+
+    private var primaryPlateSourceImage: UIImage? {
+        guard let previewURL = incident.previewURL else { return nil }
+        return UIImage(contentsOfFile: previewURL.path)
+    }
+
+    private var imageAddressSuggestion: ComposerState.AddressSuggestion? {
+        guard let latitude = incident.latitude,
+              let longitude = incident.longitude,
+              !incident.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return ComposerState.AddressSuggestion(
+            label: incident.address,
+            latitude: latitude,
+            longitude: longitude
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                AutoReportGroupedPhotoCarousel(infractions: incident.infractions)
-
-                HStack(alignment: .top, spacing: 12) {
-                    ComplaintPickerField(
-                        value: complaintOptions.first(where: { $0.id == incident.complaintId })?.title ?? incident.complaintTitle,
-                        isError: validationErrors.complaint != nil
-                    ) {
-                        showComplaintChooser = true
+                AutoReportGroupedPhotoCarousel(
+                    infractions: incident.infractions,
+                    selectedIndex: $selectedPhotoIndex,
+                    selectedPlate: incident.plate,
+                    onCandidateConfirmed: { candidate in
+                        incident.plate = autoReportNormalizedPlateInput(candidate.plate)
+                        if let state = candidate.state, !state.isEmpty {
+                            incident.plateRegion = state
+                        }
                     }
-                    .frame(minWidth: 150)
+                )
 
-                    PickerField(
-                        title: "State",
-                        value: incident.plateRegion,
-                        isError: validationErrors.plateRegion != nil,
-                        showsChevron: false,
-                        alignment: .center
-                    ) {
+                ReportVerifyFields(
+                    complaintValue: complaintOptions.first(where: { $0.id == incident.complaintId })?.title ?? incident.complaintTitle,
+                    plateValue: incident.plate,
+                    plateCandidateCount: incident.infractions.reduce(0) { $0 + $1.candidates.count },
+                    plateRegionValue: incident.plateRegion,
+                    addressValue: incident.address,
+                    occurredAtValue: autoReportDisplayTime(incident.occurredAtIso),
+                    validationErrors: validationErrors,
+                    descriptionText: $incident.description,
+                    notesText: $incident.notes,
+                    philadelphiaDetails: nil,
+                    isLandscape: false,
+                    isTablet: false,
+                    usesCompactFieldRow: true,
+                    onComplaintTapped: {
+                        showComplaintChooser = true
+                    },
+                    onPlateTapped: {
+                        showPlateEntryScreen = true
+                    },
+                    onStateTapped: {
                         showAllPlateRegions = false
                         showPlateRegionSheet = true
-                    }
-                    .frame(width: 74)
-                }
-                FieldErrorGroup([validationErrors.complaint, validationErrors.plateRegion])
-
-                InputField(
-                    title: "Plate",
-                    text: Binding(
-                        get: { incident.plate },
-                        set: { incident.plate = autoReportNormalizedPlateInput($0) }
-                    ),
-                    isError: validationErrors.plate != nil,
-                    autocapitalizationType: .allCharacters,
-                    autocorrectionDisabled: true
-                )
-                FieldErrorGroup([validationErrors.plate])
-
-                InputField(
-                    title: "Address",
-                    text: Binding(
-                        get: { incident.address },
-                        set: {
-                            incident.address = $0
-                            incident.latitude = nil
-                            incident.longitude = nil
-                        }
-                    ),
-                    isError: validationErrors.address != nil,
-                    fieldMinHeight: 72
-                )
-                FieldErrorGroup([validationErrors.address])
-
-                PickerField(
-                    title: "Occurred At",
-                    value: autoReportDisplayTime(incident.occurredAtIso),
-                    isError: validationErrors.occurredAt != nil
-                ) {
-                    showOccurredAtPicker = true
-                }
-                FieldErrorGroup([validationErrors.occurredAt])
-
-                InputField(
-                    title: "Description (public facing)",
-                    text: $incident.description,
-                    fieldMinHeight: 96
-                )
-                InputField(
-                    title: "Notes (for your records)",
-                    text: $incident.notes,
-                    fieldMinHeight: 96
+                    },
+                    onAddressTapped: {
+                        addressQuery = incident.address
+                        addressSuggestions = []
+                        addressLookupInFlight = false
+                        showAddressSearchScreen = true
+                    },
+                    onAddressClear: {
+                        incident.address = ""
+                        incident.latitude = nil
+                        incident.longitude = nil
+                    },
+                    onAddressMapTapped: nil,
+                    onOccurredAtTapped: {
+                        showOccurredAtPicker = true
+                    },
+                    onDescriptionTapped: {
+                        fullScreenTextEditorField = .description
+                    },
+                    onNotesTapped: {
+                        fullScreenTextEditorField = .notes
+                    },
+                    onPhiladelphiaMobilityAccessChanged: { _ in }
                 )
 
-                AutoReportReviewField(title: "AI Summary", value: incident.aiSummary)
                 AutoReportGroupedPhotoStrip(infractions: incident.infractions)
 
-                HStack(spacing: 10) {
-                    Button {
-                        incident.good = true
-                        incident.selected = true
-                    } label: {
-                        Text("Keep")
-                            .font(.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(incident.good && incident.selected ? Color.reportedOrange : Color(.tertiarySystemFill))
-
-                    Button {
-                        incident.good = false
-                        incident.selected = false
-                    } label: {
-                        Text("Discard")
-                            .font(.caption.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(!incident.good || !incident.selected ? Color.red : Color.secondary)
-                }
+                AutoReportReviewField(
+                    title: "AI Summary",
+                    value: incident.aiSummary,
+                    valueFont: .callout
+                )
             }
             .padding(12)
+            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background((incident.good && incident.selected) ? Color.reportedOrange.opacity(0.06) : Color(.tertiarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke((incident.good && incident.selected) ? Color.reportedOrange.opacity(0.35) : Color(.separator), lineWidth: 1)
-        )
         .sheet(isPresented: $showComplaintChooser) {
             ComplaintChooserSheet(
                 title: "Choose Complaint",
@@ -5370,6 +6157,41 @@ private struct AutoReportIncidentCard: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .fullScreenCover(isPresented: $showPlateEntryScreen) {
+            PlateEntryScreen(
+                plate: Binding(
+                    get: { incident.plate },
+                    set: { incident.plate = autoReportNormalizedPlateInput($0) }
+                ),
+                candidates: plateCandidates,
+                selectedPlate: incident.plate,
+                sourceImage: primaryPlateSourceImage,
+                isError: validationErrors.plate != nil,
+                onCancel: {
+                    showPlateEntryScreen = false
+                },
+                onClear: {
+                    incident.plate = ""
+                },
+                onCandidateSelected: { candidate in
+                    incident.plate = autoReportNormalizedPlateInput(candidate.plate)
+                    if let state = candidate.state, !state.isEmpty {
+                        incident.plateRegion = state
+                    }
+                    showPlateEntryScreen = false
+                }
+            )
+        }
+        .fullScreenCover(item: $fullScreenTextEditorField) { field in
+            FullScreenReportTextEditor(
+                title: field.title,
+                placeholder: field.placeholder,
+                text: autoReportTextBinding(for: field),
+                onDone: {
+                    fullScreenTextEditorField = nil
+                }
+            )
+        }
         .sheet(isPresented: $showPlateRegionSheet) {
             PlateRegionSheet(
                 selectedValue: incident.plateRegion,
@@ -5380,6 +6202,65 @@ private struct AutoReportIncidentCard: View {
                 }
             )
             .presentationDetents([.height(showAllPlateRegions ? 300 : 176)])
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Color(.systemBackground))
+        }
+        .fullScreenCover(isPresented: $showAddressSearchScreen) {
+            AddressSearchScreen(
+                query: Binding(
+                    get: { addressQuery },
+                    set: { value in
+                        addressQuery = value
+                        handleAddressQueryChanged(value)
+                    }
+                ),
+                suggestions: addressSuggestions,
+                addressProvider: reportAddressProvider(
+                    latitude: incident.latitude,
+                    longitude: incident.longitude,
+                    address: addressQuery.isEmpty ? incident.address : addressQuery
+                ),
+                isLoading: addressLookupInFlight,
+                isError: validationErrors.address != nil,
+                imageAddressSuggestion: imageAddressSuggestion,
+                hasImageAddressSource: true,
+                isRefreshingImageAddress: false,
+                onCancel: {
+                    showAddressSearchScreen = false
+                },
+                onClear: {
+                    addressQuery = ""
+                    addressSuggestions = []
+                    addressSearchTask?.cancel()
+                    addressLookupInFlight = false
+                },
+                onOpenMap: {
+                    showAddressSearchScreen = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        showAddressMapSheet = true
+                    }
+                },
+                onSelect: selectAddress,
+                onUseImageAddress: selectAddress
+            )
+        }
+        .sheet(isPresented: $showAddressMapSheet) {
+            AddressMapSheet(
+                initialLatitude: incident.latitude,
+                initialLongitude: incident.longitude,
+                initialAddress: incident.address,
+                imageAddressSuggestion: imageAddressSuggestion,
+                hasImageAddressSource: true,
+                isRefreshingImageAddress: false,
+                onCancel: {
+                    showAddressMapSheet = false
+                },
+                onDone: { suggestion in
+                    selectAddress(suggestion)
+                    showAddressMapSheet = false
+                }
+            )
+            .presentationDetents([.large])
             .presentationDragIndicator(.hidden)
         }
         .sheet(isPresented: $showOccurredAtPicker) {
@@ -5396,37 +6277,357 @@ private struct AutoReportIncidentCard: View {
             .presentationBackground(Color(.systemBackground))
         }
     }
+
+    private func handleAddressQueryChanged(_ newValue: String) {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed != incident.address else {
+            addressSearchTask?.cancel()
+            addressSuggestions = []
+            addressLookupInFlight = false
+            return
+        }
+        addressSearchTask?.cancel()
+        addressSearchTask = Task {
+            await MainActor.run {
+                addressLookupInFlight = true
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+            if Task.isCancelled { return }
+            let suggestions = await searchReportAddresses(
+                query: trimmed,
+                latitude: incident.latitude,
+                longitude: incident.longitude,
+                address: incident.address
+            )
+            if Task.isCancelled { return }
+            await MainActor.run {
+                addressLookupInFlight = false
+                addressSuggestions = suggestions
+            }
+        }
+    }
+
+    private func selectAddress(_ suggestion: ComposerState.AddressSuggestion) {
+        incident.address = suggestion.label
+        incident.latitude = suggestion.latitude
+        incident.longitude = suggestion.longitude
+        addressQuery = suggestion.label
+        addressSuggestions = []
+        addressLookupInFlight = false
+        addressSearchTask?.cancel()
+    }
+
+    private func autoReportTextBinding(for field: ReportLongTextField) -> Binding<String> {
+        switch field {
+        case .description:
+            Binding(get: { incident.description }, set: { incident.description = $0 })
+        case .notes:
+            Binding(get: { incident.notes }, set: { incident.notes = $0 })
+        }
+    }
 }
 
 private struct AutoReportGroupedPhotoCarousel: View {
     let infractions: [IOSDetectedInfraction]
+    @Binding var selectedIndex: Int
+    let selectedPlate: String?
+    let onCandidateConfirmed: (ComposerState.PlateCandidate) -> Void
+    @State private var imageViewerInfraction: IOSDetectedInfraction?
 
     var body: some View {
-        TabView {
-            ForEach(Array(infractions.enumerated()), id: \.element.id) { index, infraction in
-                ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: infraction.mediaURL) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        ProgressView()
+        VStack(spacing: 8) {
+            ZStack {
+                if let infraction = selectedInfraction {
+                    AutoReportGroupedPhotoPage(
+                        infraction: infraction,
+                        selectedPlate: selectedPlate
+                    ) {
+                        imageViewerInfraction = infraction
                     }
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-
-                    Text("\(index + 1)/\(infractions.count)")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(8)
                 }
             }
+            .frame(height: 190)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .gesture(photoDragGesture)
+
+            if infractions.count > 1 {
+                pageIndicator
+            }
         }
-        .tabViewStyle(.page(indexDisplayMode: infractions.count > 1 ? .automatic : .never))
-        .frame(height: 220)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onChange(of: infractions.map(\.id)) { _, ids in
+            selectedIndex = min(selectedIndex, max(0, ids.count - 1))
+        }
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { imageViewerInfraction != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        imageViewerInfraction = nil
+                    }
+                }
+            )
+        ) {
+            if let infraction = imageViewerInfraction,
+               let image = UIImage(contentsOfFile: infraction.mediaURL.path) {
+                FullScreenImageViewer(
+                    image: image,
+                    candidates: infraction.composerPlateCandidates(),
+                    selectedPlate: selectedPlate,
+                    focalPoint: infraction.plateFocalPoint,
+                    onDismiss: { imageViewerInfraction = nil },
+                    onCandidateConfirmed: { candidate in
+                        onCandidateConfirmed(candidate)
+                        imageViewerInfraction = nil
+                    }
+                )
+            }
+        }
+    }
+
+    private var selectedInfraction: IOSDetectedInfraction? {
+        guard !infractions.isEmpty else { return nil }
+        return infractions[min(selectedIndex, infractions.count - 1)]
+    }
+
+    private var pageIndicator: some View {
+        HStack(spacing: 10) {
+            photoControlButton(systemImage: "chevron.left", isEnabled: selectedIndex > 0) {
+                selectPhoto(at: selectedIndex - 1)
+            }
+            HStack(spacing: 7) {
+                ForEach(infractions.indices, id: \.self) { index in
+                    Circle()
+                        .fill(index == selectedIndex ? Color.reportedOrange : Color.reportedOrange.opacity(0.32))
+                        .frame(width: index == selectedIndex ? 8 : 6, height: index == selectedIndex ? 8 : 6)
+                }
+                Text("\(selectedIndex + 1)/\(infractions.count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.reportedOrange)
+                    .padding(.leading, 2)
+            }
+            photoControlButton(systemImage: "chevron.right", isEnabled: selectedIndex < infractions.count - 1) {
+                selectPhoto(at: selectedIndex + 1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Photo \(selectedIndex + 1) of \(infractions.count)")
+    }
+
+    private func photoControlButton(
+        systemImage: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isEnabled ? Color.reportedOrange : Color.reportedOrange.opacity(0.28))
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+
+    private var photoDragGesture: some Gesture {
+        DragGesture(minimumDistance: 18, coordinateSpace: .local)
+            .onEnded { value in
+                guard infractions.count > 1,
+                      abs(value.translation.width) > abs(value.translation.height),
+                      abs(value.translation.width) > 44 else {
+                    return
+                }
+                if value.translation.width < 0 {
+                    selectPhoto(at: selectedIndex + 1)
+                } else {
+                    selectPhoto(at: selectedIndex - 1)
+                }
+            }
+    }
+
+    private func selectPhoto(at index: Int) {
+        guard !infractions.isEmpty else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            selectedIndex = min(max(index, 0), infractions.count - 1)
+        }
+    }
+}
+
+private struct AutoReportPlateCropStrip: View {
+    let infractions: [IOSDetectedInfraction]
+    let selectedPlate: String?
+    let onSelected: (IOSDetectedInfraction, ComposerState.PlateCandidate) -> Void
+
+    var body: some View {
+        if !items.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(items) { item in
+                        Button {
+                            onSelected(item.infraction, item.candidate)
+                        } label: {
+                            PlateCandidateCropPreview(
+                                candidate: item.candidate,
+                                sourceImage: item.sourceImage,
+                                size: CGSize(width: 62, height: 34),
+                                cornerRadius: 6
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Color(.separator), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Show photo \(item.index + 1)")
+                    }
+                }
+            }
+            .frame(height: 38)
+        }
+    }
+
+    private var items: [AutoReportPlateCropItem] {
+        infractions.enumerated().compactMap { index, infraction in
+            guard let candidate = infraction.representativePlateCandidate(selectedPlate: selectedPlate) else {
+                return nil
+            }
+            return AutoReportPlateCropItem(
+                index: index,
+                infraction: infraction,
+                candidate: candidate,
+                sourceImage: UIImage(contentsOfFile: infraction.mediaURL.path)
+            )
+        }
+    }
+}
+
+private struct AutoReportPlateCropItem: Identifiable {
+    let index: Int
+    let infraction: IOSDetectedInfraction
+    let candidate: ComposerState.PlateCandidate
+    let sourceImage: UIImage?
+
+    var id: String {
+        "\(index)-\(candidate.plate)"
+    }
+}
+
+private struct AutoReportGroupedPhotoPage: View {
+    let infraction: IOSDetectedInfraction
+    let selectedPlate: String?
+    let onTap: () -> Void
+
+    private var candidates: [ComposerState.PlateCandidate] {
+        infraction.composerPlateCandidates()
+    }
+
+    var body: some View {
+        ZStack {
+            if let image = UIImage(contentsOfFile: infraction.mediaURL.path) {
+                PlateAwareImage(
+                    image: image,
+                    focalPoint: infraction.plateFocalPoint
+                )
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onTap)
+
+                StillImagePlateOverlay(
+                    imageSize: image.size,
+                    candidates: candidates,
+                    selectedPlate: selectedPlate,
+                    focalPoint: infraction.plateFocalPoint,
+                    contentMode: .fill
+                )
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay {
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 32, weight: .medium))
+                                .foregroundStyle(Color.reportedOrange)
+                            Text("Image unavailable")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.secondarySystemBackground))
+    }
+}
+
+private extension IOSDetectedInfraction {
+    func composerPlateCandidates(loadCropPreviews: Bool = false) -> [ComposerState.PlateCandidate] {
+        let sourceImage = loadCropPreviews ? UIImage(contentsOfFile: mediaURL.path) : nil
+        return candidates.map { storedCandidate in
+            let candidate = storedCandidate.toComposerPlateCandidate()
+            guard let sourceImage,
+                  let cropPreview = sourceImage.croppedPlatePreview(for: candidate) else {
+                return candidate
+            }
+            return storedCandidate.toComposerPlateCandidate(plateCropPreview: cropPreview)
+        }
+    }
+
+    var plateFocalPoint: CGPoint? {
+        let mappedCandidates = composerPlateCandidates()
+        return mappedCandidates.first { $0.plate == plate }?.normalizedFocalPoint
+            ?? mappedCandidates.max(by: { $0.confidence < $1.confidence })?.normalizedFocalPoint
+    }
+
+    func representativePlateCandidate(selectedPlate: String?) -> ComposerState.PlateCandidate? {
+        let mappedCandidates = composerPlateCandidates(loadCropPreviews: true)
+        let normalizedSelection = normalizedAutoReportPlate(selectedPlate ?? "")
+        if !normalizedSelection.isEmpty,
+           let selectedCandidate = mappedCandidates.first(where: {
+               normalizedAutoReportPlate($0.plate) == normalizedSelection
+           }) {
+            return selectedCandidate
+        }
+        return mappedCandidates.max(by: { $0.confidence < $1.confidence })
+    }
+}
+
+private extension IOSDetectedInfraction.StoredCandidate {
+    func toComposerPlateCandidate(plateCropPreview: UIImage? = nil) -> ComposerState.PlateCandidate {
+        ComposerState.PlateCandidate(
+            plate: plate,
+            confidence: confidence,
+            rawPlateText: rawPlateText,
+            wasPlateCorrected: wasPlateCorrected ?? false,
+            ownOcrText: rawPlateText,
+            ownOcrConfidence: confidence,
+            state: state,
+            stateConfidence: stateConfidence,
+            plateType: plateType,
+            plateTypeLabel: plateTypeLabel,
+            bounds: candidateBounds,
+            cornerPoints: [],
+            plateCropPreview: plateCropPreview,
+            videoFramePreview: nil,
+            videoFramePreviewURL: nil,
+            videoFrameTimeSeconds: nil
+        )
+    }
+
+    private var candidateBounds: CGRect? {
+        guard let minX = boundsMinX,
+              let minY = boundsMinY,
+              let maxX = boundsMaxX,
+              let maxY = boundsMaxY else {
+            return nil
+        }
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: max(0, maxX - minX),
+            height: max(0, maxY - minY)
+        )
     }
 }
 
@@ -5442,15 +6643,7 @@ private struct AutoReportGroupedPhotoStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
                     ForEach(infractions, id: \.id) { infraction in
-                        AsyncImage(url: infraction.mediaURL) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            ProgressView()
-                        }
-                        .frame(width: 84, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        AutoReportProcessedPhotoThumbnail(infraction: infraction)
                     }
                 }
                 .padding(.horizontal, reportedFieldLabelHorizontalInset)
@@ -5459,9 +6652,35 @@ private struct AutoReportGroupedPhotoStrip: View {
     }
 }
 
+private struct AutoReportProcessedPhotoThumbnail: View {
+    let infraction: IOSDetectedInfraction
+
+    var body: some View {
+        ZStack {
+            if let image = UIImage(contentsOfFile: infraction.mediaURL.path) {
+                PlateAwareImage(
+                    image: image,
+                    focalPoint: infraction.plateFocalPoint
+                )
+            } else {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay {
+                        Image(systemName: "photo")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .frame(width: 84, height: 64)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
 private struct AutoReportReviewField: View {
     let title: String
     let value: String
+    var valueFont: Font = .subheadline
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -5469,7 +6688,7 @@ private struct AutoReportReviewField: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(value.isEmpty ? "Not set" : value)
-                .font(.subheadline)
+                .font(valueFont)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -5483,8 +6702,7 @@ private struct AutoReportReviewField: View {
 private struct AutoReportSubmissionSummaryCard: View {
     let incidents: [AutoReportIncident]
     let processedPhotos: [IOSAutoReportProcessedPhoto]
-    let submitting: Bool
-    let onSubmit: () -> Void
+    @State private var plateZoomSelection: AutoReportPlateZoomSelection?
 
     private var keptIncidents: [AutoReportIncident] {
         incidents.filter { $0.selected && $0.good }
@@ -5538,6 +6756,16 @@ private struct AutoReportSubmissionSummaryCard: View {
                                     .lineLimit(3)
                                 Text("\(incident.plate) - \(incident.plateRegion) • \(autoReportDisplayTime(incident.occurredAtIso))")
                                     .font(.subheadline.weight(.semibold))
+                                AutoReportPlateCropStrip(
+                                    infractions: incident.infractions,
+                                    selectedPlate: incident.plate
+                                ) { infraction, candidate in
+                                    plateZoomSelection = AutoReportPlateZoomSelection(
+                                        infraction: infraction,
+                                        candidate: candidate,
+                                        selectedPlate: incident.plate
+                                    )
+                                }
                                 if !incident.address.isEmpty {
                                     Text(incident.address)
                                         .font(.caption)
@@ -5552,31 +6780,122 @@ private struct AutoReportSubmissionSummaryCard: View {
                         }
                     }
                 }
-
-                Button {
-                    onSubmit()
-                } label: {
-                    HStack {
-                        if submitting {
-                            ProgressView()
-                                .tint(.white)
-                        }
-                        Text(submitting ? "Submitting..." : "Submit \(keptIncidents.count) Report\(keptIncidents.count == 1 ? "" : "s")")
-                            .font(.body.weight(.semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.reportedOrange)
-                .disabled(keptIncidents.isEmpty || !invalidKeptIncidents.isEmpty || submitting)
             }
             .padding(12)
+            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.tertiarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .fullScreenCover(item: $plateZoomSelection) { selection in
+            if let image = UIImage(contentsOfFile: selection.infraction.mediaURL.path) {
+                AutoReportPlateZoomViewer(
+                    image: image,
+                    candidates: selection.infraction.composerPlateCandidates(),
+                    selectedPlate: selection.selectedPlate,
+                    focalPoint: selection.candidate.normalizedFocalPoint ?? selection.infraction.plateFocalPoint
+                ) {
+                    plateZoomSelection = nil
+                }
+            }
+        }
+    }
+}
+
+private struct AutoReportPlateZoomSelection: Identifiable {
+    let id = UUID()
+    let infraction: IOSDetectedInfraction
+    let candidate: ComposerState.PlateCandidate
+    let selectedPlate: String?
+}
+
+private struct AutoReportPlateZoomViewer: View {
+    let image: UIImage
+    let candidates: [ComposerState.PlateCandidate]
+    let selectedPlate: String?
+    let focalPoint: CGPoint?
+    let onDismiss: () -> Void
+
+    @State private var scale: CGFloat = 1.35
+    @State private var lastScale: CGFloat = 1.35
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                Color.black.ignoresSafeArea()
+                ZStack {
+                    PlateAwareImage(
+                        image: image,
+                        focalPoint: focalPoint,
+                        contentMode: .fill
+                    )
+                    StillImagePlateOverlay(
+                        imageSize: image.size,
+                        candidates: candidates,
+                        selectedPlate: selectedPlate,
+                        focalPoint: focalPoint,
+                        contentMode: .fill
+                    )
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .scaleEffect(scale)
+                .offset(offset)
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scale = min(max(lastScale * value, 1), 6)
+                            if scale <= 1.01 {
+                                offset = .zero
+                            }
+                        }
+                        .onEnded { _ in
+                            scale = min(max(scale, 1), 6)
+                            lastScale = scale
+                            if scale <= 1.01 {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                )
+                .simultaneousGesture(
+                    DragGesture()
+                        .onChanged { value in
+                            guard scale > 1 else { return }
+                            offset = CGSize(
+                                width: lastOffset.width + value.translation.width,
+                                height: lastOffset.height + value.translation.height
+                            )
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+                .onTapGesture(count: 2) {
+                    if scale > 1.01 {
+                        scale = 1
+                        lastScale = 1
+                        offset = .zero
+                        lastOffset = .zero
+                    } else {
+                        scale = 2
+                        lastScale = 2
+                    }
+                }
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.black.opacity(0.62))
+                        .clipShape(Circle())
+                }
+                .padding(16)
+            }
+        }
     }
 }
 
@@ -5645,9 +6964,7 @@ private func buildAutoReportIncidents(from matches: [IOSDetectedInfraction]) -> 
     }
     return groups.compactMap { group in
         guard let first = group.first else { return nil }
-        let best = group.max { lhs, rhs in
-            lhs.plateConfidence < rhs.plateConfidence
-        } ?? first
+        let best = bestAutoReportInfraction(in: group) ?? first
         return AutoReportIncident(
             id: first.id,
             plate: best.plate,
@@ -5680,12 +6997,87 @@ private func shouldGroupAutoReportInfractions(_ existing: IOSDetectedInfraction,
           let nextDate = autoReportDate(from: next.occurredAtIso) else {
         return false
     }
+    let timeGap = abs(existingDate.timeIntervalSince(nextDate))
     let distance = autoReportPlateDistance(existing.plate, next.plate)
     let minPlateLength = min(normalizedAutoReportPlate(existing.plate).count, normalizedAutoReportPlate(next.plate).count)
     let similarPlate = distance <= (minPlateLength >= 6 ? 2 : 1)
-    guard similarPlate else { return false }
-    let window: TimeInterval = distance == 0 ? 5 * 60 : 2 * 60
-    return abs(existingDate.timeIntervalSince(nextDate)) <= window
+    if similarPlate {
+        let window: TimeInterval = distance == 0 ? autoReportExactPlateGroupingWindow : autoReportSimilarPlateGroupingWindow
+        return timeGap <= window
+    }
+    guard timeGap <= autoReportLocationRescueGroupingWindow else { return false }
+    return autoReportHasCloseLocation(existing, next)
+}
+
+private let autoReportExactPlateGroupingWindow: TimeInterval = 5 * 60
+private let autoReportSimilarPlateGroupingWindow: TimeInterval = 2 * 60
+private let autoReportLocationRescueGroupingWindow: TimeInterval = 60
+private let autoReportLocationRescueDistanceMeters: CLLocationDistance = 45
+
+private func bestAutoReportInfraction(in group: [IOSDetectedInfraction]) -> IOSDetectedInfraction? {
+    struct PlateCluster {
+        var normalizedPlate: String
+        var members: [IOSDetectedInfraction]
+    }
+
+    var clusters: [PlateCluster] = []
+    for infraction in group {
+        let normalized = normalizedAutoReportPlate(infraction.plate)
+        guard !normalized.isEmpty else { continue }
+        if let index = clusters.firstIndex(where: { cluster in
+            let distance = autoReportPlateDistance(cluster.normalizedPlate, normalized)
+            let minLength = min(cluster.normalizedPlate.count, normalized.count)
+            return distance <= (minLength >= 6 ? 2 : 1)
+        }) {
+            clusters[index].members.append(infraction)
+        } else {
+            clusters.append(PlateCluster(normalizedPlate: normalized, members: [infraction]))
+        }
+    }
+
+    let bestCluster = clusters.max { lhs, rhs in
+        if lhs.members.count != rhs.members.count {
+            return lhs.members.count < rhs.members.count
+        }
+        let lhsConfidence = lhs.members.map(\.plateConfidence).max() ?? 0
+        let rhsConfidence = rhs.members.map(\.plateConfidence).max() ?? 0
+        return lhsConfidence < rhsConfidence
+    }
+    return bestCluster?.members.max { lhs, rhs in
+        lhs.plateConfidence < rhs.plateConfidence
+    } ?? group.max { lhs, rhs in
+        lhs.plateConfidence < rhs.plateConfidence
+    }
+}
+
+private func autoReportHasCloseLocation(_ lhs: IOSDetectedInfraction, _ rhs: IOSDetectedInfraction) -> Bool {
+    if let lhsLocation = autoReportLocation(for: lhs),
+       let rhsLocation = autoReportLocation(for: rhs),
+       lhsLocation.distance(from: rhsLocation) <= autoReportLocationRescueDistanceMeters {
+        return true
+    }
+    let lhsAddress = normalizedAutoReportAddress(lhs.address)
+    let rhsAddress = normalizedAutoReportAddress(rhs.address)
+    return !lhsAddress.isEmpty && lhsAddress == rhsAddress
+}
+
+private func autoReportLocation(for infraction: IOSDetectedInfraction) -> CLLocation? {
+    guard let latitude = infraction.latitude,
+          let longitude = infraction.longitude,
+          latitude.isFinite,
+          longitude.isFinite,
+          abs(latitude) <= 90,
+          abs(longitude) <= 180,
+          abs(latitude) > 0.000001 || abs(longitude) > 0.000001 else {
+        return nil
+    }
+    return CLLocation(latitude: latitude, longitude: longitude)
+}
+
+private func normalizedAutoReportAddress(_ value: String) -> String {
+    value
+        .uppercased()
+        .filter { $0.isLetter || $0.isNumber }
 }
 
 private func normalizedAutoReportPlate(_ value: String) -> String {
@@ -5764,6 +7156,9 @@ struct SettingsScreen: View {
     @State private var mediaScannerEnabled = IOSMediaScannerSettings.isEnabled
     @State private var notificationsEnabled = IOSMediaScannerSettings.notificationsEnabled
     @State private var offlineProcessingEnabled = IOSMediaScannerSettings.isOfflineProcessingEnabled
+    @State private var autoReportPlateThreshold = IOSMediaScannerSettings.autoReportPlateConfidenceThreshold
+    @State private var autoReportStateThreshold = IOSMediaScannerSettings.autoReportStateConfidenceThreshold
+    @State private var autoReportComplaintThreshold = IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold
     let onThemeModeSelected: (AppThemeMode) -> Void
 
     var body: some View {
@@ -5791,9 +7186,11 @@ struct SettingsScreen: View {
                             .font(.headline)
                         Text(OnDeviceGemmaVoiceDraftEngine.settingsStatusText)
                             .font(.subheadline.weight(.semibold))
-                        Text(OnDeviceGemmaVoiceDraftEngine.accelerationMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        if !OnDeviceGemmaVoiceDraftEngine.accelerationMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(OnDeviceGemmaVoiceDraftEngine.accelerationMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Auto-Report")
@@ -5803,6 +7200,49 @@ struct SettingsScreen: View {
                         Text(autoReportConfidenceThresholdSummary)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                        Text("Trained with Reported data.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Link("View Roboflow project", destination: reportedRoboflowProjectURL)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.reportedOrange)
+                        SettingsConfidenceThresholdSlider(
+                            title: "Plate",
+                            value: Binding(
+                                get: { autoReportPlateThreshold },
+                                set: { value in
+                                    autoReportPlateThreshold = value
+                                    IOSMediaScannerSettings.autoReportPlateConfidenceThreshold = value
+                                    IOSMediaScannerSettings.autoReportPostInferencePlateConfidenceThreshold = value
+                                }
+                            )
+                        )
+                        SettingsConfidenceThresholdSlider(
+                            title: "State",
+                            value: Binding(
+                                get: { autoReportStateThreshold },
+                                set: { value in
+                                    autoReportStateThreshold = value
+                                    IOSMediaScannerSettings.autoReportStateConfidenceThreshold = value
+                                }
+                            )
+                        )
+                        SettingsConfidenceThresholdSlider(
+                            title: "Infraction",
+                            value: Binding(
+                                get: { autoReportComplaintThreshold },
+                                set: { value in
+                                    autoReportComplaintThreshold = value
+                                    IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold = value
+                                }
+                            )
+                        )
+                        Button("Reset thresholds") {
+                            IOSMediaScannerSettings.resetAutoReportConfidenceThresholds()
+                            refreshAutoReportThresholds()
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.reportedOrange)
                     }
                     if mediaScannerFeatureEnabled || offlineProcessingFeatureEnabled {
                         mediaSettingsContent(isLandscape: isLandscape)
@@ -5909,6 +7349,13 @@ struct SettingsScreen: View {
         mediaScannerEnabled = IOSMediaScannerSettings.isEnabled
         notificationsEnabled = IOSMediaScannerSettings.notificationsEnabled
         offlineProcessingEnabled = IOSMediaScannerSettings.isOfflineProcessingEnabled
+        refreshAutoReportThresholds()
+    }
+
+    private func refreshAutoReportThresholds() {
+        autoReportPlateThreshold = IOSMediaScannerSettings.autoReportPlateConfidenceThreshold
+        autoReportStateThreshold = IOSMediaScannerSettings.autoReportStateConfidenceThreshold
+        autoReportComplaintThreshold = IOSMediaScannerSettings.autoReportComplaintConfidenceThreshold
     }
 
     private func setMediaScannerEnabled(_ isOn: Bool) {
@@ -5933,7 +7380,7 @@ private struct NewReportTutorialSheet: View {
     let onSkip: () -> Void
     let onComplete: () -> Void
     @State private var page = 0
-    private var pageCount: Int { scannerAvailable ? 3 : 2 }
+    private var pageCount: Int { scannerAvailable ? 4 : 3 }
     private var lastPage: Int { pageCount - 1 }
 
     var body: some View {
@@ -5951,9 +7398,15 @@ private struct NewReportTutorialSheet: View {
                     bodyText: "Media/location access lets us read image metadata for the location and time of incident. We use it only to prefill your report."
                 )
                 .tag(1)
+                ReportTutorialPage(
+                    icon: "3",
+                    title: "Reported AI + Auto-Report",
+                    bodyText: "Reported AI can draft fields from photos. Auto-Report can scan recent photos, group likely blocked bike lane or crosswalk reports, and keeps you in review before submit."
+                )
+                .tag(2)
                 if scannerAvailable {
                     ReportTutorialScannerPage()
-                        .tag(2)
+                        .tag(3)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -6044,6 +7497,40 @@ private struct ReportTutorialScannerPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 6)
+    }
+}
+
+private struct SettingsConfidenceThresholdSlider: View {
+    let title: String
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(autoReportPercent(value))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.reportedOrange)
+            }
+            Slider(
+                value: Binding(
+                    get: { value },
+                    set: { next in
+                        let rounded = (next * 100).rounded() / 100
+                        value = min(
+                            IOSMediaScannerSettings.maximumAutoReportConfidenceThreshold,
+                            max(IOSMediaScannerSettings.minimumAutoReportConfidenceThreshold, rounded)
+                        )
+                    }
+                ),
+                in: IOSMediaScannerSettings.minimumAutoReportConfidenceThreshold...IOSMediaScannerSettings.maximumAutoReportConfidenceThreshold,
+                step: 0.01
+            )
+            .tint(Color.reportedOrange)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -6798,7 +8285,7 @@ private extension ComposerState.PlateCandidate {
 
 private extension UIImage {
     func croppedPlatePreview(for candidate: ComposerState.PlateCandidate) -> UIImage? {
-        guard let bounds = candidate.bounds, let cgImage else { return nil }
+        guard let bounds = candidate.bounds else { return nil }
         let paddedBounds = bounds.insetBy(dx: -bounds.width * 0.08, dy: -bounds.height * 0.18)
         let clampedBounds = CGRect(
             x: min(1, max(0, paddedBounds.minX)),
@@ -6806,6 +8293,8 @@ private extension UIImage {
             width: min(1, max(0, paddedBounds.width)),
             height: min(1, max(0, paddedBounds.height))
         ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        let cropSource = orientationNormalizedForPlateCropping()
+        guard let cgImage = cropSource.cgImage else { return nil }
         let pixelRect = CGRect(
             x: clampedBounds.minX * CGFloat(cgImage.width),
             y: clampedBounds.minY * CGFloat(cgImage.height),
@@ -6815,7 +8304,23 @@ private extension UIImage {
         guard pixelRect.width > 0, pixelRect.height > 0, let cropped = cgImage.cropping(to: pixelRect) else {
             return nil
         }
-        return UIImage(cgImage: cropped, scale: scale, orientation: .up)
+        return UIImage(cgImage: cropped, scale: cropSource.scale, orientation: .up)
+    }
+
+    private func orientationNormalizedForPlateCropping() -> UIImage {
+        guard let cgImage else { return self }
+        let expectedWidth = size.width * scale
+        let expectedHeight = size.height * scale
+        let matchesDisplayedPixelSpace = abs(CGFloat(cgImage.width) - expectedWidth) < 1 &&
+            abs(CGFloat(cgImage.height) - expectedHeight) < 1
+        guard imageOrientation != .up || !matchesDisplayedPixelSpace else {
+            return self
+        }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 }
 
@@ -6857,6 +8362,8 @@ private struct PlateRegionSheet: View {
         .padding(.horizontal, 20)
         .padding(.top, 18)
         .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(.systemBackground))
     }
 }
 
@@ -7152,7 +8659,10 @@ private struct VoiceReportGemmaResult {
 
 private enum OnDeviceGemmaVoiceDraftEngine {
     static let modelDownloadSizeLabel = "2.6 GB"
-    static let accelerationMessage = "Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly."
+    static var accelerationMessage: String {
+        supportsFastOnDeviceAI ? "" : slowAccelerationMessage
+    }
+    private static let slowAccelerationMessage = "Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly."
     private static let modelDownloadFileName = "gemma-4-E2B-it.litertlm"
     private static let modelDownloadEstimatedBytes: Int64 = 2_590_000_000
     private static let modelDownloadMinimumBytes: Int64 = 512 * 1024 * 1024
@@ -7167,6 +8677,69 @@ private enum OnDeviceGemmaVoiceDraftEngine {
 
     static func isModelInstalled() -> Bool {
         resolveModelURL() != nil
+    }
+
+    private static var supportsFastOnDeviceAI: Bool {
+        isFastOnDeviceAIModelIdentifier(currentDeviceModelIdentifier())
+    }
+
+    private static func currentDeviceModelIdentifier() -> String {
+        if let simulatedModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"],
+           !simulatedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return simulatedModel
+        }
+
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        var machine = systemInfo.machine
+        let machineSize = MemoryLayout.size(ofValue: machine)
+        return withUnsafePointer(to: &machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: machineSize) { rebound in
+                String(cString: rebound)
+            }
+        }
+    }
+
+    private static func isFastOnDeviceAIModelIdentifier(_ identifier: String) -> Bool {
+        if identifier.hasPrefix("iPhone") {
+            return isIPhone16OrNewerModelIdentifier(identifier)
+        }
+        if identifier.hasPrefix("iPad") {
+            return isAppleIntelligenceCapableIPadModelIdentifier(identifier)
+        }
+        return false
+    }
+
+    private static func isIPhone16OrNewerModelIdentifier(_ identifier: String) -> Bool {
+        guard let model = modelIdentifierParts(identifier, prefix: "iPhone") else { return false }
+        // Apple's model identifiers for the iPhone 16 family start at iPhone17,x.
+        return model.major >= 17
+    }
+
+    private static func isAppleIntelligenceCapableIPadModelIdentifier(_ identifier: String) -> Bool {
+        guard let model = modelIdentifierParts(identifier, prefix: "iPad") else { return false }
+        switch model.major {
+        case 13:
+            return (4...11).contains(model.minor) || (16...17).contains(model.minor)
+        case 14:
+            return (3...6).contains(model.minor) || (8...11).contains(model.minor)
+        case 15:
+            return (3...6).contains(model.minor)
+        default:
+            return model.major >= 16
+        }
+    }
+
+    private static func modelIdentifierParts(_ identifier: String, prefix: String) -> (major: Int, minor: Int)? {
+        guard identifier.hasPrefix(prefix) else { return nil }
+        let suffix = identifier.dropFirst(prefix.count)
+        let parts = suffix.split(separator: ",", maxSplits: 1)
+        guard parts.count == 2,
+              let major = Int(parts[0]),
+              let minor = Int(parts[1]) else {
+            return nil
+        }
+        return (major, minor)
     }
 
     static var settingsStatusText: String {
@@ -7711,7 +9284,7 @@ private func resolveVoiceCurrentAddress(state: ComposerState) async -> String? {
     guard latitude.isFinite, longitude.isFinite else { return nil }
     guard abs(latitude) <= 90, abs(longitude) <= 180 else { return nil }
     guard abs(latitude) > 0.000001 || abs(longitude) > 0.000001 else { return nil }
-    return await reverseGeocodeNyc(latitude: latitude, longitude: longitude)?.label
+    return await reverseGeocodeAddress(latitude: latitude, longitude: longitude)?.label
         ?? formattedCoordinateText(latitude: latitude, longitude: longitude)
 }
 
@@ -7722,6 +9295,10 @@ private var voiceAssistantCompactSheetHeight: CGFloat {
 private var voiceAssistantMinimizedSheetHeight: CGFloat {
     UIDevice.current.userInterfaceIdiom == .pad ? 126 : 118
 }
+
+private let voiceAssistantFloatingSheetHorizontalPadding: CGFloat = 14
+private let voiceAssistantFloatingSheetBottomPadding: CGFloat = 6
+private let voiceAssistantFloatingSheetCornerRadius: CGFloat = 26
 
 private struct VoiceReportAssistantSheet: View {
     @ObservedObject var audio: VoiceReportAudioController
@@ -7804,13 +9381,13 @@ private struct VoiceReportAssistantSheet: View {
                                 }
                                 Spacer(minLength: 0)
                                 Button(action: onDismiss) {
-                                    Image(systemName: "xmark")
+                                    Image(systemName: "chevron.down")
                                         .font(.body.weight(.semibold))
                                         .foregroundStyle(.primary)
                                         .frame(width: 34, height: 34)
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("Close voice assistant")
+                                .accessibilityLabel("Dismiss voice assistant")
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -7926,6 +9503,13 @@ private struct VoiceReportAssistantSheet: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: voiceAssistantFloatingSheetCornerRadius, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 18, x: 0, y: 8)
+        .padding(.horizontal, voiceAssistantFloatingSheetHorizontalPadding)
+        .padding(.bottom, voiceAssistantFloatingSheetBottomPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .task(id: audio.isRecording) {
             guard audio.isRecording else {
                 elapsedSeconds = 0
@@ -8618,11 +10202,16 @@ private func resolveVoiceReportAddress(_ result: VoiceReportGemmaResult) async -
 
 private func resolveVoiceAddressLabel(_ rawAddress: String) async -> String? {
     if let coordinate = parseVoiceCoordinate(rawAddress) {
-        return await reverseGeocodeNyc(latitude: coordinate.latitude, longitude: coordinate.longitude)?.label
+        return await reverseGeocodeAddress(latitude: coordinate.latitude, longitude: coordinate.longitude)?.label
             ?? formattedCoordinateText(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
     for query in voiceAddressSearchQueries(rawAddress) {
-        let suggestions = await searchNycAddresses(query: query)
+        let suggestions = await searchReportAddresses(
+            query: query,
+            latitude: nil,
+            longitude: nil,
+            address: rawAddress
+        )
         if let chosen = chooseVoiceAddressSuggestion(rawAddress: rawAddress, suggestions: suggestions) {
             return chosen.label
         }
@@ -9314,6 +10903,7 @@ private struct AddressSearchScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var query: String
     let suggestions: [ComposerState.AddressSuggestion]
+    let addressProvider: ReportAddressProvider
     let isLoading: Bool
     let isError: Bool
     let imageAddressSuggestion: ComposerState.AddressSuggestion?
@@ -9334,7 +10924,7 @@ private struct AddressSearchScreen: View {
                 HStack(spacing: 10) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Searching NYC addresses")
+                    Text(addressProvider.searchingLabel)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
@@ -9355,6 +10945,19 @@ private struct AddressSearchScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 6)
+            }
+            if !isLoading && !query.isEmpty && suggestions.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(addressProvider.noMatchesLabel)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -9686,7 +11289,7 @@ private struct AddressMapSheet: View {
                 try? await Task.sleep(nanoseconds: delayNanoseconds)
             }
             if Task.isCancelled { return }
-            let suggestion = await reverseGeocodeNyc(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            let suggestion = await reverseGeocodeAddress(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 ?? fallbackSuggestion(for: coordinate)
             if Task.isCancelled { return }
             await MainActor.run {
@@ -10018,6 +11621,560 @@ struct PickerField: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+private enum ReportLongTextField: String, Identifiable {
+    case description
+    case notes
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .description: return "Description (public facing)"
+        case .notes: return "Notes (for your records)"
+        }
+    }
+
+    var placeholder: String {
+        switch self {
+        case .description: return "Describe what happened"
+        case .notes: return "Add private notes"
+        }
+    }
+}
+
+private struct ReportVerifyFields: View {
+    let complaintValue: String
+    let plateValue: String
+    let plateCandidateCount: Int
+    let plateRegionValue: String
+    let addressValue: String
+    let occurredAtValue: String
+    let validationErrors: ComposerState.ValidationErrors
+    @Binding var descriptionText: String
+    @Binding var notesText: String
+    let philadelphiaDetails: PhiladelphiaMobilityAccessDetails?
+    let isLandscape: Bool
+    let isTablet: Bool
+    var usesCompactFieldRow = false
+    let onComplaintTapped: () -> Void
+    let onPlateTapped: () -> Void
+    let onStateTapped: () -> Void
+    let onAddressTapped: () -> Void
+    let onAddressClear: (() -> Void)?
+    let onAddressMapTapped: (() -> Void)?
+    let onOccurredAtTapped: () -> Void
+    var onDescriptionTapped: (() -> Void)? = nil
+    var onNotesTapped: (() -> Void)? = nil
+    var onPhiladelphiaMobilityAccessChanged: (PhiladelphiaMobilityAccessDetails) -> Void
+    var onDescriptionChanged: (() -> Void)? = nil
+    var onNotesChanged: (() -> Void)? = nil
+
+    var body: some View {
+        let fieldSpacing: CGFloat = usesCompactFieldRow ? 8 : 12
+        let complaintMaxWidth: CGFloat = isLandscape ? .infinity : (isTablet ? 312 : (usesCompactFieldRow ? 104 : 156))
+        let complaintMinWidth: CGFloat = isLandscape ? 160 : (isTablet ? 260 : (usesCompactFieldRow ? 92 : 130))
+        let plateWidth: CGFloat = isLandscape || isTablet ? 150 : (usesCompactFieldRow ? 120 : 134)
+        let stateWidth: CGFloat = isLandscape || isTablet ? 76 : (usesCompactFieldRow ? 48 : 62)
+        let multilineFieldMinHeight: CGFloat? = isLandscape || isTablet ? 104 : nil
+
+        HStack(alignment: .top, spacing: fieldSpacing) {
+            ComplaintPickerField(
+                value: complaintValue,
+                isError: validationErrors.complaint != nil,
+                action: onComplaintTapped
+            )
+            .frame(minWidth: complaintMinWidth, maxWidth: complaintMaxWidth)
+            PlateInputField(
+                text: plateValue,
+                isError: validationErrors.plate != nil,
+                candidateCount: plateCandidateCount,
+                onEdit: onPlateTapped
+            )
+            .frame(width: plateWidth)
+            PickerField(
+                title: "State",
+                value: plateRegionValue,
+                isError: validationErrors.plateRegion != nil,
+                showsChevron: false,
+                alignment: .center,
+                action: onStateTapped
+            )
+            .frame(width: stateWidth)
+        }
+        FieldErrorGroup([
+            validationErrors.complaint,
+            validationErrors.plate,
+            validationErrors.plateRegion
+        ])
+        if isLandscape {
+            HStack(alignment: .top, spacing: 12) {
+                addressField
+                occurredAtField
+            }
+        } else {
+            addressField
+            occurredAtField
+        }
+        if let philadelphiaDetails {
+            descriptionField(multilineFieldMinHeight)
+            PhiladelphiaMobilityAccessFields(
+                details: philadelphiaDetails,
+                isLandscape: isLandscape || isTablet,
+                onChanged: onPhiladelphiaMobilityAccessChanged
+            )
+            notesField(multilineFieldMinHeight)
+        } else if isLandscape {
+            HStack(alignment: .top, spacing: 12) {
+                descriptionField(multilineFieldMinHeight)
+                notesField(multilineFieldMinHeight)
+            }
+        } else {
+            descriptionField(multilineFieldMinHeight)
+            notesField(multilineFieldMinHeight)
+        }
+    }
+
+    private var addressField: some View {
+        ReportAddressPickerField(
+            value: addressValue,
+            isError: validationErrors.address != nil,
+            onSearch: onAddressTapped,
+            onClear: addressValue.isEmpty ? nil : onAddressClear,
+            onMap: onAddressMapTapped
+        )
+    }
+
+    private var occurredAtField: some View {
+        PickerField(
+            title: "Occurred At",
+            value: occurredAtValue,
+            isError: validationErrors.occurredAt != nil,
+            action: onOccurredAtTapped
+        )
+    }
+
+    private func descriptionField(_ minHeight: CGFloat?) -> some View {
+        Group {
+            if let onDescriptionTapped {
+                MultilineSelectionField(
+                    title: ReportLongTextField.description.title,
+                    value: descriptionText,
+                    placeholder: ReportLongTextField.description.placeholder,
+                    minHeight: minHeight ?? 62,
+                    action: onDescriptionTapped
+                )
+            } else {
+                InputField(
+                    title: ReportLongTextField.description.title,
+                    text: $descriptionText,
+                    fieldMinHeight: minHeight
+                )
+            }
+        }
+        .onChange(of: descriptionText) { _, _ in onDescriptionChanged?() }
+    }
+
+    private func notesField(_ minHeight: CGFloat?) -> some View {
+        Group {
+            if let onNotesTapped {
+                MultilineSelectionField(
+                    title: ReportLongTextField.notes.title,
+                    value: notesText,
+                    placeholder: ReportLongTextField.notes.placeholder,
+                    minHeight: minHeight ?? 62,
+                    action: onNotesTapped
+                )
+            } else {
+                InputField(
+                    title: ReportLongTextField.notes.title,
+                    text: $notesText,
+                    fieldMinHeight: minHeight
+                )
+            }
+        }
+        .onChange(of: notesText) { _, _ in onNotesChanged?() }
+    }
+}
+
+private struct PhiladelphiaMobilityAccessFields: View {
+    let details: PhiladelphiaMobilityAccessDetails
+    let isLandscape: Bool
+    let onChanged: (PhiladelphiaMobilityAccessDetails) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Philadelphia mobility access")
+                .font(.headline)
+                .foregroundStyle(Color.reportedOrange)
+                .padding(.horizontal, reportedFieldLabelHorizontalInset)
+
+            fieldRow {
+                InputField(
+                    title: "Block Number",
+                    text: Binding(get: { details.blockNumber }, set: { update(blockNumber: $0) }),
+                    keyboardType: .numberPad,
+                    autocapitalizationType: .none,
+                    autocorrectionDisabled: true
+                )
+                PhiladelphiaOptionMenuField(
+                    title: "Zip Code",
+                    value: details.zipCode,
+                    options: ppaPhiladelphiaZipCodes,
+                    onSelected: { update(zipCode: $0) }
+                )
+            }
+
+            InputField(
+                title: "Street Name",
+                text: Binding(get: { details.streetName }, set: { update(streetName: $0) }),
+                autocapitalizationType: .words
+            )
+
+            fieldRow {
+                PhiladelphiaAutocompleteField(
+                    title: "Vehicle Make",
+                    value: details.vehicleMake,
+                    options: ppaCatalogArray(PhiladelphiaMobilityAccessCatalogs.shared.vehicleMakes),
+                    onChanged: { update(vehicleMake: $0) }
+                )
+                PhiladelphiaAutocompleteField(
+                    title: "Vehicle Model",
+                    value: details.vehicleModel,
+                    options: ppaVehicleModelSuggestions,
+                    onChanged: { update(vehicleModel: $0) }
+                )
+            }
+
+            fieldRow {
+                PhiladelphiaOptionMenuField(
+                    title: "Body Style",
+                    value: details.bodyStyle,
+                    options: ppaCatalogArray(PhiladelphiaMobilityAccessCatalogs.shared.bodyStyles),
+                    onSelected: { update(bodyStyle: $0) }
+                )
+                PhiladelphiaOptionMenuField(
+                    title: "Vehicle Color",
+                    value: details.vehicleColor,
+                    options: ppaCatalogArray(PhiladelphiaMobilityAccessCatalogs.shared.vehicleColors),
+                    onSelected: { update(vehicleColor: $0) }
+                )
+            }
+
+            PhiladelphiaOptionMenuField(
+                title: "Violation Observed",
+                value: details.violationObserved,
+                options: ppaCatalogArray(PhiladelphiaMobilityAccessCatalogs.shared.violationObservedOptions),
+                onSelected: { update(violationObserved: $0) }
+            )
+            PhiladelphiaOptionMenuField(
+                title: "How Frequently Does This Occur?",
+                value: details.frequency,
+                options: ppaCatalogArray(PhiladelphiaMobilityAccessCatalogs.shared.frequencyOptions),
+                onSelected: { update(frequency: $0) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func fieldRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if isLandscape {
+            HStack(alignment: .top, spacing: 12, content: content)
+        } else {
+            VStack(alignment: .leading, spacing: 10, content: content)
+        }
+    }
+
+    private func update(
+        blockNumber: String? = nil,
+        streetName: String? = nil,
+        zipCode: String? = nil,
+        vehicleMake: String? = nil,
+        vehicleModel: String? = nil,
+        bodyStyle: String? = nil,
+        vehicleColor: String? = nil,
+        violationObserved: String? = nil,
+        frequency: String? = nil
+    ) {
+        onChanged(PhiladelphiaMobilityAccessDetails(
+            blockNumber: blockNumber ?? details.blockNumber,
+            streetName: streetName ?? details.streetName,
+            zipCode: zipCode ?? details.zipCode,
+            vehicleMake: vehicleMake ?? details.vehicleMake,
+            vehicleModel: vehicleModel ?? details.vehicleModel,
+            bodyStyle: bodyStyle ?? details.bodyStyle,
+            vehicleColor: vehicleColor ?? details.vehicleColor,
+            violationObserved: violationObserved ?? details.violationObserved,
+            frequency: frequency ?? details.frequency
+        ))
+    }
+}
+
+private struct PhiladelphiaAutocompleteField: View {
+    let title: String
+    let value: String
+    let options: [String]
+    let onChanged: (String) -> Void
+    @FocusState private var focused: Bool
+
+    private var suggestions: [String] {
+        let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = query.isEmpty ? options : options.filter { $0.localizedCaseInsensitiveContains(query) }
+        return Array(matches.removingCaseInsensitiveDuplicates().prefix(6))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            InputField(
+                title: title,
+                text: Binding(get: { value }, set: onChanged),
+                autocapitalizationType: .words
+            )
+            .focused($focused)
+
+            if focused && !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            Button(suggestion) {
+                                onChanged(suggestion)
+                                focused = false
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.reportedOrange)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Color.reportedOrange.opacity(0.10))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+        }
+    }
+}
+
+private struct PhiladelphiaOptionMenuField: View {
+    let title: String
+    let value: String
+    let options: [String]
+    let onSelected: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: title)
+            Menu {
+                ForEach(options, id: \.self) { option in
+                    Button(option) { onSelected(option) }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    AutoFitFieldText(value.isEmpty ? "Select" : value)
+                        .foregroundStyle(value.isEmpty ? Color(.placeholderText) : .primary)
+                    Image(systemName: "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background(Color(.systemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(.separator), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+}
+
+private func ppaCatalogArray(_ value: Any) -> [String] {
+    if let strings = value as? [String] {
+        return strings
+    }
+    if let array = value as? NSArray {
+        return array.compactMap { $0 as? String }
+    }
+    return []
+}
+
+private let ppaPhiladelphiaZipCodes = [
+    "19102", "19103", "19104", "19106", "19107", "19111", "19112", "19114",
+    "19115", "19116", "19118", "19119", "19120", "19121", "19122", "19123",
+    "19124", "19125", "19126", "19127", "19128", "19129", "19130", "19131",
+    "19132", "19133", "19134", "19135", "19136", "19137", "19138", "19139",
+    "19140", "19141", "19142", "19143", "19144", "19145", "19146", "19147",
+    "19148", "19149", "19150", "19151", "19152", "19153", "19154"
+]
+
+private let ppaVehicleModelSuggestions = [
+    "3 Series", "5 Series", "Accord", "Acadia", "Altima", "Atlas", "Bolt", "Bronco",
+    "Camaro", "Camry", "Canyon", "Civic", "Colorado", "Corolla", "CR-V", "CX-5",
+    "CX-30", "CX-50", "Edge", "Elantra", "Equinox", "Escape", "Explorer", "F-150",
+    "Focus", "Forester", "Forte", "Frontier", "Grand Caravan", "Grand Cherokee",
+    "Highlander", "HR-V", "Impala", "Jetta", "K5", "Leaf", "Malibu", "Maxima",
+    "Model 3", "Model S", "Model X", "Model Y", "Murano", "Odyssey", "Optima",
+    "Outback", "Palisade", "Pathfinder", "Pilot", "Prius", "RAV4", "Rogue",
+    "Santa Fe", "Savana", "Sentra", "Sienna", "Sierra", "Silverado", "Sonata",
+    "Soul", "Sportage", "Suburban", "Tacoma", "Tahoe", "Telluride", "Terrain",
+    "Tiguan", "Transit", "Traverse", "Tucson", "Tundra", "Versa", "Wrangler",
+    "X1", "X3", "X5", "XC40", "XC60", "XC90", "Yukon"
+]
+
+private extension Array where Element == String {
+    func removingCaseInsensitiveDuplicates() -> [String] {
+        var seen = Set<String>()
+        return filter { value in
+            let key = value.lowercased()
+            if seen.contains(key) {
+                return false
+            }
+            seen.insert(key)
+            return true
+        }
+    }
+}
+
+private struct MultilineSelectionField: View {
+    let title: String
+    let value: String
+    let placeholder: String
+    let minHeight: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: title)
+            Button(action: action) {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(value.isEmpty ? placeholder : value)
+                        .font(.body)
+                        .foregroundStyle(value.isEmpty ? Color(.placeholderText) : .primary)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Image(systemName: "square.and.pencil")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.reportedOrange)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .frame(minHeight: minHeight, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(Color(.systemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(.separator), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct FullScreenReportTextEditor: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    let onDone: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $text)
+                    .focused($focused)
+                    .font(.body)
+                    .textInputAutocapitalization(.sentences)
+                    .autocorrectionDisabled(false)
+                    .padding(16)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
+
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(.body)
+                        .foregroundStyle(Color(.placeholderText))
+                        .padding(.horizontal, 21)
+                        .padding(.vertical, 24)
+                        .allowsHitTesting(false)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done", action: onDone)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.reportedOrange)
+                }
+            }
+        }
+        .onAppear {
+            focused = true
+        }
+    }
+}
+
+private struct ReportAddressPickerField: View {
+    let value: String
+    let isError: Bool
+    let onSearch: () -> Void
+    let onClear: (() -> Void)?
+    let onMap: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: reportedFieldLabelSpacing) {
+            ReportedFieldLabel(title: "Address", isError: isError)
+            HStack(spacing: 10) {
+                Button(action: onSearch) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(value.isEmpty ? "Search address" : value)
+                            .foregroundStyle(value.isEmpty ? Color(.placeholderText) : .primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if let onClear {
+                    Button(action: onClear) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear address")
+                }
+                if let onMap {
+                    Button(action: onMap) {
+                        Image(systemName: "map")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Show Map")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(minHeight: 46)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isError ? Color.red : Color(.separator), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 }

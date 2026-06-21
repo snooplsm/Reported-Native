@@ -10,6 +10,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.view.Gravity
 import android.util.Log
 import android.widget.Toast
@@ -79,6 +80,7 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Search
@@ -89,6 +91,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -122,6 +127,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -176,12 +182,14 @@ import com.reported.nativeandroid.app.ComposerUiState
 import com.reported.nativeandroid.app.ComposerViewModel
 import com.reported.nativeandroid.app.AddressSuggestion
 import com.reported.nativeandroid.app.PlateCandidate
+import com.reported.nativeandroid.app.PhiladelphiaSubmissionVideoMessage
 import com.reported.nativeandroid.app.ProfileViewModel
 import com.reported.nativeandroid.app.ReportsMode
 import com.reported.nativeandroid.app.ReportsViewModel
 import com.reported.nativeandroid.app.SharedMediaRequest
 import com.reported.nativeandroid.app.SubmissionMedia
 import com.reported.nativeandroid.app.SubmissionStage
+import com.reported.nativeandroid.app.isPhiladelphiaSubmission
 import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.ai.ReportedAiModelStore
 import com.reported.nativeandroid.analytics.ReportedAnalytics
@@ -196,7 +204,9 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.reported.shared.model.AppThemeMode
+import com.reported.shared.model.CityReportingRules
 import com.reported.shared.model.ComplaintCategory
+import com.reported.shared.model.PhiladelphiaMobilityAccessCatalogs
 import com.reported.shared.model.PlatePatternClassifier
 import com.reported.shared.model.ReportSummary
 import kotlinx.coroutines.Dispatchers
@@ -235,6 +245,9 @@ import kotlin.math.sqrt
 private const val ROTATED_PLATE_OVERLAY_THRESHOLD_DEGREES = 4f
 private const val REPORT_TUTORIAL_PREFS = "reported.report.tutorial"
 private const val REPORT_TUTORIAL_SEEN_KEY = "new_report_tutorial_seen"
+private val ReportedAiFabSize = 58.dp
+private val ReportedAiFabVerifyBottomOffset = 76.dp
+private val ReportedAiFabDefaultBottomOffset = 24.dp
 
 private fun hasSeenReportTutorial(context: Context): Boolean =
     context.applicationContext
@@ -485,8 +498,18 @@ fun ReportComposerScreen(
                         show()
                     }
                 }
+                val metadataProvider = if (metadata.latitude != null && metadata.longitude != null) {
+                    reportAddressProviderFor(context, metadata.latitude, metadata.longitude, "")
+                } else {
+                    null
+                }
+                if (media.isVideo && metadataProvider == ReportAddressProvider.Philadelphia) {
+                    vm.onAction(ComposerAction.MediaRejected(media, PhiladelphiaSubmissionVideoMessage))
+                    return@launch
+                }
                 val reverseGeocodeSuggestion = if (metadata.latitude != null && metadata.longitude != null) {
-                    vm.onAction(ComposerAction.DetectionProgressChanged("Finding NYC address", 0.35f))
+                    val provider = metadataProvider ?: reportAddressProviderFor(context, metadata.latitude, metadata.longitude, "")
+                    vm.onAction(ComposerAction.DetectionProgressChanged(provider.reverseLookupLabel, 0.35f))
                     reverseGeocodeAddress(context, metadata.latitude, metadata.longitude)
                 } else null
                 vm.onAction(ComposerAction.MetadataApplied(
@@ -523,11 +546,27 @@ fun ReportComposerScreen(
         }
     }
 
+    fun inspectExtraMediaForPhiladelphiaVideo(media: SubmissionMedia) {
+        if (!media.isVideo) return
+        scope.launch {
+            val metadata = extractSubmissionMetadata(context, media)
+            val provider = if (metadata.latitude != null && metadata.longitude != null) {
+                reportAddressProviderFor(context, metadata.latitude, metadata.longitude, "")
+            } else {
+                null
+            }
+            if (provider == ReportAddressProvider.Philadelphia) {
+                vm.onAction(ComposerAction.MediaRejected(media, PhiladelphiaSubmissionVideoMessage))
+            }
+        }
+    }
+
     fun addExtraMedia(uri: Uri) {
         val isVideo = isVideoUri(uri)
         scope.launch {
             val media = buildSubmissionMedia(context, uri, isVideo)
             vm.onAction(ComposerAction.ExtraMediaAdded(media))
+            inspectExtraMediaForPhiladelphiaVideo(media)
         }
     }
 
@@ -561,6 +600,7 @@ fun ReportComposerScreen(
                 val isVideo = isVideoUri(uri)
                 val media = buildSubmissionMedia(context, uri, isVideo)
                 vm.onAction(ComposerAction.ExtraMediaAdded(media))
+                inspectExtraMediaForPhiladelphiaVideo(media)
             }
         }
         pendingMediaForCurrentReport = false
@@ -568,7 +608,11 @@ fun ReportComposerScreen(
     }
 
     fun launchDocumentPicker() {
-        val mimeTypes = arrayOf("image/*", "video/*")
+        val mimeTypes = if (vm.state.value.isPhiladelphiaSubmission()) {
+            arrayOf("image/*")
+        } else {
+            arrayOf("image/*", "video/*")
+        }
         if (pendingMultipleSelection) {
             multiMediaPicker.launch(mimeTypes)
         } else {
@@ -864,9 +908,27 @@ fun ReportComposerScreen(
             return@LaunchedEffect
         }
         addressSearchJob = scope.launch {
+            val provider = reportAddressProviderFor(
+                context = context,
+                latitude = state.latitude,
+                longitude = state.longitude,
+                address = state.addressQuery.ifBlank { state.address }
+            )
             vm.onAction(ComposerAction.AddressLookupLoadingChanged(true))
             delay(250)
-            vm.onAction(ComposerAction.AddressSuggestionsChanged(searchNycAddresses(state.addressQuery)))
+            vm.onAction(
+                ComposerAction.AddressSuggestionsChanged(
+                    searchReportAddresses(
+                        context = context,
+                        query = state.addressQuery,
+                        latitude = state.latitude,
+                        longitude = state.longitude,
+                        address = state.addressQuery.ifBlank { state.address }
+                    ).ifEmpty {
+                        if (provider == ReportAddressProvider.Philadelphia) searchNycAddresses(state.addressQuery) else emptyList()
+                    }
+                )
+            )
         }
     }
 
@@ -1098,7 +1160,10 @@ fun ReportComposerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PlateCandidateThumbnail(candidate = candidate)
+                    PlateCandidateThumbnail(
+                        candidate = candidate,
+                        sourceMediaUri = state.primaryMedia?.uri
+                    )
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(candidate.plate, style = MaterialTheme.typography.titleLarge)
                         candidate.plateCorrectionText()?.let { correctionText ->
@@ -1172,37 +1237,37 @@ fun ReportComposerScreen(
             }
         )
     } else {
-        Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            val landscapeColumnChrome = isScreenLandscape &&
-                (state.stage == SubmissionStage.VERIFY || state.stage == SubmissionStage.PICK_MEDIA)
-            if (!landscapeColumnChrome) {
-                ReportComposerTopBar(
-                    compact = false,
-                    hasDraftContent = hasDraftContent,
-                    onOpenMenu = onOpenMenu,
-                    onVoiceAssist = ::openVoiceAssistant,
-                    onClear = { showDiscardDialog = true }
-                )
-            }
+            Column(modifier = Modifier.fillMaxSize()) {
+                val landscapeColumnChrome = isScreenLandscape &&
+                    (state.stage == SubmissionStage.VERIFY || state.stage == SubmissionStage.PICK_MEDIA)
+                if (!landscapeColumnChrome) {
+                    ReportComposerTopBar(
+                        compact = false,
+                        hasDraftContent = hasDraftContent,
+                        onOpenMenu = onOpenMenu,
+                        onClear = { showDiscardDialog = true }
+                    )
+                }
 
-        if (!state.draftLoaded) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(28.dp),
-                    strokeWidth = 2.dp
-                )
-            }
-            return@Column
-        }
+                if (!state.draftLoaded) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    return@Column
+                }
 
-        when (state.stage) {
+                when (state.stage) {
             SubmissionStage.PICK_MEDIA -> {
                 val selectedComplaintOption = state.selectedComplaintId
                     ?.let { selectedId -> complaintOptions.firstOrNull { it.id == selectedId } }
@@ -1221,7 +1286,6 @@ fun ReportComposerScreen(
                                 compact = true,
                                 hasDraftContent = false,
                                 onOpenMenu = onOpenMenu,
-                                onVoiceAssist = ::openVoiceAssistant,
                                 onClear = { showDiscardDialog = true }
                             )
                             Text(
@@ -1438,9 +1502,12 @@ fun ReportComposerScreen(
                     locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
                 }
                 val submitReport = {
+                    val mediaToSubmitMillis = state.firstMediaAddedElapsedRealtimeMs
+                        ?.let { (SystemClock.elapsedRealtime() - it).coerceAtLeast(0L) }
                     ReportedAnalytics.logSubmitReportTapped(
                         stage = if (state.stage == SubmissionStage.VERIFY) "verify" else "pick_media",
-                        isAuthorized = isAuthorized
+                        isAuthorized = isAuthorized,
+                        mediaToSubmitMillis = mediaToSubmitMillis
                     )
                     val readyToSubmit = vm.prepareSubmit()
                     if (!readyToSubmit) {
@@ -1454,8 +1521,10 @@ fun ReportComposerScreen(
                     }
                 }
 
+                val reportedAiFabVisible = state.primaryMedia != null && !isKeyboardVisible
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isLandscape = maxWidth > maxHeight
+                    val reportedAiFabSpacer = if (reportedAiFabVisible) ReportedAiFabSize else 0.dp
                     LaunchedEffect(isLandscape) {
                         isLandscapeLayout = isLandscape
                     }
@@ -1475,7 +1544,6 @@ fun ReportComposerScreen(
                                         compact = true,
                                         hasDraftContent = false,
                                         onOpenMenu = onOpenMenu,
-                                        onVoiceAssist = ::openVoiceAssistant,
                                         onClear = { showDiscardDialog = true }
                                     )
                                     VerifyMediaPanel(
@@ -1503,7 +1571,9 @@ fun ReportComposerScreen(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .imePadding(),
-                                        contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 78.dp)
+                                        contentPadding = PaddingValues(
+                                            bottom = if (isKeyboardVisible) 24.dp else 78.dp + reportedAiFabSpacer
+                                        )
                                     ) {
                                         item {
                                             Column(
@@ -1559,7 +1629,9 @@ fun ReportComposerScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .imePadding(),
-                                contentPadding = PaddingValues(bottom = if (isKeyboardVisible) 24.dp else 112.dp)
+                                contentPadding = PaddingValues(
+                                    bottom = if (isKeyboardVisible) 24.dp else 112.dp + reportedAiFabSpacer
+                                )
                             ) {
                                 item {
                                     ScreenSection(title = null) {
@@ -1646,9 +1718,26 @@ fun ReportComposerScreen(
                         }
                     }
                 }
+                }
+            }
+            }
+            if (state.primaryMedia != null && !isKeyboardVisible) {
+                ReportedAiFloatingActionButton(
+                    onClick = ::openVoiceAssistant,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(
+                            end = 20.dp,
+                            bottom = if (state.stage == SubmissionStage.VERIFY) {
+                                ReportedAiFabVerifyBottomOffset
+                            } else {
+                                ReportedAiFabDefaultBottomOffset
+                            }
+                        )
+                )
             }
         }
-    }
     }
 
     if (state.detectingPlates && !state.awaitingVideoProcessingDecision && !detectionProgressMinimized) {
@@ -2109,7 +2198,7 @@ private fun DetectionProgressChip(
     }
 }
 
-private data class ComplaintOption(
+data class ComplaintOption(
     val id: String,
     val title: String,
     val imageUri: String,
@@ -2129,7 +2218,7 @@ private fun complaintTileTitleSize(title: String) = when {
     else -> 16.sp
 }
 
-private fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOption> =
+fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOption> =
     listOf(
         complaintOptionFor(
             categories = categories,
@@ -2206,7 +2295,6 @@ private fun ReportComposerTopBar(
     compact: Boolean,
     hasDraftContent: Boolean,
     onOpenMenu: () -> Unit,
-    onVoiceAssist: () -> Unit,
     onClear: () -> Unit
 ) {
     if (compact) {
@@ -2233,15 +2321,6 @@ private fun ReportComposerTopBar(
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                IconButton(
-                    onClick = onVoiceAssist,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .offset(x = 34.dp)
-                        .size(34.dp)
-                ) {
-                    AnimatedSparkleIcon(contentDescription = "Reported AI")
-                }
             }
             if (hasDraftContent) {
                 TextButton(
@@ -2259,15 +2338,6 @@ private fun ReportComposerTopBar(
             title = {
                 Box(contentAlignment = Alignment.Center) {
                     Text("Report")
-                    IconButton(
-                        onClick = onVoiceAssist,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .offset(x = 36.dp)
-                            .size(36.dp)
-                    ) {
-                        AnimatedSparkleIcon(contentDescription = "Reported AI")
-                    }
                 }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -2290,6 +2360,27 @@ private fun ReportComposerTopBar(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ReportedAiFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FloatingActionButton(
+        onClick = onClick,
+        modifier = modifier.size(ReportedAiFabSize),
+        shape = CircleShape,
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            AnimatedSparkleIcon(
+                contentDescription = "Reported AI",
+                tint = MaterialTheme.colorScheme.onPrimary
+            )
+        }
     }
 }
 
@@ -2506,7 +2597,7 @@ private fun VoiceReportAssistantSheet(
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close voice assistant")
+                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = "Dismiss voice assistant")
                 }
             }
 
@@ -4204,17 +4295,26 @@ private fun extractVoiceSection(transcript: String, label: String): String? {
 }
 
 @Composable
-private fun AddressSearchScreen(
+fun AddressSearchScreen(
     state: ComposerUiState,
     onAction: (ComposerAction) -> Unit,
     onBack: () -> Unit,
     onOpenMap: () -> Unit
 ) {
+    val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var fieldValue by remember {
         mutableStateOf(TextFieldValue(state.addressQuery, selection = TextRange.Zero))
+    }
+    val addressProvider = remember(context, state.latitude, state.longitude, state.addressQuery, state.address) {
+        reportAddressProviderFor(
+            context = context,
+            latitude = state.latitude,
+            longitude = state.longitude,
+            address = state.addressQuery.ifBlank { state.address }
+        )
     }
 
     BackHandler(onBack = onBack)
@@ -4268,7 +4368,7 @@ private fun AddressSearchScreen(
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
             singleLine = true,
-            label = { Text("Search NYC address") },
+            label = { Text(addressProvider.searchLabel) },
             leadingIcon = {
                 Icon(Icons.Outlined.Search, contentDescription = null)
             },
@@ -4325,7 +4425,7 @@ private fun AddressSearchScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("Searching NYC addresses")
+                        Text(addressProvider.searchingLabel)
                     }
                 }
             }
@@ -4345,7 +4445,7 @@ private fun AddressSearchScreen(
             ) {
                 item {
                     Text(
-                        "No NYC address matches found.",
+                        addressProvider.noMatchesLabel,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -4357,7 +4457,7 @@ private fun AddressSearchScreen(
 }
 
 @Composable
-private fun PlateEntryScreen(
+fun PlateEntryScreen(
     state: ComposerUiState,
     onAction: (ComposerAction) -> Unit,
     onBack: () -> Unit,
@@ -4485,6 +4585,7 @@ private fun PlateEntryScreen(
                 items(state.plateCandidates, key = { it.plate }) { candidate ->
                     PlateCandidateChoiceRow(
                         candidate = candidate,
+                        sourceMediaUri = state.primaryMedia?.uri,
                         selected = candidate.plate == state.selectedPlateCandidate,
                         onClick = { onCandidateSelected(candidate) }
                     )
@@ -4557,6 +4658,7 @@ private fun ImageAddressPickerRow(
 @Composable
 private fun PlateCandidateChoiceRow(
     candidate: PlateCandidate,
+    sourceMediaUri: String?,
     selected: Boolean,
     onClick: () -> Unit
 ) {
@@ -4574,7 +4676,10 @@ private fun PlateCandidateChoiceRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            PlateCandidateThumbnail(candidate = candidate)
+            PlateCandidateThumbnail(
+                candidate = candidate,
+                sourceMediaUri = sourceMediaUri
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -4634,6 +4739,12 @@ private fun VerifyMediaPanel(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        val addMediaLabel = when {
+            state.isPhiladelphiaSubmission() && state.primaryMedia == null -> "Add photo"
+            state.isPhiladelphiaSubmission() -> "Add another photo"
+            state.primaryMedia == null -> "Add photo or video"
+            else -> "Add more photos or videos"
+        }
         val previewModifier = if (expandPreview) {
             Modifier
                 .weight(1f)
@@ -4671,7 +4782,7 @@ private fun VerifyMediaPanel(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 SecondaryButton(
-                    if (state.primaryMedia == null) "Add photo or video" else "Add more photos or videos",
+                    addMediaLabel,
                     onClick = onLaunchMediaPicker
                 )
                 SubmitReportButton(
@@ -4683,7 +4794,7 @@ private fun VerifyMediaPanel(
             }
         } else {
             SecondaryButton(
-                if (state.primaryMedia == null) "Add photo or video" else "Add more photos or videos",
+                addMediaLabel,
                 onClick = onLaunchMediaPicker
             )
         }
@@ -4692,7 +4803,7 @@ private fun VerifyMediaPanel(
 }
 
 @Composable
-private fun VerifyFieldsPanel(
+fun VerifyFieldsPanel(
     state: ComposerUiState,
     complaintOptions: List<ComplaintOption>,
     isLandscape: Boolean,
@@ -4702,6 +4813,28 @@ private fun VerifyFieldsPanel(
     onShowAddressSearch: () -> Unit,
     onShowAddressMap: () -> Unit
 ) {
+    val context = LocalContext.current
+    var textEditTarget by remember { mutableStateOf<ReportTextEditTarget?>(null) }
+    val showsPhiladelphiaMobilityAccess = state.showsPhiladelphiaMobilityAccessFields(context)
+    textEditTarget?.let { target ->
+        FullScreenReportTextEditor(
+            title = target.title,
+            placeholder = target.placeholder,
+            initialValue = when (target) {
+                ReportTextEditTarget.Description -> state.description
+                ReportTextEditTarget.Notes -> state.notes
+            },
+            onDismiss = { textEditTarget = null },
+            onSave = { value ->
+                when (target) {
+                    ReportTextEditTarget.Description -> onAction(ComposerAction.FieldsChanged(description = value))
+                    ReportTextEditTarget.Notes -> onAction(ComposerAction.FieldsChanged(notes = value))
+                }
+                textEditTarget = null
+            }
+        )
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -4796,62 +4929,396 @@ private fun VerifyFieldsPanel(
         state.validationErrors.occurredAt?.let { ValidationMessage(it) }
     }
     if (isLandscape) {
+        ReportLongTextSelectionField(
+            label = ReportTextEditTarget.Description.title,
+            value = state.description,
+            placeholder = ReportTextEditTarget.Description.placeholder,
+            onClick = { textEditTarget = ReportTextEditTarget.Description }
+        )
+        if (showsPhiladelphiaMobilityAccess) {
+            PhiladelphiaMobilityAccessFields(
+                state = state,
+                isLandscape = true,
+                onAction = onAction
+            )
+        }
+        ReportLongTextSelectionField(
+            label = ReportTextEditTarget.Notes.title,
+            value = state.notes,
+            placeholder = ReportTextEditTarget.Notes.placeholder,
+            onClick = { textEditTarget = ReportTextEditTarget.Notes }
+        )
+    } else {
+        ReportLongTextSelectionField(
+            label = ReportTextEditTarget.Description.title,
+            value = state.description,
+            placeholder = ReportTextEditTarget.Description.placeholder,
+            onClick = { textEditTarget = ReportTextEditTarget.Description }
+        )
+        if (showsPhiladelphiaMobilityAccess) {
+            PhiladelphiaMobilityAccessFields(
+                state = state,
+                isLandscape = false,
+                onAction = onAction
+            )
+        }
+        ReportLongTextSelectionField(
+            label = ReportTextEditTarget.Notes.title,
+            value = state.notes,
+            placeholder = ReportTextEditTarget.Notes.placeholder,
+            onClick = { textEditTarget = ReportTextEditTarget.Notes }
+        )
+    }
+}
+
+private enum class ReportTextEditTarget(
+    val title: String,
+    val placeholder: String
+) {
+    Description(
+        title = "Description (public facing)",
+        placeholder = "Describe what happened"
+    ),
+    Notes(
+        title = "Notes (for your records)",
+        placeholder = "Add private notes"
+    )
+}
+
+@Composable
+private fun ReportLongTextSelectionField(
+    label: String,
+    value: String,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    ReportedSelectionField(
+        label = label,
+        value = value.ifBlank { placeholder },
+        modifier = modifier,
+        onClick = onClick,
+        trailing = {
+            Icon(
+                Icons.Outlined.Edit,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    )
+}
+
+@Composable
+private fun PhiladelphiaMobilityAccessFields(
+    state: ComposerUiState,
+    isLandscape: Boolean,
+    onAction: (ComposerAction) -> Unit
+) {
+    val details = state.philadelphiaMobilityAccessDetails
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            "Philadelphia mobility access",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        if (isLandscape) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ReportedField(
+                    label = "Block Number",
+                    value = details.blockNumber,
+                    onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(blockNumber = it)) },
+                    modifier = Modifier.weight(0.8f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                ReportedField(
+                    label = "Street Name",
+                    value = details.streetName,
+                    onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(streetName = it)) },
+                    modifier = Modifier.weight(1.4f),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+                )
+                ReportedOptionsField(
+                    label = "Zip Code",
+                    value = details.zipCode,
+                    options = CityReportingRules.philadelphiaZipCodes.toList(),
+                    onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(zipCode = it)) },
+                    modifier = Modifier.weight(0.8f)
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ReportedField(
+                    label = "Block Number",
+                    value = details.blockNumber,
+                    onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(blockNumber = it)) },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                ReportedOptionsField(
+                    label = "Zip Code",
+                    value = details.zipCode,
+                    options = CityReportingRules.philadelphiaZipCodes.toList(),
+                    onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(zipCode = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            ReportedField(
+                label = "Street Name",
+                value = details.streetName,
+                onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(streetName = it)) },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ReportedField(
-                "Description (public facing)",
-                state.description,
-                onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) },
-                modifier = Modifier.weight(1f),
-                minHeight = 96.dp,
-                singleLine = false,
-                minLines = 3,
-                maxLines = 5,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences
-                )
+            ReportedAutocompleteField(
+                label = "Vehicle Make",
+                value = details.vehicleMake,
+                options = PhiladelphiaMobilityAccessCatalogs.vehicleMakes,
+                onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(vehicleMake = it)) },
+                modifier = Modifier.weight(1f)
             )
-            ReportedField(
-                "Notes (for your records)",
-                state.notes,
-                onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) },
+            ReportedAutocompleteField(
+                label = "Vehicle Model",
+                value = details.vehicleModel,
+                options = listOfNotNull(state.vehicleDescription?.model)
+                    .plus(PhiladelphiaMobilityAccessCatalogs.vehicleModels)
+                    .distinctBy { it.lowercase(Locale.US) },
+                onValueChange = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(vehicleModel = it)) },
                 modifier = Modifier.weight(1f),
-                minHeight = 96.dp,
-                singleLine = false,
-                minLines = 3,
-                maxLines = 5,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Sentences
-                )
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
             )
         }
-    } else {
-        ReportedField(
-            "Description (public facing)",
-            state.description,
-            onValueChange = { onAction(ComposerAction.FieldsChanged(description = it)) },
-            minHeight = 104.dp,
-            singleLine = false,
-            minLines = 3,
-            maxLines = 5,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ReportedOptionsField(
+                label = "Body Style",
+                value = details.bodyStyle,
+                options = PhiladelphiaMobilityAccessCatalogs.bodyStyles,
+                onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(bodyStyle = it)) },
+                modifier = Modifier.weight(1f)
             )
-        )
-        ReportedField(
-            "Notes (for your records)",
-            state.notes,
-            onValueChange = { onAction(ComposerAction.FieldsChanged(notes = it)) },
-            minHeight = 104.dp,
-            singleLine = false,
-            minLines = 3,
-            maxLines = 5,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Sentences
+            ReportedOptionsField(
+                label = "Vehicle Color",
+                value = details.vehicleColor,
+                options = PhiladelphiaMobilityAccessCatalogs.vehicleColors,
+                onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(vehicleColor = it)) },
+                modifier = Modifier.weight(1f)
             )
+        }
+        ReportedOptionsField(
+            label = "Violation Observed",
+            value = details.violationObserved,
+            options = PhiladelphiaMobilityAccessCatalogs.violationObservedOptions,
+            onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(violationObserved = it)) }
         )
+        ReportedOptionsField(
+            label = "How Frequently Does This Occur?",
+            value = details.frequency,
+            options = PhiladelphiaMobilityAccessCatalogs.frequencyOptions,
+            onSelected = { onAction(ComposerAction.PhiladelphiaMobilityAccessChanged(frequency = it)) }
+        )
+    }
+}
+
+@Composable
+private fun ReportedAutocompleteField(
+    label: String,
+    value: String,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    onValueChange: (String) -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    val filteredOptions = remember(value, options) {
+        val query = value.trim()
+        val matches = if (query.isBlank()) {
+            options
+        } else {
+            options.filter { it.contains(query, ignoreCase = true) }
+        }
+        matches.distinctBy { it.lowercase(Locale.US) }.take(8)
+    }
+    Box(modifier = modifier) {
+        ReportedField(
+            label = label,
+            value = value,
+            onValueChange = {
+                onValueChange(it)
+                expanded = true
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (it.isFocused) expanded = true
+                },
+            keyboardOptions = keyboardOptions,
+            trailingContent = {
+                Icon(
+                    Icons.Outlined.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        )
+        DropdownMenu(
+            expanded = focused && expanded && filteredOptions.isNotEmpty(),
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            filteredOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onValueChange(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReportedOptionsField(
+    label: String,
+    value: String,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    onSelected: (String) -> Unit
+) {
+    var showOptions by remember { mutableStateOf(false) }
+    if (showOptions) {
+        AlertDialog(
+            onDismissRequest = { showOptions = false },
+            title = { Text(label) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    options.forEach { option ->
+                        TextButton(
+                            onClick = {
+                                onSelected(option)
+                                showOptions = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                option,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Start
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showOptions = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+    ReportedSelectionField(
+        label = label,
+        value = value.ifBlank { "Select" },
+        modifier = modifier,
+        onClick = { showOptions = true },
+        trailing = {
+            Icon(
+                Icons.Outlined.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    )
+}
+
+private fun ComposerUiState.showsPhiladelphiaMobilityAccessFields(context: Context): Boolean =
+    reportAddressProviderFor(
+        context = context,
+        latitude = latitude,
+        longitude = longitude,
+        address = addressQuery.ifBlank { address }
+    ) == ReportAddressProvider.Philadelphia
+
+@Composable
+private fun FullScreenReportTextEditor(
+    title: String,
+    placeholder: String,
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var text by remember(initialValue) { mutableStateOf(initialValue) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .safeDrawingPadding()
+                    .imePadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Close editor")
+                    }
+                    Text(
+                        text = title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleLarge,
+                        textAlign = TextAlign.Center
+                    )
+                    TextButton(onClick = { onSave(text) }) {
+                        Text("Done", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    placeholder = { Text(placeholder) },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    minLines = 12,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -5143,7 +5610,7 @@ private fun UploadTile(
 }
 
 @Composable
-private fun PrimaryMediaPreview(
+fun PrimaryMediaPreview(
     primaryMedia: SubmissionMedia,
     extraMedia: List<SubmissionMedia>,
     primaryFocalPointX: Float? = null,
@@ -5153,6 +5620,7 @@ private fun PrimaryMediaPreview(
     selectedPlate: String? = null,
     modifier: Modifier = Modifier,
     expand: Boolean = false,
+    showRemoveButton: Boolean = true,
     onPlateCandidateTapped: (PlateCandidate) -> Unit,
     onPlateCandidateConfirmed: (PlateCandidate) -> Unit,
     onShowPlateCandidates: () -> Unit,
@@ -5358,7 +5826,7 @@ private fun PrimaryMediaPreview(
             )
         }
         val currentMedia = mediaItems.getOrNull(pagerState.currentPage)
-        if (currentMedia != null) {
+        if (showRemoveButton && currentMedia != null) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -5807,7 +6275,10 @@ private fun FullScreenMediaViewer(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            PlateCandidateThumbnail(candidate = candidate)
+                            PlateCandidateThumbnail(
+                                candidate = candidate,
+                                sourceMediaUri = media.uri
+                            )
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(candidate.plate, style = MaterialTheme.typography.titleLarge)
                                 candidate.plateCorrectionText()?.let { correctionText ->
@@ -6227,9 +6698,10 @@ private fun addressCacheKey(latLng: LatLng): Pair<Long, Long> {
 }
 
 @Composable
-private fun PlateCandidatePickerDialog(
+fun PlateCandidatePickerDialog(
     candidates: List<PlateCandidate>,
     selectedPlate: String?,
+    sourceMediaUri: String? = null,
     onDismiss: () -> Unit,
     onSelected: (PlateCandidate) -> Unit
 ) {
@@ -6260,7 +6732,10 @@ private fun PlateCandidatePickerDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            PlateCandidateThumbnail(candidate = candidate)
+                            PlateCandidateThumbnail(
+                                candidate = candidate,
+                                sourceMediaUri = sourceMediaUri
+                            )
                             Column(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -6314,24 +6789,56 @@ private fun PlateCandidatePickerDialog(
 }
 
 @Composable
-private fun PlateCandidateThumbnail(candidate: PlateCandidate) {
+private fun PlateCandidateThumbnail(
+    candidate: PlateCandidate,
+    sourceMediaUri: String? = null
+) {
+    val fallbackUri = candidate.videoFramePreviewUri ?: sourceMediaUri
+    var showFallback by remember(candidate.thumbnailUri, fallbackUri) {
+        mutableStateOf(candidate.thumbnailUri.isNullOrBlank())
+    }
+    var imageFailed by remember(candidate.thumbnailUri, fallbackUri) { mutableStateOf(false) }
+    val imageUri = if (showFallback) fallbackUri else candidate.thumbnailUri
+    val imageAlignment = if (showFallback && imageUri == sourceMediaUri) {
+        candidate.thumbnailSourceAlignment()
+    } else {
+        Alignment.Center
+    }
     Box(
         modifier = Modifier
             .size(width = 96.dp, height = 48.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center
     ) {
-        if (candidate.thumbnailUri != null) {
+        if (imageUri != null && !imageFailed) {
             AsyncImage(
-                model = candidate.thumbnailUri,
+                model = imageUri,
                 contentDescription = candidate.plate,
+                onError = {
+                    if (!showFallback && fallbackUri != null) {
+                        showFallback = true
+                        imageFailed = false
+                    } else {
+                        imageFailed = true
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                alignment = imageAlignment
             )
         } else {
             Text("No image", style = MaterialTheme.typography.labelSmall)
         }
     }
+}
+
+private fun PlateCandidate.thumbnailSourceAlignment(): Alignment {
+    val x = focalPointX ?: 0.5f
+    val y = focalPointY ?: 0.5f
+    return BiasAlignment(
+        horizontalBias = (x * 2f - 1f).coerceIn(-1f, 1f),
+        verticalBias = (y * 2f - 1f).coerceIn(-1f, 1f)
+    )
 }
 
 private fun List<PlateCandidate>.bestCenteredCandidate(): PlateCandidate? =

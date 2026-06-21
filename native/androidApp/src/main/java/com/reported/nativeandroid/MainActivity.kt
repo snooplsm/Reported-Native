@@ -53,10 +53,15 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_SEND -> listOfNotNull(intent.streamExtra())
             Intent.ACTION_SEND_MULTIPLE -> intent.streamExtras()
             else -> emptyList()
-        }.filter { uri ->
-            val type = contentResolver.getType(uri) ?: intent.type.orEmpty()
-            type.startsWith("image/") || type.startsWith("video/")
-        }
+        }.filter(::isSharedImageOrVideo)
+    }
+
+    private fun isSharedImageOrVideo(uri: Uri): Boolean {
+        val type = contentResolver.getType(uri).orEmpty()
+        if (type.startsWith("image/") || type.startsWith("video/")) return true
+        val path = uri.toString().substringBefore('?').lowercase()
+        return listOf(".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".mp4", ".mov", ".m4v", ".3gp", ".webm")
+            .any(path::endsWith)
     }
 
     @Suppress("DEPRECATION")

@@ -83,9 +83,6 @@ import kotlinx.coroutines.launch
 private val ReportedFieldShape = RoundedCornerShape(8.dp)
 private val ReportedFieldMinHeight = 56.dp
 private val ReportedFieldHorizontalPadding = 10.dp
-private val ReportedFieldBorderColor = Color(0xFF6F6877)
-private val ReportedFieldBorderColorDisabled = Color(0xFFBBB4C2)
-private val ReportedFieldErrorBackground = Color(0xFFFFF1F1)
 
 @Composable
 private fun ReportedFieldShell(
@@ -110,13 +107,13 @@ private fun ReportedFieldShell(
     val outlineColor = when {
         isError -> MaterialTheme.colorScheme.error
         isFocused -> MaterialTheme.colorScheme.primary
-        enabled -> ReportedFieldBorderColor
-        else -> ReportedFieldBorderColorDisabled
+        enabled -> MaterialTheme.colorScheme.outlineVariant
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
     }
     val fieldBackground = if (isError) {
-        ReportedFieldErrorBackground
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.18f)
     } else {
-        MaterialTheme.colorScheme.background
+        MaterialTheme.colorScheme.surface
     }
     val clickableModifier = if (enabled && onClick != null) {
         Modifier.clickable(

@@ -17,8 +17,14 @@ object MediaScannerSettings {
     private const val KEY_SEEN_MEDIA = "seen_media"
     private const val KEY_NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 
+    fun supportsBroadLibraryAccess(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+
+    fun supportsAutoReportLibraryScan(): Boolean =
+        supportsBroadLibraryAccess()
+
     fun supportsBackgroundLibraryScanning(): Boolean =
-        BuildConfig.DEBUG && RemoteConfigOverrides.enableMediaScanner
+        supportsBroadLibraryAccess() && BuildConfig.DEBUG && RemoteConfigOverrides.enableMediaScanner
 
     fun isEnabled(context: Context): Boolean =
         supportsBackgroundLibraryScanning() && prefs(context).getBoolean(KEY_ENABLED, false)
@@ -92,16 +98,8 @@ object MediaScannerSettings {
     fun requiredPermissions(): Array<String> = if (!supportsBackgroundLibraryScanning()) {
         emptyArray()
     } else buildList {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.READ_MEDIA_IMAGES)
-            add(Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        add(Manifest.permission.READ_EXTERNAL_STORAGE)
         add(Manifest.permission.ACCESS_MEDIA_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-        }
     }.toTypedArray()
 
     fun hasRequiredPermissions(context: Context): Boolean =
@@ -109,19 +107,15 @@ object MediaScannerSettings {
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }
 
-    fun autoReportPermissions(): Array<String> = buildList {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.READ_MEDIA_IMAGES)
-        } else {
-            add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+    fun autoReportPermissions(): Array<String> = if (!supportsAutoReportLibraryScan()) {
+        emptyArray()
+    } else buildList {
+        add(Manifest.permission.READ_EXTERNAL_STORAGE)
         add(Manifest.permission.ACCESS_MEDIA_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-        }
     }.toTypedArray()
 
     fun hasAutoReportPermissions(context: Context): Boolean =
+        supportsAutoReportLibraryScan() &&
         autoReportPermissions().all { permission ->
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }

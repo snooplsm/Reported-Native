@@ -29,7 +29,7 @@ fun NewReportTutorialSheet(
     onSkip: () -> Unit,
     onComplete: () -> Unit
 ) {
-    val pageCount = if (scannerAvailable) 3 else 2
+    val pageCount = if (scannerAvailable) 4 else 3
     val lastPage = pageCount - 1
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -74,6 +74,11 @@ fun NewReportTutorialSheet(
                         title = "Photo time and location",
                         body = "Media/location access lets us read image metadata for the location and time of incident. We use it only to prefill your report.",
                         icon = "2"
+                    )
+                    2 -> TutorialPage(
+                        title = "Reported AI + Auto-Report",
+                        body = "Reported AI can draft fields from photos. Auto-Report can scan recent photos, group likely blocked bike lane or crosswalk reports, and keeps you in review before submit.",
+                        icon = "3"
                     )
                     else -> TutorialScannerPage(
                         scannerAvailable = scannerAvailable

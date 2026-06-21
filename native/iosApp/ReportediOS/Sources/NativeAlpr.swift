@@ -230,8 +230,9 @@ final class NativeAlprEngine {
         let complaint = try? session(for: complaintModelName, cached: \.complaintSession)
         let plateSegmentation = sessionIfPresent(for: plateSegmentationModelName, cached: \.plateSegmentationSession)
         let asset = AVAsset(url: media.fileURL)
-        let videoTrack = asset.tracks(withMediaType: .video).first
-        let durationSeconds = CMTimeGetSeconds(asset.duration)
+        let videoTrack = (try? await asset.loadTracks(withMediaType: .video))?.first
+        let duration = (try? await asset.load(.duration)) ?? .zero
+        let durationSeconds = CMTimeGetSeconds(duration)
         guard durationSeconds.isFinite, durationSeconds > 0 else {
             await onProgress(VideoFrameScanProgress(
                 processedFrames: 0,
@@ -246,7 +247,13 @@ final class NativeAlprEngine {
             return []
         }
 
-        let frameRate = Double(videoTrack?.nominalFrameRate ?? 0) > 0 ? Double(videoTrack?.nominalFrameRate ?? 30) : 30
+        let nominalFrameRate: Float
+        if let videoTrack {
+            nominalFrameRate = (try? await videoTrack.load(.nominalFrameRate)) ?? 0
+        } else {
+            nominalFrameRate = 0
+        }
+        let frameRate = Double(nominalFrameRate) > 0 ? Double(nominalFrameRate) : 30
         let totalFrames = max(1, Int(ceil(durationSeconds * frameRate)))
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -304,7 +311,7 @@ final class NativeAlprEngine {
             )
             for (sampleIndex, sample) in samples.enumerated() {
                 if Task.isCancelled { break }
-                var image = sample.image
+                let image = sample.image
                 var candidates = batchedCandidates.indices.contains(sampleIndex) ? batchedCandidates[sampleIndex] : []
                 if candidates.isEmpty && shouldProbeRotations(frameIndex: sample.frameIndex, recentProcessedFramesHadPlate: recentProcessedFramesHadPlate) {
                     for degrees in orderedVideoRotationProbeDegrees(lastSuccessfulRotationDegrees: lastSuccessfulFallbackRotationDegrees) {
@@ -1442,12 +1449,11 @@ final class NativeAlprEngine {
 
         return PlateCrop(
             ocrImage: plateImage,
-            previewImage: plateImage,
+            previewImage: initialPlateCrop,
             detection: detection.withScore(ocrDetection.score),
-            cornerPoints: ocrDetection.originalImageCornerPoints(
-                rotatedImage: rotatedMatch.rotatedImage,
-                originalDetection: detection
-            ),
+            // Keep the OCR crop refined, but render the stable detector rectangle.
+            // The segmentation polygon can overfit bumper text or plate trim and show a fake slant.
+            cornerPoints: detection.cornerPoints(),
             rotationDegrees: -rotatedMatch.appliedRotationDegrees
         )
     }

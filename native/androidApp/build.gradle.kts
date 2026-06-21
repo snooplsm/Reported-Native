@@ -15,9 +15,6 @@ if (tasks.findByName("prepareKotlinBuildScriptModel") == null) {
     tasks.register("prepareKotlinBuildScriptModel")
 }
 
-fun quotedEnv(name: String, defaultValue: String): String =
-    "\"${System.getenv(name) ?: defaultValue}\""
-
 fun readLocalProperty(name: String): String? {
     val localPropertiesFile = rootProject.file("local.properties")
     if (!localPropertiesFile.exists()) return null
@@ -68,6 +65,7 @@ val appleRedirectUri = readConfigValue("REPORTED_APPLE_REDIRECT_URI", "reported:
 val parseServerUrl = readConfigValue("REPORTED_PARSE_SERVER_URL", "https://parseapi.back4app.com")
 val parseApplicationId = readConfigValue("REPORTED_PARSE_APPLICATION_ID", "jkAZF8ojV4vOGnhSBjdwiMWBKpWML5tM4SWGKgOV")
 val parseJavascriptKey = readConfigValue("REPORTED_PARSE_JAVASCRIPT_KEY", "LeBKOerWTXGBGRLE0yvg2bXa5RRv4e8PuC6INEFA")
+val philadelphiaAisGatekeeperKey = readConfigValue("REPORTED_PHILADELPHIA_AIS_GATEKEEPER_KEY")
 val releaseKeystorePath = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_PATH")
 val releaseKeystoreAlias = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_ALIAS")
 val releaseKeystorePassword = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_PASSWORD")
@@ -87,12 +85,12 @@ android {
         applicationId = "cab.reported.nyc"
         minSdk = 25
         targetSdk = 36
-        versionCode = 96
-        versionName = "3.0.10"
-        buildConfigField("String", "API_BASE_URL", quotedEnv("REPORTED_API_BASE_URL", "https://reported-stats.herokuapp.com/prod/"))
+        versionCode = 103
+        versionName = "3.0.14"
         buildConfigField("String", "PARSE_SERVER_URL", "\"$parseServerUrl\"")
         buildConfigField("String", "PARSE_APPLICATION_ID", "\"$parseApplicationId\"")
         buildConfigField("String", "PARSE_JAVASCRIPT_KEY", "\"$parseJavascriptKey\"")
+        buildConfigField("String", "PHILADELPHIA_AIS_GATEKEEPER_KEY", "\"$philadelphiaAisGatekeeperKey\"")
         buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleServerClientId\"")
         buildConfigField("String", "APPLE_CLIENT_ID", "\"$appleClientId\"")
@@ -137,6 +135,23 @@ android {
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
             isUniversalApk = false
+        }
+    }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols += listOf(
+                "**/libLiteRt.so",
+                "**/libLiteRtClGlAccelerator.so",
+                "**/libandroidx.graphics.path.so",
+                "**/libdatastore_shared_counter.so",
+                "**/libimage_processing_util_jni.so",
+                "**/liblitertlm_jni.so",
+                "**/libmlkit_google_ocr_pipeline.so",
+                "**/libonnxruntime.so",
+                "**/libonnxruntime4j_jni.so",
+                "**/libsurface_util_jni.so"
+            )
         }
     }
 
@@ -189,6 +204,7 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-core:1.4.1")
@@ -214,6 +230,7 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-config")
+    implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.mlkit:genai-image-description:1.0.0-beta1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")

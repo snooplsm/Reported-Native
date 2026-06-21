@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.reported.nativeandroid.app.SubmissionMedia
+import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.di.AppGraph
 import com.reported.nativeandroid.media.ParseMediaUploader
 import com.reported.shared.model.SubmitReportCommand
@@ -28,6 +29,18 @@ class SubmitLiveIncidentWorker(
             return Result.failure()
         }
 
+        val baseCommand = SubmitReportCommand(
+            plate = incident.plate,
+            plateRegion = incident.plateRegion,
+            description = "",
+            notes = "",
+            address = incident.address,
+            complaintIds = listOf(incident.complaintId),
+            timeOfIncidentIso = incident.incidentAtIso,
+            latitude = incident.latitude,
+            longitude = incident.longitude
+        )
+        var attemptedCommand = baseCommand
         return runCatching {
             val media = SubmissionMedia(
                 uri = videoUri,
@@ -36,25 +49,24 @@ class SubmitLiveIncidentWorker(
                 isVideo = true
             )
             val uploaded = ParseMediaUploader.upload(applicationContext, media)
-            AppGraph.shared.submitReportUseCase.execute(
-                SubmitReportCommand(
-                    plate = incident.plate,
-                    plateRegion = incident.plateRegion,
-                    description = "",
-                    notes = "",
-                    address = incident.address,
-                    complaintIds = listOf(incident.complaintId),
-                    timeOfIncidentIso = incident.incidentAtIso,
-                    latitude = incident.latitude,
-                    longitude = incident.longitude,
-                    mediaFiles = listOfNotNull(uploaded)
-                )
-            )
+            attemptedCommand = baseCommand.copy(mediaFiles = listOfNotNull(uploaded))
+            AppGraph.shared.submitReportUseCase.execute(attemptedCommand)
             store.delete(incident.id)
             incident.videoUri?.deleteLocalFileUri()
             incident.thumbnailUri?.deleteLocalFileUri()
             Result.success()
-        }.getOrElse {
+        }.getOrElse { error ->
+            ReportedAnalytics.logSubmitReportFailed(
+                surface = "live_worker",
+                stage = "background_submit",
+                error = error,
+                plateRegion = incident.plateRegion,
+                complaintCount = if (incident.complaintId.isBlank()) 0 else 1,
+                mediaCount = 1,
+                hasVideo = true,
+                session = session,
+                command = attemptedCommand
+            )
             Result.retry()
         }
     }

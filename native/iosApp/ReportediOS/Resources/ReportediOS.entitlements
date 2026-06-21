@@ -8,7 +8,11 @@
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)cab.reported</string>
+		<string>$(AppIdentifierPrefix)com.reported.reported</string>
+	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.cab.reported.nyc</string>
 	</array>
 </dict>
 </plist>

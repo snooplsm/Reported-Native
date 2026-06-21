@@ -17,7 +17,8 @@ data class RemoteConfigSnapshot(
     val showComplaintImages: Boolean = RemoteConfigOverrides.showComplaintImages,
     val enableLive: Boolean = RemoteConfigOverrides.enableLive,
     val enableMediaScanner: Boolean = RemoteConfigOverrides.enableMediaScanner,
-    val enableOfflinePhotoProcessing: Boolean = RemoteConfigOverrides.enableOfflinePhotoProcessing
+    val enableOfflinePhotoProcessing: Boolean = RemoteConfigOverrides.enableOfflinePhotoProcessing,
+    val systemNotice: String = RemoteConfigOverrides.systemNotice
 )
 
 object ReportedRemoteConfig {
@@ -40,32 +41,34 @@ object ReportedRemoteConfig {
 
     private fun apply(remoteConfig: FirebaseRemoteConfig) {
         RemoteConfigOverrides.apply(
-            apiBaseUrl = remoteConfig.getString(RemoteConfigKeys.API_BASE_URL),
+            apiBaseUrl = null,
             parseServerUrl = remoteConfig.getString(RemoteConfigKeys.PARSE_SERVER_URL),
             complaintCategoriesJson = remoteConfig.getString(RemoteConfigKeys.COMPLAINT_CATEGORIES),
             reportStatusesJson = remoteConfig.getString(RemoteConfigKeys.REPORT_STATUSES),
             showComplaintImages = remoteConfig.getBoolean(RemoteConfigKeys.SHOW_COMPLAINT_IMAGES).toString(),
             enableLive = remoteConfig.getBoolean(RemoteConfigKeys.ENABLE_LIVE).toString(),
             enableMediaScanner = remoteConfig.getBoolean(RemoteConfigKeys.ENABLE_MEDIA_SCANNER).toString(),
-            enableOfflinePhotoProcessing = remoteConfig.getBoolean(RemoteConfigKeys.ENABLE_OFFLINE_PHOTO_PROCESSING).toString()
+            enableOfflinePhotoProcessing = remoteConfig.getBoolean(RemoteConfigKeys.ENABLE_OFFLINE_PHOTO_PROCESSING).toString(),
+            systemNotice = remoteConfig.getString(RemoteConfigKeys.SYSTEM_NOTICE)
         )
         _snapshot.value = RemoteConfigSnapshot(
             complaintCategories = Catalogs.complaintCategories,
             showComplaintImages = RemoteConfigOverrides.showComplaintImages,
             enableLive = RemoteConfigOverrides.enableLive,
             enableMediaScanner = RemoteConfigOverrides.enableMediaScanner,
-            enableOfflinePhotoProcessing = RemoteConfigOverrides.enableOfflinePhotoProcessing
+            enableOfflinePhotoProcessing = RemoteConfigOverrides.enableOfflinePhotoProcessing,
+            systemNotice = RemoteConfigOverrides.systemNotice
         )
     }
 
     private fun defaults(): Map<String, Any> = mapOf(
-        RemoteConfigKeys.API_BASE_URL to BuildConfig.API_BASE_URL.ifBlank { RemoteConfigDefaults.API_BASE_URL },
         RemoteConfigKeys.PARSE_SERVER_URL to BuildConfig.PARSE_SERVER_URL.ifBlank { RemoteConfigDefaults.PARSE_SERVER_URL },
         RemoteConfigKeys.COMPLAINT_CATEGORIES to RemoteConfigDefaults.complaintCategoriesJson,
         RemoteConfigKeys.REPORT_STATUSES to RemoteConfigDefaults.reportStatusesJson,
         RemoteConfigKeys.SHOW_COMPLAINT_IMAGES to BuildConfig.SHOW_COMPLAINT_IMAGES,
         RemoteConfigKeys.ENABLE_LIVE to BuildConfig.ENABLE_LIVE,
         RemoteConfigKeys.ENABLE_MEDIA_SCANNER to RemoteConfigDefaults.ENABLE_MEDIA_SCANNER,
-        RemoteConfigKeys.ENABLE_OFFLINE_PHOTO_PROCESSING to RemoteConfigDefaults.ENABLE_OFFLINE_PHOTO_PROCESSING
+        RemoteConfigKeys.ENABLE_OFFLINE_PHOTO_PROCESSING to RemoteConfigDefaults.ENABLE_OFFLINE_PHOTO_PROCESSING,
+        RemoteConfigKeys.SYSTEM_NOTICE to RemoteConfigDefaults.SYSTEM_NOTICE
     )
 }

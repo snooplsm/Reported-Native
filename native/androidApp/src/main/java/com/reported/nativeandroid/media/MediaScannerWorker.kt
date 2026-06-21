@@ -78,7 +78,7 @@ class MediaScannerWorker(
                 NativeAlprEngine.detectLicensePlates(applicationContext, media)
             }
             Log.d(TAG, "Detected ${candidates.size} plate candidate(s): ${candidates.toLogSummary()}")
-            val bestPlate = candidates.bestQualifiedCandidate()
+            val bestPlate = candidates.bestQualifiedCandidate(applicationContext)
             if (bestPlate == null) {
                 Log.d(TAG, "Skipping media: no plate met confidence/state threshold")
                 return@forEach
@@ -211,10 +211,10 @@ private fun queryMediaStore(
     }
 }
 
-private fun List<PlateCandidate>.bestQualifiedCandidate(): PlateCandidate? =
+private fun List<PlateCandidate>.bestQualifiedCandidate(context: Context): PlateCandidate? =
     filter { candidate ->
-        candidate.meetsMediaScannerPlateThreshold() &&
-            (candidate.stateConfidence ?: 0f) >= STATE_CONFIDENCE_THRESHOLD &&
+        candidate.meetsMediaScannerPlateThreshold(context) &&
+            (candidate.stateConfidence ?: 0f) >= AutoReportThresholds.stateConfidence(context) &&
             !candidate.state.isNullOrBlank()
     }.maxByOrNull { candidate ->
         val centerX = candidate.focalPointX ?: 0.5f
@@ -223,11 +223,11 @@ private fun List<PlateCandidate>.bestQualifiedCandidate(): PlateCandidate? =
         candidate.confidence + (candidate.stateConfidence ?: 0f) - centerPenalty
     }
 
-private fun PlateCandidate.meetsMediaScannerPlateThreshold(): Boolean {
+private fun PlateCandidate.meetsMediaScannerPlateThreshold(context: Context): Boolean {
     val requiredConfidence = if (hasPostInferredNyForHirePlate()) {
-        POST_INFERENCE_PLATE_CONFIDENCE_THRESHOLD
+        AutoReportThresholds.postInferencePlateConfidence(context)
     } else {
-        STANDARD_PLATE_CONFIDENCE_THRESHOLD
+        AutoReportThresholds.plateConfidence(context)
     }
     return confidence >= requiredConfidence
 }
@@ -253,7 +253,4 @@ private fun detectedInfractionId(
     return "detected-${key.hashCode().toUInt().toString(16)}"
 }
 
-private const val STANDARD_PLATE_CONFIDENCE_THRESHOLD = 0.9f
-private const val POST_INFERENCE_PLATE_CONFIDENCE_THRESHOLD = 0.8f
-private const val STATE_CONFIDENCE_THRESHOLD = 0.9f
 private const val DEBUG_SCAN_LOOKBACK_SECONDS = 24L * 60L * 60L

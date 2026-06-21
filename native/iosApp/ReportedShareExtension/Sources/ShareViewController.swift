@@ -47,9 +47,18 @@ final class ShareViewController: UIViewController {
         var manifestItems: [SharedMediaImportManifest.Item] = []
 
         for provider in providers {
-            let isVideo = provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) ||
-                provider.hasItemConformingToTypeIdentifier(UTType.video.identifier)
-            let typeIdentifier = isVideo ? UTType.movie.identifier : UTType.image.identifier
+            let typeIdentifier: String
+            let isVideo: Bool
+            if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                typeIdentifier = UTType.movie.identifier
+                isVideo = true
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.video.identifier) {
+                typeIdentifier = UTType.video.identifier
+                isVideo = true
+            } else {
+                typeIdentifier = UTType.image.identifier
+                isVideo = false
+            }
 
             group.enter()
             provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { sourceURL, _ in

@@ -49,13 +49,14 @@ final class ReportedRemoteConfigService {
             showComplaintImages: remoteConfig.configValue(forKey: "reported_show_complaint_images").boolValue.description,
             enableLive: remoteConfig.configValue(forKey: "reported_enable_live").boolValue.description,
             enableMediaScanner: remoteConfig.configValue(forKey: "reported_enable_media_scanner").boolValue.description,
-            enableOfflinePhotoProcessing: remoteConfig.configValue(forKey: "reported_enable_offline_photo_processing").boolValue.description
+            enableOfflinePhotoProcessing: remoteConfig.configValue(forKey: "reported_enable_offline_photo_processing").boolValue.description,
+            systemNotice: stringValue("system_notice")
         )
         NotificationCenter.default.post(name: .reportedRemoteConfigUpdated, object: nil)
     }
 
     private func stringValue(_ key: String) -> String {
-        remoteConfig.configValue(forKey: key).stringValue ?? ""
+        remoteConfig.configValue(forKey: key).stringValue
     }
 
     private func defaults() -> [String: Any] {
@@ -67,7 +68,8 @@ final class ReportedRemoteConfigService {
             "reported_show_complaint_images": true,
             "reported_enable_live": false,
             "reported_enable_media_scanner": false,
-            "reported_enable_offline_photo_processing": false
+            "reported_enable_offline_photo_processing": false,
+            "system_notice": ""
         ]
     }
 }

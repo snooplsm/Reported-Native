@@ -12,8 +12,10 @@ import android.os.Build
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.exifinterface.media.ExifInterface
+import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.app.AddressSuggestion
 import com.reported.nativeandroid.app.SubmissionMedia
+import com.reported.shared.model.CityReportingRules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -37,6 +39,58 @@ data class ExtractedSubmissionMetadata(
 
 private const val NYC_SEARCH_URL = "https://geosearch.planninglabs.nyc/v2/search"
 private const val NYC_REVERSE_URL = "https://geosearch.planninglabs.nyc/v2/reverse"
+private const val PHILADELPHIA_AIS_BASE_URL = "https://api.phila.gov/ais/v1"
+
+enum class ReportAddressProvider(
+    val id: String,
+    val searchLabel: String,
+    val searchingLabel: String,
+    val noMatchesLabel: String,
+    val reverseLookupLabel: String
+) {
+    NewYorkCity(
+        id = CityReportingRules.NYC_ADDRESS_PROVIDER_ID,
+        searchLabel = "Search NYC address",
+        searchingLabel = "Searching NYC addresses",
+        noMatchesLabel = "No NYC address matches found.",
+        reverseLookupLabel = "Finding NYC address"
+    ),
+    Philadelphia(
+        id = CityReportingRules.PHILADELPHIA_ADDRESS_PROVIDER_ID,
+        searchLabel = "Search Philadelphia address",
+        searchingLabel = "Searching Philadelphia addresses",
+        noMatchesLabel = "No Philadelphia address matches found.",
+        reverseLookupLabel = "Finding Philadelphia address"
+    );
+}
+
+fun reportAddressProviderFor(
+    latitude: Double?,
+    longitude: Double?,
+    address: String
+): ReportAddressProvider =
+    if (CityReportingRules.isPhiladelphiaReport(latitude, longitude, address)) {
+        ReportAddressProvider.Philadelphia
+    } else {
+        ReportAddressProvider.NewYorkCity
+    }
+
+fun reportAddressProviderFor(
+    context: Context,
+    latitude: Double?,
+    longitude: Double?,
+    address: String
+): ReportAddressProvider {
+    if (latitude != null && longitude != null) {
+        if (CityBoundaryIndex.contains(context, CityReportingRules.PHILADELPHIA_CITY_ID, latitude, longitude)) {
+            return ReportAddressProvider.Philadelphia
+        }
+        if (CityBoundaryIndex.contains(context, CityReportingRules.NYC_CITY_ID, latitude, longitude)) {
+            return ReportAddressProvider.NewYorkCity
+        }
+    }
+    return reportAddressProviderFor(latitude, longitude, address)
+}
 
 suspend fun buildSubmissionMedia(
     context: Context,
@@ -91,8 +145,24 @@ suspend fun reverseGeocodeNyc(latitude: Double, longitude: Double): AddressSugge
     }
 
 suspend fun reverseGeocodeAddress(context: Context, latitude: Double, longitude: Double): AddressSuggestion? =
-    reverseGeocodeNyc(latitude, longitude)
+    when (reportAddressProviderFor(context, latitude, longitude, "")) {
+        ReportAddressProvider.Philadelphia -> reverseGeocodePhiladelphiaAis(latitude, longitude)
+            ?: reverseGeocodeNyc(latitude, longitude)
+        ReportAddressProvider.NewYorkCity -> reverseGeocodeNyc(latitude, longitude)
+    }
         ?: withContext(Dispatchers.IO) { reverseGeocodePlatform(context, latitude, longitude) }
+
+suspend fun searchReportAddresses(
+    context: Context,
+    query: String,
+    latitude: Double?,
+    longitude: Double?,
+    address: String
+): List<AddressSuggestion> =
+    when (reportAddressProviderFor(context, latitude, longitude, address.ifBlank { query })) {
+        ReportAddressProvider.Philadelphia -> searchPhiladelphiaAisAddresses(query)
+        ReportAddressProvider.NewYorkCity -> searchNycAddresses(query)
+    }
 
 suspend fun searchNycAddresses(query: String): List<AddressSuggestion> = withContext(Dispatchers.IO) {
     if (query.isBlank()) {
@@ -121,6 +191,49 @@ suspend fun searchNycAddresses(query: String): List<AddressSuggestion> = withCon
     }
 }
 
+private suspend fun searchPhiladelphiaAisAddresses(query: String): List<AddressSuggestion> = withContext(Dispatchers.IO) {
+    if (query.isBlank()) {
+        return@withContext emptyList()
+    }
+    val encoded = java.net.URLEncoder.encode(query, "UTF-8").replace("+", "%20")
+    val json = fetchPhiladelphiaAisJson("$PHILADELPHIA_AIS_BASE_URL/search/$encoded") ?: return@withContext emptyList()
+    val features = json.optJSONArray("features") ?: return@withContext emptyList()
+    buildList {
+        for (index in 0 until features.length()) {
+            val feature = features.optJSONObject(index) ?: continue
+            philadelphiaAisFeatureToSuggestion(feature)?.let(::add)
+        }
+    }
+}
+
+private suspend fun reverseGeocodePhiladelphiaAis(latitude: Double, longitude: Double): AddressSuggestion? =
+    withContext(Dispatchers.IO) {
+        val json = fetchPhiladelphiaAisJson(
+            "$PHILADELPHIA_AIS_BASE_URL/reverse_geocode/$longitude,$latitude?srid=4326&search_radius=500"
+        ) ?: return@withContext null
+        val feature = json.optJSONArray("features")?.optJSONObject(0) ?: return@withContext null
+        philadelphiaAisFeatureToSuggestion(feature, fallbackLatitude = latitude, fallbackLongitude = longitude)
+    }
+
+private fun fetchPhiladelphiaAisJson(url: String): JSONObject? {
+    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 5_000
+        readTimeout = 5_000
+        BuildConfig.PHILADELPHIA_AIS_GATEKEEPER_KEY
+            .takeIf { it.isNotBlank() }
+            ?.let { setRequestProperty("Authorization", "Gatekeeper-Key $it") }
+    }
+    return runCatching {
+        if (connection.responseCode !in 200..299) return@runCatching null
+        connection.inputStream.bufferedReader().use { reader ->
+            JSONObject(reader.readText())
+        }
+    }.getOrNull().also {
+        connection.disconnect()
+    }
+}
+
 private fun featureToSuggestion(feature: JSONObject): AddressSuggestion? {
     val properties = feature.optJSONObject("properties") ?: return null
     val geometry = feature.optJSONObject("geometry") ?: return null
@@ -131,6 +244,162 @@ private fun featureToSuggestion(feature: JSONObject): AddressSuggestion? {
         longitude = coordinates.optDouble(0),
         region = "NY"
     )
+}
+
+private fun philadelphiaAisFeatureToSuggestion(
+    feature: JSONObject,
+    fallbackLatitude: Double? = null,
+    fallbackLongitude: Double? = null
+): AddressSuggestion? {
+    val properties = feature.optJSONObject("properties") ?: return null
+    val geometry = feature.optJSONObject("geometry")
+    val coordinates = geometry?.optJSONArray("coordinates")
+    val longitude = coordinates?.optDouble(0)?.takeIf { it.isFinite() } ?: fallbackLongitude ?: return null
+    val latitude = coordinates?.optDouble(1)?.takeIf { it.isFinite() } ?: fallbackLatitude ?: return null
+    val streetAddress = properties.optString("street_address")
+        .ifBlank { properties.optString("address") }
+        .ifBlank { properties.optString("opa_address") }
+    val zipCode = properties.optString("zip_code").takeIf { it.isNotBlank() }
+    val label = buildString {
+        append(streetAddress.ifBlank { "Philadelphia address" })
+        if (!contains("Philadelphia", ignoreCase = true)) append(", Philadelphia")
+        if (!contains(", PA", ignoreCase = true)) append(", PA")
+        if (!zipCode.isNullOrBlank() && !contains(zipCode)) append(" $zipCode")
+    }
+    return AddressSuggestion(
+        label = label,
+        latitude = latitude,
+        longitude = longitude,
+        region = "PA",
+        providerId = CityReportingRules.PHILADELPHIA_ADDRESS_PROVIDER_ID,
+        blockNumber = properties.optString("address_low").takeIf { it.isNotBlank() }
+            ?: streetAddress.firstStreetNumber(),
+        streetName = properties.optString("street_full").takeIf { it.isNotBlank() },
+        zipCode = zipCode
+    )
+}
+
+private fun String.firstStreetNumber(): String? =
+    Regex("""^\s*(\d+[A-Za-z]?)""").find(this)?.groupValues?.getOrNull(1)
+
+private object CityBoundaryIndex {
+    private val cache = mutableMapOf<String, CityBoundary?>()
+
+    fun contains(context: Context, cityId: String, latitude: Double, longitude: Double): Boolean {
+        if (!latitude.isFinite() || !longitude.isFinite()) return false
+        val boundary = cache.getOrPut(cityId) {
+            load(context, cityId)
+        } ?: return false
+        return boundary.contains(longitude, latitude)
+    }
+
+    private fun load(context: Context, cityId: String): CityBoundary? =
+        runCatching {
+            val fileName = when (cityId) {
+                CityReportingRules.PHILADELPHIA_CITY_ID -> "city-boundaries/philadelphia.geojson"
+                CityReportingRules.NYC_CITY_ID -> "city-boundaries/nyc.geojson"
+                else -> return null
+            }
+            val json = context.assets.open(fileName).bufferedReader().use { reader ->
+                JSONObject(reader.readText())
+            }
+            val bboxArray = json.optJSONObject("properties")?.optJSONArray("bbox")
+            val bbox = if (bboxArray != null && bboxArray.length() >= 4) {
+                DoubleArray(4) { index -> bboxArray.optDouble(index) }
+            } else {
+                null
+            }
+            val features = json.optJSONArray("features") ?: return null
+            val polygons = buildList {
+                for (featureIndex in 0 until features.length()) {
+                    val geometry = features.optJSONObject(featureIndex)
+                        ?.optJSONObject("geometry")
+                        ?: continue
+                    addAll(parseBoundaryGeometry(geometry))
+                }
+            }
+            CityBoundary(bbox = bbox, polygons = polygons)
+        }.getOrNull()
+}
+
+private data class CityBoundary(
+    val bbox: DoubleArray?,
+    val polygons: List<List<List<BoundaryPoint>>>
+) {
+    fun contains(longitude: Double, latitude: Double): Boolean {
+        val bounds = bbox
+        if (bounds != null && (
+                longitude < bounds[0] ||
+                    latitude < bounds[1] ||
+                    longitude > bounds[2] ||
+                    latitude > bounds[3]
+                )
+        ) {
+            return false
+        }
+        return polygons.any { polygonContains(it, longitude, latitude) }
+    }
+}
+
+private data class BoundaryPoint(val longitude: Double, val latitude: Double)
+
+private fun parseBoundaryGeometry(geometry: JSONObject): List<List<List<BoundaryPoint>>> {
+    val type = geometry.optString("type")
+    val coordinates = geometry.optJSONArray("coordinates") ?: return emptyList()
+    return when (type) {
+        "Polygon" -> listOf(parseBoundaryPolygon(coordinates))
+        "MultiPolygon" -> buildList {
+            for (index in 0 until coordinates.length()) {
+                coordinates.optJSONArray(index)?.let { add(parseBoundaryPolygon(it)) }
+            }
+        }
+        else -> emptyList()
+    }
+}
+
+private fun parseBoundaryPolygon(polygon: org.json.JSONArray): List<List<BoundaryPoint>> =
+    buildList {
+        for (ringIndex in 0 until polygon.length()) {
+            val ring = polygon.optJSONArray(ringIndex) ?: continue
+            add(
+                buildList {
+                    for (pointIndex in 0 until ring.length()) {
+                        val point = ring.optJSONArray(pointIndex) ?: continue
+                        add(BoundaryPoint(point.optDouble(0), point.optDouble(1)))
+                    }
+                }
+            )
+        }
+    }
+
+private fun polygonContains(
+    polygon: List<List<BoundaryPoint>>,
+    longitude: Double,
+    latitude: Double
+): Boolean {
+    val outer = polygon.firstOrNull() ?: return false
+    if (!ringContains(outer, longitude, latitude)) return false
+    return polygon.drop(1).none { hole -> ringContains(hole, longitude, latitude) }
+}
+
+private fun ringContains(
+    ring: List<BoundaryPoint>,
+    longitude: Double,
+    latitude: Double
+): Boolean {
+    if (ring.size < 3) return false
+    var inside = false
+    var previous = ring.last()
+    ring.forEach { current ->
+        val intersects = (current.latitude > latitude) != (previous.latitude > latitude) &&
+            longitude < (previous.longitude - current.longitude) *
+            (latitude - current.latitude) /
+            (previous.latitude - current.latitude) +
+            current.longitude
+        if (intersects) inside = !inside
+        previous = current
+    }
+    return inside
 }
 
 @Suppress("DEPRECATION")

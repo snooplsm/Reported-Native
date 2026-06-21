@@ -2,6 +2,8 @@ package com.reported.shared.api
 
 import com.reported.shared.base.ParseConfig
 import com.reported.shared.model.Catalogs
+import com.reported.shared.model.CityReportingRules
+import com.reported.shared.model.PhiladelphiaMobilityAccessDetails
 import com.reported.shared.model.ReportFilter
 import com.reported.shared.model.ReportStats
 import com.reported.shared.model.ReportSummary
@@ -26,7 +28,11 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.contentType
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.Instant
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -34,6 +40,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlin.time.TimeSource
 
 class ReportedApi(
     private val baseUrl: String,
@@ -41,6 +48,8 @@ class ReportedApi(
     private val operatingSystem: String,
     private val client: HttpClient,
     private val sessionStore: SessionStore,
+    private val vehicleEnrichmentTracker: VehicleEnrichmentTracker = NoOpVehicleEnrichmentTracker,
+    private val vehicleEnrichmentPolicy: VehicleEnrichmentPolicy = AlwaysAttemptVehicleEnrichmentPolicy,
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
     suspend fun login(email: String, password: String): UserSession {
@@ -222,19 +231,169 @@ class ReportedApi(
 
     suspend fun submitReport(command: SubmitReportCommand): String {
         val session = sessionStore.read() ?: error("Not logged in")
-        val endpoint = "${parseBaseUrl()}/classes/submission"
+        val enrichedReport = command.enrichForHireVehicleDetails()
+        val endpoint = "${parseBaseUrl()}/classes/$parseDefaultSubmissionClassName"
         println("ReportedSubmit: POST $endpoint")
         val response = client.post(endpoint) {
             contentType(ContentType.Application.Json)
             headers {
                 appendParseHeaders(sessionToken = session.sessionToken)
             }
-            setBody(buildParseSubmissionBody(command, session))
+            setBody(buildParseSubmissionBody(enrichedReport.command, session))
         }
         val body = response.bodyAsText()
         println("ReportedSubmit: POST submission completed status=${response.status} body=$body")
         val created = json.decodeFromString<ParseCreateResponseDto>(body)
-        return created.objectId.ifBlank { error("Submission succeeded but no report id was returned.") }
+        val submissionId = created.objectId.ifBlank { error("Submission succeeded but no report id was returned.") }
+        enrichedReport.command.philadelphiaMobilityAccessDetails
+            ?.takeIf { it.hasAnyValue }
+            ?.let { details ->
+                savePhiladelphiaSubmissionDetails(details, submissionId, session.sessionToken)
+            }
+        enrichedReport.vehicleClassification?.let {
+            saveVehicleClassification(it, submissionId, session.sessionToken)
+        }
+        return submissionId
+    }
+
+    suspend fun previewVehicleEnrichmentDebugNote(plate: String): String? {
+        if (!vehicleEnrichmentPolicy.includeDebugSummaryInNotes()) {
+            return null
+        }
+        val lookupPlate = vehicleEnrichmentLookupPlate(plate) ?: return null
+
+        if (!vehicleEnrichmentPolicy.canAttemptVehicleEnrichment()) {
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleEnrichmentProvider,
+                success = false,
+                reason = "wifi_unavailable",
+                durationMillis = 0
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationPreviewSurface,
+                stage = vehicleClassificationLookupStage,
+                success = false,
+                reason = "wifi_unavailable",
+                durationMillis = 0,
+                lookupPlate = lookupPlate
+            )
+            return vehicleEnrichmentDebugNote("Vehicle classification skipped: Wi-Fi unavailable.")
+        }
+
+        val enrichmentStart = TimeSource.Monotonic.markNow()
+        val debugNote = withTimeoutOrNull(vehicleEnrichmentTimeoutMillis) {
+            runCatching {
+                val tlcVehicle = fetchTlcVehicle(lookupPlate)
+                    ?: return@runCatching vehicleEnrichmentDebugNote(
+                        "Vehicle classification skipped: no TLC active vehicle match for $lookupPlate."
+                    ).also {
+                        trackVehicleEnrichmentEndpoint(
+                            provider = vehicleEnrichmentProvider,
+                            success = false,
+                            reason = "no_tlc_match",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                        )
+                        trackVehicleClassificationResult(
+                            surface = vehicleClassificationPreviewSurface,
+                            stage = vehicleClassificationLookupStage,
+                            success = false,
+                            reason = "no_tlc_match",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                            lookupPlate = lookupPlate
+                        )
+                    }
+                val vin = tlcVehicle.vehicleVinNumber.normalizedVin()
+                if (vin.isBlank()) {
+                    return@runCatching vehicleEnrichmentDebugNote(
+                        "Vehicle classification skipped: TLC active vehicle match for $lookupPlate has no VIN."
+                    ).also {
+                        trackVehicleEnrichmentEndpoint(
+                            provider = vehicleEnrichmentProvider,
+                            success = false,
+                            reason = "no_vin",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                        )
+                        trackVehicleClassificationResult(
+                            surface = vehicleClassificationPreviewSurface,
+                            stage = vehicleClassificationLookupStage,
+                            success = false,
+                            reason = "no_vin",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                            lookupPlate = lookupPlate
+                        )
+                    }
+                }
+                val decodedVin = runCatching {
+                    decodeVehicleVin(vin)
+                }.onFailure { error ->
+                    if (error is CancellationException) {
+                        throw error
+                    }
+                    println("ReportedSubmit: vPIC vehicle enrichment preview failed: ${error.message}")
+                }.getOrNull()
+                val classification = buildVehicleClassificationPayload(
+                    lookupPlate = lookupPlate,
+                    tlcVehicle = tlcVehicle,
+                    decodedVin = decodedVin
+                )
+                vehicleEnrichmentDebugNote(classification.debugSummary()).also {
+                    trackVehicleEnrichmentEndpoint(
+                        provider = vehicleEnrichmentProvider,
+                        success = true,
+                        reason = "ok",
+                        durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                    )
+                    trackVehicleClassificationResult(
+                        surface = vehicleClassificationPreviewSurface,
+                        stage = vehicleClassificationLookupStage,
+                        success = true,
+                        reason = "ok",
+                        durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                        lookupPlate = lookupPlate,
+                        hasVin = true,
+                        hasDecodedVin = decodedVin != null
+                    )
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) {
+                    throw error
+                }
+                println("ReportedSubmit: vehicle enrichment preview failed: ${error.message}")
+                trackVehicleEnrichmentEndpoint(
+                    provider = vehicleEnrichmentProvider,
+                    success = false,
+                    reason = error.analyticsReason(),
+                    durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                )
+                trackVehicleClassificationResult(
+                    surface = vehicleClassificationPreviewSurface,
+                    stage = vehicleClassificationLookupStage,
+                    success = false,
+                    reason = error.analyticsReason(),
+                    durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                    lookupPlate = lookupPlate
+                )
+            }.getOrElse {
+                vehicleEnrichmentDebugNote("Vehicle classification failed: ${it.analyticsReason()}.")
+            }
+        }
+        if (debugNote == null) {
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleEnrichmentProvider,
+                success = false,
+                reason = "timeout",
+                durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationPreviewSurface,
+                stage = vehicleClassificationLookupStage,
+                success = false,
+                reason = "timeout",
+                durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                lookupPlate = lookupPlate
+            )
+        }
+        return debugNote ?: vehicleEnrichmentDebugNote("Vehicle classification skipped: timed out.")
     }
 
     suspend fun deleteParseReport(objectId: String) {
@@ -426,6 +585,7 @@ class ReportedApi(
             command.vehicleColor?.takeIf { it.isNotBlank() }?.let { put("vehicleColor", it) }
             command.vehicleMake?.takeIf { it.isNotBlank() }?.let { put("vehicleMake", it) }
             command.vehicleModel?.takeIf { it.isNotBlank() }?.let { put("vehicleModel", it) }
+            command.vehicleBodyClass?.takeIf { it.isNotBlank() }?.let { put("vehicleBodyClass", it) }
             if (command.notes.isNotBlank()) {
                 put("notes", command.notes)
             }
@@ -462,9 +622,512 @@ class ReportedApi(
         }
     }
 
+    private suspend fun savePhiladelphiaSubmissionDetails(
+        details: PhiladelphiaMobilityAccessDetails,
+        submissionId: String,
+        sessionToken: String
+    ) {
+        val endpoint = "${parseBaseUrl()}/classes/$parsePhiladelphiaSubmissionClassName"
+        println("ReportedSubmit: POST $endpoint")
+        val response = client.post(endpoint) {
+            contentType(ContentType.Application.Json)
+            headers {
+                appendParseHeaders(sessionToken = sessionToken)
+            }
+            setBody(buildPhiladelphiaSubmissionBody(details, submissionId))
+        }
+        val body = response.bodyAsText()
+        println("ReportedSubmit: POST $parsePhiladelphiaSubmissionClassName completed status=${response.status} body=$body")
+    }
+
+    private fun buildPhiladelphiaSubmissionBody(
+        details: PhiladelphiaMobilityAccessDetails,
+        submissionId: String
+    ): JsonObject = buildJsonObject {
+        put("submissionId", submissionId)
+        put("submission", parsePointer(className = parseDefaultSubmissionClassName, objectId = submissionId))
+        put("jurisdiction", CityReportingRules.PHILADELPHIA_CITY_ID)
+        put("form", "philadelphia_mobility_access")
+        put("blockNumber", details.blockNumber)
+        put("streetName", details.streetName)
+        put("zipCode", details.zipCode)
+        put("vehicleMake", details.vehicleMake)
+        put("vehicleModel", details.vehicleModel)
+        put("bodyStyle", details.bodyStyle)
+        put("vehicleColor", details.vehicleColor)
+        put("violationObserved", details.violationObserved)
+        put("frequency", details.frequency)
+    }
+
+    private suspend fun SubmitReportCommand.enrichForHireVehicleDetails(): VehicleEnrichmentResult {
+        val lookupPlate = vehicleEnrichmentLookupPlate(plate)
+        if (lookupPlate == null) {
+            return VehicleEnrichmentResult(command = this)
+        }
+        val originalCommand = this
+
+        if (!vehicleEnrichmentPolicy.canAttemptVehicleEnrichment()) {
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleEnrichmentProvider,
+                success = false,
+                reason = "wifi_unavailable",
+                durationMillis = 0
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationSubmissionSurface,
+                stage = vehicleClassificationLookupStage,
+                success = false,
+                reason = "wifi_unavailable",
+                durationMillis = 0,
+                lookupPlate = lookupPlate
+            )
+            return VehicleEnrichmentResult(
+                command = if (vehicleEnrichmentPolicy.includeDebugSummaryInNotes()) {
+                    originalCommand.withVehicleEnrichmentDebugNote("Vehicle classification skipped: Wi-Fi unavailable.")
+                } else {
+                    originalCommand
+                }
+            )
+        }
+
+        val enrichmentStart = TimeSource.Monotonic.markNow()
+        val enrichmentResult = withTimeoutOrNull<VehicleEnrichmentResult>(vehicleEnrichmentTimeoutMillis) {
+            runCatching<VehicleEnrichmentResult> {
+                val tlcVehicle = fetchTlcVehicle(lookupPlate)
+                    ?: return@runCatching VehicleEnrichmentResult(
+                        command = if (vehicleEnrichmentPolicy.includeDebugSummaryInNotes()) {
+                            originalCommand.withVehicleEnrichmentDebugNote(
+                                "Vehicle classification skipped: no TLC active vehicle match for $lookupPlate."
+                            )
+                        } else {
+                            originalCommand
+                        }
+                    ).also {
+                        trackVehicleEnrichmentEndpoint(
+                            provider = vehicleEnrichmentProvider,
+                            success = false,
+                            reason = "no_tlc_match",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                        )
+                        trackVehicleClassificationResult(
+                            surface = vehicleClassificationSubmissionSurface,
+                            stage = vehicleClassificationLookupStage,
+                            success = false,
+                            reason = "no_tlc_match",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                            lookupPlate = lookupPlate
+                        )
+                    }
+                val vin = tlcVehicle.vehicleVinNumber.normalizedVin()
+                if (vin.isBlank()) {
+                    return@runCatching VehicleEnrichmentResult(
+                        command = if (vehicleEnrichmentPolicy.includeDebugSummaryInNotes()) {
+                            originalCommand.withVehicleEnrichmentDebugNote(
+                                "Vehicle classification skipped: TLC active vehicle match for $lookupPlate has no VIN."
+                            )
+                        } else {
+                            originalCommand
+                        }
+                    ).also {
+                        trackVehicleEnrichmentEndpoint(
+                            provider = vehicleEnrichmentProvider,
+                            success = false,
+                            reason = "no_vin",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                        )
+                        trackVehicleClassificationResult(
+                            surface = vehicleClassificationSubmissionSurface,
+                            stage = vehicleClassificationLookupStage,
+                            success = false,
+                            reason = "no_vin",
+                            durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                            lookupPlate = lookupPlate
+                        )
+                    }
+                }
+
+                val decodedVin = runCatching {
+                    decodeVehicleVin(vin)
+                }.onFailure { error ->
+                    if (error is CancellationException) {
+                        throw error
+                    }
+                    println("ReportedSubmit: vPIC vehicle enrichment failed: ${error.message}")
+                }.getOrNull()
+                val classification = buildVehicleClassificationPayload(
+                    lookupPlate = lookupPlate,
+                    tlcVehicle = tlcVehicle,
+                    decodedVin = decodedVin
+                )
+                VehicleEnrichmentResult(
+                    command = if (vehicleEnrichmentPolicy.includeDebugSummaryInNotes()) {
+                        originalCommand.withVehicleEnrichmentDebugNote(classification.debugSummary())
+                    } else {
+                        originalCommand
+                    },
+                    vehicleClassification = classification
+                ).also {
+                    trackVehicleEnrichmentEndpoint(
+                        provider = vehicleEnrichmentProvider,
+                        success = true,
+                        reason = "ok",
+                        durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+                    )
+                    trackVehicleClassificationResult(
+                        surface = vehicleClassificationSubmissionSurface,
+                        stage = vehicleClassificationLookupStage,
+                        success = true,
+                        reason = "ok",
+                        durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                        lookupPlate = lookupPlate,
+                        hasVin = true,
+                        hasDecodedVin = decodedVin != null
+                    )
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) {
+                    throw error
+                }
+                println("ReportedSubmit: TLC vehicle enrichment failed: ${error.message}")
+                trackVehicleClassificationResult(
+                    surface = vehicleClassificationSubmissionSurface,
+                    stage = vehicleClassificationLookupStage,
+                    success = false,
+                    reason = error.analyticsReason(),
+                    durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                    lookupPlate = lookupPlate
+                )
+            }.getOrElse { VehicleEnrichmentResult(command = originalCommand) }
+        }
+        if (enrichmentResult == null) {
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleEnrichmentProvider,
+                success = false,
+                reason = "timeout",
+                durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationSubmissionSurface,
+                stage = vehicleClassificationLookupStage,
+                success = false,
+                reason = "timeout",
+                durationMillis = enrichmentStart.elapsedNow().inWholeMilliseconds,
+                lookupPlate = lookupPlate
+            )
+        }
+        return enrichmentResult ?: VehicleEnrichmentResult(command = originalCommand)
+    }
+
+    private fun vehicleEnrichmentLookupPlate(rawPlate: String): String? {
+        val plateMatch = PlatePatternClassifier.classify(rawPlate)
+        if (plateMatch != null && plateMatch.type in setOf(PlateType.TAXI, PlateType.TLC)) {
+            return plateMatch.normalizedPlate
+        }
+        val normalizedPlate = PlatePatternClassifier.normalizePlateInput(rawPlate)
+        return normalizedPlate.takeIf {
+            it.length in 2..PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH &&
+                (it.startsWith("T") || it.startsWith("Y"))
+        }
+    }
+
+    private fun buildVehicleClassificationPayload(
+        lookupPlate: String,
+        tlcVehicle: TlcVehicleDto,
+        decodedVin: VpicVehicleDto?
+    ): VehicleClassificationPayload =
+        VehicleClassificationPayload(
+            license = lookupPlate,
+            dmvLicensePlateNumber = tlcVehicle.dmvLicensePlateNumber.normalizedPlateOrFallback(lookupPlate),
+            vehicleVinNumber = tlcVehicle.vehicleVinNumber.normalizedVin(),
+            vehicleLicenseNumber = tlcVehicle.vehicleLicenseNumber.normalizedText()
+                ?: tlcVehicle.licenseNumber.normalizedText(),
+            baseAddress = tlcVehicle.baseAddress.normalizedText(),
+            active = tlcVehicle.active.asActiveBoolean() ?: tlcVehicle.currentStatus.asActiveBoolean(),
+            baseType = tlcVehicle.baseType.normalizedText() ?: tlcVehicle.vehicleType.normalizedText(),
+            name = tlcVehicle.name.normalizedText(),
+            make = decodedVin?.make.normalizedText(),
+            model = decodedVin?.model.normalizedText(),
+            bodyClass = decodedVin?.bodyClass.normalizedText(),
+            baseTelephoneNumber = tlcVehicle.baseTelephoneNumber.normalizedText(),
+            baseNumber = tlcVehicle.baseNumber.normalizedText() ?: tlcVehicle.agentNumber.normalizedText(),
+            licenseType = tlcVehicle.licenseType.normalizedText() ?: tlcVehicle.medallionType.normalizedText(),
+            year = (
+                decodedVin?.modelYear.normalizedText()
+                    ?: tlcVehicle.vehicleYear?.trim()?.takeIf { it.isNotBlank() }
+                    ?: tlcVehicle.modelYear?.trim()?.takeIf { it.isNotBlank() }
+                )?.toIntOrNull()
+        )
+
+    private suspend fun saveVehicleClassification(
+        payload: VehicleClassificationPayload,
+        submissionId: String,
+        sessionToken: String
+    ) {
+        val endpoint = "${parseBaseUrl()}/classes/vehicle_classification"
+        val start = TimeSource.Monotonic.markNow()
+        try {
+            println("ReportedSubmit: POST $endpoint")
+            val response = client.post(endpoint) {
+                contentType(ContentType.Application.Json)
+                headers {
+                    appendParseHeaders(sessionToken = sessionToken)
+                }
+                setBody(buildVehicleClassificationBody(payload, submissionId))
+            }
+            val body = response.bodyAsText()
+            println("ReportedSubmit: POST vehicle_classification completed status=${response.status} body=$body")
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleClassificationProvider,
+                success = true,
+                reason = "ok",
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationSubmissionSurface,
+                stage = vehicleClassificationSaveStage,
+                success = true,
+                reason = "ok",
+                durationMillis = start.elapsedNow().inWholeMilliseconds,
+                lookupPlate = payload.license,
+                hasVin = payload.vehicleVinNumber.isNotBlank(),
+                hasDecodedVin = payload.hasDecodedVehicle()
+            )
+        } catch (error: Throwable) {
+            if (error is CancellationException) {
+                throw error
+            }
+            println("ReportedSubmit: vehicle_classification save failed: ${error.message}")
+            trackVehicleEnrichmentEndpoint(
+                provider = vehicleClassificationProvider,
+                success = false,
+                reason = error.analyticsReason(),
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            trackVehicleClassificationResult(
+                surface = vehicleClassificationSubmissionSurface,
+                stage = vehicleClassificationSaveStage,
+                success = false,
+                reason = error.analyticsReason(),
+                durationMillis = start.elapsedNow().inWholeMilliseconds,
+                lookupPlate = payload.license,
+                hasVin = payload.vehicleVinNumber.isNotBlank(),
+                hasDecodedVin = payload.hasDecodedVehicle()
+            )
+        }
+    }
+
+    private fun buildVehicleClassificationBody(
+        payload: VehicleClassificationPayload,
+        submissionId: String
+    ): JsonObject {
+        return buildJsonObject {
+            put("submissionId", submissionId)
+            put("submission", parsePointer(className = parseDefaultSubmissionClassName, objectId = submissionId))
+            put("license", payload.license)
+            put("dmv_license_plate_number", payload.dmvLicensePlateNumber)
+            put("vehicle_vin_number", payload.vehicleVinNumber)
+            payload.vehicleLicenseNumber?.let { put("vehicle_license_number", it) }
+            payload.baseAddress?.let { put("base_address", it) }
+            payload.active?.let { put("active", it) }
+            payload.baseType?.let { put("base_type", it) }
+            payload.name?.let { put("name", it) }
+            payload.make?.let { put("make", it) }
+            payload.model?.let { put("model", it) }
+            payload.bodyClass?.let { put("vehicle_class", it) }
+            payload.baseTelephoneNumber?.let { put("base_telephone_number", it) }
+            payload.baseNumber?.let { put("base_number", it) }
+            payload.licenseType?.let { put("license_type", it) }
+            payload.year?.let { put("year", it) }
+        }
+    }
+
+    private suspend fun fetchTlcVehicle(plate: String): TlcVehicleDto? {
+        return fetchTlcVehicleFromDataset(
+            plate = plate,
+            url = tlcActiveVehiclesUrl,
+            provider = tlcActiveVehiclesProvider,
+            select = "dmv_license_plate_number,vehicle_vin_number,vehicle_license_number,vehicle_year,base_address,active,base_type,name,base_telephone_number,base_number,license_type"
+        ) ?: fetchTlcVehicleFromDataset(
+            plate = plate,
+            url = tlcMedallionVehiclesUrl,
+            provider = tlcMedallionVehiclesProvider,
+            select = "license_number,name,current_status,dmv_license_plate_number,vehicle_vin_number,vehicle_type,model_year,medallion_type,agent_number,agent_name"
+        )
+    }
+
+    private suspend fun fetchTlcVehicleFromDataset(
+        plate: String,
+        url: String,
+        provider: String,
+        select: String
+    ): TlcVehicleDto? {
+        val start = TimeSource.Monotonic.markNow()
+        return try {
+            val responseBody = client.get(url) {
+                parameter("dmv_license_plate_number", plate)
+                parameter("\$select", select)
+                parameter("\$limit", "5")
+            }.bodyAsText()
+            val vehicle = json.decodeFromString<List<TlcVehicleDto>>(responseBody)
+                .firstOrNull { it.dmvLicensePlateNumber.equals(plate, ignoreCase = true) }
+            trackVehicleEnrichmentEndpoint(
+                provider = provider,
+                success = vehicle != null,
+                reason = if (vehicle == null) "no_match" else "ok",
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            vehicle
+        } catch (error: Throwable) {
+            trackVehicleEnrichmentEndpoint(
+                provider = provider,
+                success = false,
+                reason = error.analyticsReason(),
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            throw error
+        }
+    }
+
+    private suspend fun decodeVehicleVin(vin: String): VpicVehicleDto? {
+        val start = TimeSource.Monotonic.markNow()
+        return try {
+            val responseBody = client.get("$vpicDecodeVinValuesExtendedUrl/$vin") {
+                parameter("format", "json")
+            }.bodyAsText()
+            val vehicle = json.decodeFromString<VpicDecodeResponseDto>(responseBody).results.firstOrNull()
+            trackVehicleEnrichmentEndpoint(
+                provider = vpicDecodeVinProvider,
+                success = vehicle != null,
+                reason = if (vehicle == null) "no_result" else "ok",
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            vehicle
+        } catch (error: Throwable) {
+            trackVehicleEnrichmentEndpoint(
+                provider = vpicDecodeVinProvider,
+                success = false,
+                reason = error.analyticsReason(),
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            throw error
+        }
+    }
+
+    private fun trackVehicleEnrichmentEndpoint(
+        provider: String,
+        success: Boolean,
+        reason: String,
+        durationMillis: Long
+    ) {
+        vehicleEnrichmentTracker.endpointCompleted(
+            provider = provider,
+            success = success,
+            reason = reason.take(64),
+            durationMillis = durationMillis,
+            operatingSystem = operatingSystem
+        )
+    }
+
+    private fun trackVehicleClassificationResult(
+        surface: String,
+        stage: String,
+        success: Boolean,
+        reason: String,
+        durationMillis: Long,
+        lookupPlate: String,
+        hasVin: Boolean = false,
+        hasDecodedVin: Boolean = false
+    ) {
+        vehicleEnrichmentTracker.classificationCompleted(
+            surface = surface,
+            stage = stage,
+            success = success,
+            reason = reason.take(64),
+            durationMillis = durationMillis,
+            platePrefix = lookupPlate.firstOrNull()?.uppercaseChar()?.toString() ?: "unknown",
+            hasVin = hasVin,
+            hasDecodedVin = hasDecodedVin,
+            operatingSystem = operatingSystem
+        )
+    }
+
+    private fun Throwable.analyticsReason(): String =
+        when (this) {
+            is ResponseException -> "http_${response.status.value}"
+            else -> this::class.simpleName ?: "error"
+        }
+
+    private fun String?.normalizedVin(): String =
+        orEmpty()
+            .filter { it.isLetterOrDigit() }
+            .uppercase()
+
+    private fun String?.normalizedPlateOrFallback(fallback: String): String =
+        normalizedText()?.filter { it.isLetterOrDigit() }?.uppercase()?.takeIf { it.isNotBlank() } ?: fallback
+
+    private fun String?.normalizedText(): String? =
+        this?.trim()?.takeIf { it.isNotBlank() }
+
+    private fun String?.asActiveBoolean(): Boolean? =
+        when (this?.trim()?.uppercase()) {
+            "YES", "TRUE", "1", "ACTIVE", "CUR", "CURRENT" -> true
+            "NO", "FALSE", "0", "INACTIVE", "INACT", "EXPIRED" -> false
+            else -> null
+        }
+
+    private fun vehicleEnrichmentDebugNote(note: String): String =
+        "[DEBUG] $note"
+
+    private fun PhiladelphiaMobilityAccessDetails.toParseJson(): JsonObject = buildJsonObject {
+        put("blockNumber", blockNumber)
+        put("streetName", streetName)
+        put("zipCode", zipCode)
+        put("vehicleMake", vehicleMake)
+        put("vehicleModel", vehicleModel)
+        put("bodyStyle", bodyStyle)
+        put("vehicleColor", vehicleColor)
+        put("violationObserved", violationObserved)
+        put("frequency", frequency)
+    }
+
+    private fun SubmitReportCommand.withVehicleEnrichmentDebugNote(note: String): SubmitReportCommand {
+        val debugNote = vehicleEnrichmentDebugNote(note)
+        val nextNotes = listOf(notes.trim(), debugNote)
+            .filter { it.isNotBlank() }
+            .joinToString("\n")
+        return copy(notes = nextNotes)
+    }
+
+    private fun VehicleClassificationPayload.debugSummary(): String {
+        val parts = buildList {
+            add("Vehicle classification")
+            add("license=$license")
+            add("vin=$vehicleVinNumber")
+            year?.let { add("year=$it") }
+            make?.let { add("make=$it") }
+            model?.let { add("model=$it") }
+            bodyClass?.let { add("vehicle_class=$it") }
+            baseType?.let { add("base_type=$it") }
+            baseNumber?.let { add("base_number=$it") }
+            licenseType?.let { add("license_type=$it") }
+            active?.let { add("active=$it") }
+            vehicleLicenseNumber?.let { add("vehicle_license_number=$it") }
+        }
+        return parts.joinToString(", ")
+    }
+
+    private fun VehicleClassificationPayload.hasDecodedVehicle(): Boolean =
+        make != null || model != null || bodyClass != null || year != null
+
     private fun parseDateJson(value: String): JsonObject = buildJsonObject {
         put("__type", "Date")
         put("iso", value)
+    }
+
+    private fun parsePointer(className: String, objectId: String): JsonObject = buildJsonObject {
+        put("__type", "Pointer")
+        put("className", className)
+        put("objectId", objectId)
     }
 
     private fun normalizedParseIso(value: String): String? =
@@ -483,11 +1146,107 @@ class ReportedApi(
     }
 
     private companion object {
+        const val parseDefaultSubmissionClassName = "submission"
+        const val parsePhiladelphiaSubmissionClassName = "submissions_philly"
         const val parseReportListKeys =
             "objectId,createdAt,updatedAt,license,state,timeofreport,timeofreported,timeofincident,status,reqnumber,typeofcomplaint,loc1_address,reportDescription,notes"
         const val parseReportDetailKeys =
             "$parseReportListKeys,photoData0,photoData1,photoData2,PhotoData2,PhotoData3,videoData0,videoData1,videoData2"
         const val parseReportsPageSize = 100
         const val nativeVersionNumber = 90
+        const val vehicleEnrichmentTimeoutMillis = 5_000L
+        const val vehicleEnrichmentProvider = "vehicle_enrichment"
+        const val tlcActiveVehiclesProvider = "tlc_active_vehicles"
+        const val tlcMedallionVehiclesProvider = "tlc_medallion_vehicles"
+        const val vpicDecodeVinProvider = "vpic_decode_vin"
+        const val vehicleClassificationProvider = "vehicle_classification"
+        const val vehicleClassificationPreviewSurface = "preview"
+        const val vehicleClassificationSubmissionSurface = "submission"
+        const val vehicleClassificationLookupStage = "lookup"
+        const val vehicleClassificationSaveStage = "save"
+        const val tlcActiveVehiclesUrl = "https://data.cityofnewyork.us/resource/8wbx-tsch.json"
+        const val tlcMedallionVehiclesUrl = "https://data.cityofnewyork.us/resource/rhe8-mgbb.json"
+        const val vpicDecodeVinValuesExtendedUrl = "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended"
     }
 }
+
+private data class VehicleEnrichmentResult(
+    val command: SubmitReportCommand,
+    val vehicleClassification: VehicleClassificationPayload? = null
+)
+
+private data class VehicleClassificationPayload(
+    val license: String,
+    val dmvLicensePlateNumber: String,
+    val vehicleVinNumber: String,
+    val vehicleLicenseNumber: String?,
+    val baseAddress: String?,
+    val active: Boolean?,
+    val baseType: String?,
+    val name: String?,
+    val make: String?,
+    val model: String?,
+    val bodyClass: String?,
+    val baseTelephoneNumber: String?,
+    val baseNumber: String?,
+    val licenseType: String?,
+    val year: Int?
+)
+
+@Serializable
+private data class TlcVehicleDto(
+    @SerialName("dmv_license_plate_number")
+    val dmvLicensePlateNumber: String? = null,
+    @SerialName("vehicle_vin_number")
+    val vehicleVinNumber: String? = null,
+    @SerialName("vehicle_year")
+    val vehicleYear: String? = null,
+    @SerialName("vehicle_license_number")
+    val vehicleLicenseNumber: String? = null,
+    @SerialName("license_number")
+    val licenseNumber: String? = null,
+    @SerialName("base_address")
+    val baseAddress: String? = null,
+    @SerialName("active")
+    val active: String? = null,
+    @SerialName("current_status")
+    val currentStatus: String? = null,
+    @SerialName("base_type")
+    val baseType: String? = null,
+    @SerialName("vehicle_type")
+    val vehicleType: String? = null,
+    @SerialName("name")
+    val name: String? = null,
+    @SerialName("base_telephone_number")
+    val baseTelephoneNumber: String? = null,
+    @SerialName("base_number")
+    val baseNumber: String? = null,
+    @SerialName("license_type")
+    val licenseType: String? = null,
+    @SerialName("model_year")
+    val modelYear: String? = null,
+    @SerialName("medallion_type")
+    val medallionType: String? = null,
+    @SerialName("agent_number")
+    val agentNumber: String? = null,
+    @SerialName("agent_name")
+    val agentName: String? = null
+)
+
+@Serializable
+private data class VpicDecodeResponseDto(
+    @SerialName("Results")
+    val results: List<VpicVehicleDto> = emptyList()
+)
+
+@Serializable
+private data class VpicVehicleDto(
+    @SerialName("Make")
+    val make: String? = null,
+    @SerialName("Model")
+    val model: String? = null,
+    @SerialName("ModelYear")
+    val modelYear: String? = null,
+    @SerialName("BodyClass")
+    val bodyClass: String? = null
+)

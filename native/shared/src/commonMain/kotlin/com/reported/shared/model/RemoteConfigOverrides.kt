@@ -13,6 +13,7 @@ object RemoteConfigKeys {
     const val ENABLE_LIVE = "reported_enable_live"
     const val ENABLE_MEDIA_SCANNER = "reported_enable_media_scanner"
     const val ENABLE_OFFLINE_PHOTO_PROCESSING = "reported_enable_offline_photo_processing"
+    const val SYSTEM_NOTICE = "system_notice"
 }
 
 object RemoteConfigDefaults {
@@ -22,6 +23,7 @@ object RemoteConfigDefaults {
     const val ENABLE_LIVE = false
     const val ENABLE_MEDIA_SCANNER = false
     const val ENABLE_OFFLINE_PHOTO_PROCESSING = false
+    const val SYSTEM_NOTICE = ""
 
     val complaintCategoriesJson: String
         get() = Json.encodeToString(
@@ -64,6 +66,7 @@ object RemoteConfigOverrides {
     private var enableLiveOverride: Boolean? = null
     private var enableMediaScannerOverride: Boolean? = null
     private var enableOfflinePhotoProcessingOverride: Boolean? = null
+    private var systemNoticeOverride: String? = null
 
     var complaintCategories: List<ComplaintCategory>? = null
         private set
@@ -83,6 +86,9 @@ object RemoteConfigOverrides {
     val enableOfflinePhotoProcessing: Boolean
         get() = enableOfflinePhotoProcessingOverride ?: RemoteConfigDefaults.ENABLE_OFFLINE_PHOTO_PROCESSING
 
+    val systemNotice: String
+        get() = systemNoticeOverride ?: RemoteConfigDefaults.SYSTEM_NOTICE
+
     fun apply(
         apiBaseUrl: String?,
         parseServerUrl: String?,
@@ -91,7 +97,8 @@ object RemoteConfigOverrides {
         showComplaintImages: String?,
         enableLive: String? = null,
         enableMediaScanner: String? = null,
-        enableOfflinePhotoProcessing: String? = null
+        enableOfflinePhotoProcessing: String? = null,
+        systemNotice: String? = null
     ) {
         apiBaseUrlOverride = apiBaseUrl?.trim()?.takeIf { it.isNotBlank() }
         parseServerUrlOverride = parseServerUrl?.trim()?.takeIf { it.isNotBlank() }
@@ -99,6 +106,7 @@ object RemoteConfigOverrides {
         enableLiveOverride = parseBoolean(enableLive)
         enableMediaScannerOverride = parseBoolean(enableMediaScanner)
         enableOfflinePhotoProcessingOverride = parseBoolean(enableOfflinePhotoProcessing)
+        systemNoticeOverride = systemNotice?.trim()?.takeIf { it.isNotBlank() }
         complaintCategories = parseComplaintCategories(complaintCategoriesJson)
         reportStatuses = parseReportStatuses(reportStatusesJson)
     }
