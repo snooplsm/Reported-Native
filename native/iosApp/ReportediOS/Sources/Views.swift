@@ -1071,6 +1071,8 @@ struct ComposerScreen: View {
     @State private var voiceModelDownloadProgress: Double?
     @State private var voiceImageContext: String?
     @State private var voiceImageContextTask: Task<Void, Never>?
+    @State private var voiceProcessingTask: Task<Void, Never>?
+    @State private var voiceProcessingID: UUID?
     @State private var pendingPlateCandidate: ComposerState.PlateCandidate?
     @State private var pendingPlatePreviewImage: UIImage?
     @State private var showOccurredAtPicker = false
@@ -1510,8 +1512,7 @@ struct ComposerScreen: View {
     }
 
     private func dismissVoiceAssistant() {
-        voiceImageContextTask?.cancel()
-        voiceImageContextTask = nil
+        cancelVoiceProcessing()
         _ = voiceAudio.stopRecording()
         showVoiceAssistSheet = false
     }
@@ -1531,6 +1532,9 @@ struct ComposerScreen: View {
         voiceTranscript = ""
         voiceDraft = nil
         voiceProcessing = false
+        if voiceImageContext == nil && voiceImageContextTask == nil {
+            startVoiceImageContextWarmup()
+        }
         let started = await voiceAudio.startRecording()
         if !started {
             voiceImageContextTask?.cancel()
@@ -1540,19 +1544,35 @@ struct ComposerScreen: View {
     }
 
     @MainActor
-    private func stopVoiceAssistantCapture() async {
-        guard let audioURL = voiceAudio.stopRecording() else {
-            voiceError = voiceAudio.errorMessage ?? "I couldn't capture enough audio to process."
-            return
+    private func beginStoppingVoiceAssistantCapture() {
+        guard voiceProcessingTask == nil else { return }
+        let processingID = UUID()
+        voiceProcessingID = processingID
+        voiceProcessingTask = Task { @MainActor in
+            await stopVoiceAssistantCapture(processingID: processingID)
         }
-        await processVoiceAudio(audioURL)
     }
 
     @MainActor
-    private func processVoiceAudio(_ audioURL: URL) async {
+    private func stopVoiceAssistantCapture(processingID: UUID) async {
+        guard let audioURL = voiceAudio.stopRecording() else {
+            if voiceProcessingID == processingID {
+                voiceError = voiceAudio.errorMessage ?? "I couldn't capture enough audio to process."
+                finishVoiceProcessing(processingID: processingID)
+            }
+            return
+        }
+        await processVoiceAudio(audioURL, processingID: processingID)
+    }
+
+    @MainActor
+    private func processVoiceAudio(_ audioURL: URL, processingID: UUID) async {
         voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
         guard voiceModelInstalled else {
-            voiceError = "Install REPORTED AI before using Talk."
+            if voiceProcessingID == processingID {
+                voiceError = "Install REPORTED AI before using Talk."
+                finishVoiceProcessing(processingID: processingID)
+            }
             try? FileManager.default.removeItem(at: audioURL)
             return
         }
@@ -1560,11 +1580,12 @@ struct ComposerScreen: View {
         voiceDraft = nil
         voiceProcessing = true
         defer {
-            voiceProcessing = false
+            finishVoiceProcessing(processingID: processingID)
             try? FileManager.default.removeItem(at: audioURL)
         }
         do {
             await voiceImageContextTask?.value
+            try Task.checkCancellation()
             voiceImageContextTask = nil
             let voiceContext = await VoiceReportContext.build(
                 state: viewModel.state,
@@ -1572,19 +1593,44 @@ struct ComposerScreen: View {
                 imageAddressSuggestion: refreshedPhotoAddressSuggestion,
                 imageVisualContext: voiceImageContext
             )
+            try Task.checkCancellation()
             let result = try await OnDeviceGemmaVoiceDraftEngine.generateDraft(
                 audioURL: audioURL,
                 complaintOptions: complaintOptions,
                 voiceContext: voiceContext
             )
+            try Task.checkCancellation()
+            guard voiceProcessingID == processingID else { return }
             voiceTranscript = result.transcript ?? ""
             voiceDraft = result.draft
             withAnimation(.snappy) {
                 voiceAssistSheetDetent = .large
             }
+        } catch is CancellationError {
+            return
         } catch {
-            voiceError = error.localizedDescription
+            if voiceProcessingID == processingID {
+                voiceError = error.localizedDescription
+            }
         }
+    }
+
+    @MainActor
+    private func cancelVoiceProcessing() {
+        voiceProcessingID = nil
+        voiceProcessingTask?.cancel()
+        voiceProcessingTask = nil
+        voiceImageContextTask?.cancel()
+        voiceImageContextTask = nil
+        voiceProcessing = false
+    }
+
+    @MainActor
+    private func finishVoiceProcessing(processingID: UUID) {
+        guard voiceProcessingID == processingID else { return }
+        voiceProcessing = false
+        voiceProcessingTask = nil
+        voiceProcessingID = nil
     }
 
     @MainActor
@@ -1631,8 +1677,7 @@ struct ComposerScreen: View {
     }
 
     private func resetVoiceAssistant() {
-        voiceImageContextTask?.cancel()
-        voiceImageContextTask = nil
+        cancelVoiceProcessing()
         voiceImageContext = nil
         voiceAudio.reset()
         voiceAudio.refreshPermissionState()
@@ -1756,9 +1801,10 @@ struct ComposerScreen: View {
                 }
             },
             onStop: {
-                Task {
-                    await stopVoiceAssistantCapture()
-                }
+                beginStoppingVoiceAssistantCapture()
+            },
+            onCancelProcessing: {
+                cancelVoiceProcessing()
             },
             onClear: {
                 resetVoiceAssistant()
@@ -1768,18 +1814,6 @@ struct ComposerScreen: View {
             },
             onDismiss: dismissVoiceAssistant
         )
-        .onChange(of: voiceAudio.isRecording) { _, isRecording in
-            guard !isRecording else { return }
-            withAnimation(.snappy) {
-                voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
-            }
-        }
-        .onChange(of: voiceProcessing) { _, isProcessing in
-            guard isProcessing else { return }
-            withAnimation(.snappy) {
-                voiceAssistSheetDetent = .height(voiceAssistantCompactSheetHeight)
-            }
-        }
     }
 
     private func voiceAssistantOverlayHeight(for availableHeight: CGFloat) -> CGFloat {
@@ -8783,7 +8817,8 @@ private enum OnDeviceGemmaVoiceDraftEngine {
         complaintOptions: [ComplaintOption],
         voiceContext: VoiceReportContext
     ) async throws -> VoiceReportGemmaResult {
-        try await Task.detached(priority: .userInitiated) {
+        let generationTask = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
             let attributes = try FileManager.default.attributesOfItem(atPath: audioURL.path)
             let fileSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
             guard fileSize > 44 else {
@@ -8807,7 +8842,10 @@ private enum OnDeviceGemmaVoiceDraftEngine {
                     cacheURL: cacheURL,
                     complaintOptions: complaintOptions
                 )
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
+                try Task.checkCancellation()
                 guard imageURL != nil else { throw error }
                 return try await generateDraftResponse(
                     audioURL: audioURL,
@@ -8818,11 +8856,17 @@ private enum OnDeviceGemmaVoiceDraftEngine {
                     complaintOptions: complaintOptions
                 )
             }
-        }.value
+        }
+        return try await withTaskCancellationHandler(operation: {
+            try await generationTask.value
+        }, onCancel: {
+            generationTask.cancel()
+        })
     }
 
     static func generateImageContext(imageURL: URL) async -> String? {
-        await Task.detached(priority: .utility) {
+        let contextTask = Task.detached(priority: .utility) { () -> String? in
+            guard !Task.isCancelled else { return nil }
             guard FileManager.default.fileExists(atPath: imageURL.path),
                   let modelURL = resolveModelURL(),
                   let cacheURL = try? resolveCacheURL() else {
@@ -8845,8 +8889,9 @@ private enum OnDeviceGemmaVoiceDraftEngine {
                 let conversation = try await engine.createConversation(
                     with: LiteRTLM.ConversationConfig(samplerConfig: samplerConfig)
                 )
-                let response = try await conversation.sendMessage(
-                    LiteRTLM.Message(contents: [
+                let response = try await sendVoiceMessage(
+                    conversation: conversation,
+                    message: LiteRTLM.Message(contents: [
                         .imageFile(imageURL.path),
                         .text("""
                         Briefly inspect this report photo for form-filling context. Return one concise sentence with only clearly visible facts: possible complaint type, vehicle make/model/color/type, visible license plate text, location clues, and scene details. If uncertain, say uncertain rather than guessing.
@@ -8860,7 +8905,12 @@ private enum OnDeviceGemmaVoiceDraftEngine {
             } catch {
                 return nil
             }
-        }.value
+        }
+        return await withTaskCancellationHandler(operation: {
+            await contextTask.value
+        }, onCancel: {
+            contextTask.cancel()
+        })
     }
 
     private static func generateDraftResponse(
@@ -8893,11 +8943,29 @@ private enum OnDeviceGemmaVoiceDraftEngine {
             }
             contents.append(.audioFile(audioURL.path))
             contents.append(.text(prompt))
-            let response = try await conversation.sendMessage(
-                LiteRTLM.Message(contents: contents)
+            let response = try await sendVoiceMessage(
+                conversation: conversation,
+                message: LiteRTLM.Message(contents: contents)
             )
+            try Task.checkCancellation()
             let parsed = try parseVoiceReportGemmaJson(response.toString, complaintOptions: complaintOptions)
-            return await resolveVoiceReportAddress(parsed)
+            let resolved = await resolveVoiceReportAddress(parsed)
+            try Task.checkCancellation()
+            return resolved
+    }
+
+    private static func sendVoiceMessage(
+        conversation: LiteRTLM.Conversation,
+        message: LiteRTLM.Message
+    ) async throws -> LiteRTLM.Message {
+        try Task.checkCancellation()
+        return try await withTaskCancellationHandler(operation: {
+            let response = try await conversation.sendMessage(message)
+            try Task.checkCancellation()
+            return response
+        }, onCancel: {
+            try? conversation.cancel()
+        })
     }
 
     private static func resolveModelURL() -> URL? {
@@ -9317,6 +9385,7 @@ private struct VoiceReportAssistantSheet: View {
     let onDownloadModel: () -> Void
     let onTalk: () -> Void
     let onStop: () -> Void
+    let onCancelProcessing: () -> Void
     let onClear: () -> Void
     let onApply: (VoiceReportDraft) -> Void
     let onDismiss: () -> Void
@@ -9419,7 +9488,7 @@ private struct VoiceReportAssistantSheet: View {
                                 )
                                 VoicePrimaryAction(title: "Allow microphone", action: onRequestPermission)
                             } else if isProcessing {
-                                VoiceProcessingPanel()
+                                VoiceProcessingPanel(onCancel: onCancelProcessing)
                             } else {
                                 VoiceCaptureControl(
                                     isRecording: audio.isRecording,
@@ -9726,6 +9795,8 @@ private struct VoiceLevelMeter: View {
 }
 
 private struct VoiceProcessingPanel: View {
+    let onCancel: () -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -9736,6 +9807,14 @@ private struct VoiceProcessingPanel: View {
             VoiceProcessingStep(text: "Recording captured", state: .complete)
             VoiceProcessingStep(text: "Transcribing", state: .active)
             VoiceProcessingStep(text: "Generating form fields", state: .pending)
+            Button(role: .cancel, action: onCancel) {
+                Text("Cancel processing")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Cancel Reported AI processing")
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
