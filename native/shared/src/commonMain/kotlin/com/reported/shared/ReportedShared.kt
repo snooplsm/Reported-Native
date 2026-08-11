@@ -23,6 +23,7 @@ import com.reported.shared.reports.FetchReportDetailUseCase
 import com.reported.shared.reports.FetchReportStatsUseCase
 import com.reported.shared.reports.FetchReportsUseCase
 import com.reported.shared.reports.LoadDraftUseCase
+import com.reported.shared.reports.LookupVehicleDetailsUseCase
 import com.reported.shared.reports.PreviewVehicleEnrichmentDebugNoteUseCase
 import com.reported.shared.reports.ReportsRepository
 import com.reported.shared.reports.SaveDraftUseCase
@@ -98,6 +99,7 @@ class ReportedShared(
     val fetchReportDetailUseCase = FetchReportDetailUseCase(reportsRepository)
     val fetchReportStatsUseCase = FetchReportStatsUseCase(reportsRepository)
     val submitReportUseCase = SubmitReportUseCase(reportsRepository, submittedPlateRepository)
+    val lookupVehicleDetailsUseCase = LookupVehicleDetailsUseCase(reportsRepository)
     val previewVehicleEnrichmentDebugNoteUseCase = PreviewVehicleEnrichmentDebugNoteUseCase(reportsRepository)
     val changeReportStatusUseCase = ChangeReportStatusUseCase(reportsRepository)
     val deleteReportUseCase = DeleteReportUseCase(reportsRepository, submittedPlateRepository)

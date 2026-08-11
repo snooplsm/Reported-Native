@@ -6,6 +6,7 @@ import com.reported.shared.model.ReportStats
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.ReportsPage
 import com.reported.shared.model.SubmitReportCommand
+import com.reported.shared.model.VehicleLookupDetails
 
 class ReportsRepository(
     private val api: ReportedApi
@@ -19,6 +20,9 @@ class ReportsRepository(
     suspend fun fetchStats(): ReportStats = api.fetchReportStats()
 
     suspend fun submitReport(command: SubmitReportCommand): String = api.submitReport(command)
+
+    suspend fun lookupVehicleDetails(plate: String, licenseState: String): VehicleLookupDetails? =
+        api.lookupVehicleDetails(plate, licenseState)
 
     suspend fun previewVehicleEnrichmentDebugNote(plate: String): String? =
         api.previewVehicleEnrichmentDebugNote(plate)

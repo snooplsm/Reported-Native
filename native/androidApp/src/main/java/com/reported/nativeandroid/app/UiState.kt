@@ -6,6 +6,7 @@ import com.reported.shared.model.ComplaintCategory
 import com.reported.shared.model.PhiladelphiaMobilityAccessDetails
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.UserSession
+import com.reported.shared.model.VehicleLookupDetails
 
 const val PhiladelphiaSubmissionMediaCount = 2
 const val PhiladelphiaSubmissionMediaMessage = "Philadelphia Parking Authority reports can include up to 2 photos and no videos."
@@ -259,6 +260,9 @@ data class ComposerUiState(
     val plateCandidates: List<PlateCandidate> = emptyList(),
     val selectedPlateCandidate: String? = null,
     val vehicleDescription: VehicleDescription? = null,
+    val vehicleLookupDetails: VehicleLookupDetails? = null,
+    val vehicleLookupInFlight: Boolean = false,
+    val vehicleLookupMessage: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val addressQuery: String = "",

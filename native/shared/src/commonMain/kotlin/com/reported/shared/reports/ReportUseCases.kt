@@ -5,6 +5,7 @@ import com.reported.shared.model.ReportStats
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.ReportsPage
 import com.reported.shared.model.SubmitReportCommand
+import com.reported.shared.model.VehicleLookupDetails
 
 class FetchReportsUseCase(private val repository: ReportsRepository) {
     @Throws(Exception::class)
@@ -67,6 +68,12 @@ class SubmitReportUseCase(private val repository: ReportsRepository) {
 class PreviewVehicleEnrichmentDebugNoteUseCase(private val repository: ReportsRepository) {
     @Throws(Exception::class)
     suspend fun execute(plate: String): String? = repository.previewVehicleEnrichmentDebugNote(plate)
+}
+
+class LookupVehicleDetailsUseCase(private val repository: ReportsRepository) {
+    @Throws(Exception::class)
+    suspend fun execute(plate: String, licenseState: String): VehicleLookupDetails? =
+        repository.lookupVehicleDetails(plate, licenseState)
 }
 
 class ChangeReportStatusUseCase(private val repository: ReportsRepository) {

@@ -4893,6 +4893,7 @@ fun VerifyFieldsPanel(
             state.validationErrors.plateRegion
         )
     )
+    VehicleLookupStatus(state)
     if (isLandscape) {
         AddressField(
             state = state,
@@ -5252,6 +5253,48 @@ private fun ReportedOptionsField(
             )
         }
     )
+}
+
+@Composable
+private fun VehicleLookupStatus(state: ComposerUiState) {
+    val details = state.vehicleLookupDetails
+    val statusText = when {
+        state.vehicleLookupInFlight -> "Looking up vehicle details for ${state.plate} in ${state.plateRegion}…"
+        details != null -> details.summary
+        else -> state.vehicleLookupMessage
+    } ?: return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (state.vehicleLookupInFlight) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (details != null) {
+                    Text(
+                        text = "Vehicle details from LookupAPlate",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
 }
 
 private fun ComposerUiState.showsPhiladelphiaMobilityAccessFields(context: Context): Boolean =

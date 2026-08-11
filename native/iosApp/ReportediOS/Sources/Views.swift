@@ -2530,6 +2530,9 @@ struct ComposerScreen: View {
             plateValue: viewModel.state.plate,
             plateCandidateCount: viewModel.state.plateCandidates.count,
             plateRegionValue: viewModel.state.plateRegion,
+            vehicleLookupDetails: viewModel.state.vehicleLookupDetails,
+            vehicleLookupInFlight: viewModel.state.vehicleLookupInFlight,
+            vehicleLookupMessage: viewModel.state.vehicleLookupMessage,
             addressValue: viewModel.state.addressQuery,
             occurredAtValue: viewModel.state.occurredAtIso.reportDateTimeDisplay,
             validationErrors: viewModel.state.validationErrors,
@@ -11730,6 +11733,9 @@ private struct ReportVerifyFields: View {
     let plateValue: String
     let plateCandidateCount: Int
     let plateRegionValue: String
+    let vehicleLookupDetails: VehicleLookupDetails? = nil
+    let vehicleLookupInFlight: Bool = false
+    let vehicleLookupMessage: String? = nil
     let addressValue: String
     let occurredAtValue: String
     let validationErrors: ComposerState.ValidationErrors
@@ -11789,6 +11795,7 @@ private struct ReportVerifyFields: View {
             validationErrors.plate,
             validationErrors.plateRegion
         ])
+        vehicleLookupStatus
         if isLandscape {
             HStack(alignment: .top, spacing: 12) {
                 addressField
@@ -11814,6 +11821,36 @@ private struct ReportVerifyFields: View {
         } else {
             descriptionField(multilineFieldMinHeight)
             notesField(multilineFieldMinHeight)
+        }
+    }
+
+    @ViewBuilder
+    private var vehicleLookupStatus: some View {
+        if vehicleLookupInFlight || vehicleLookupDetails != nil || vehicleLookupMessage != nil {
+            HStack(spacing: 10) {
+                if vehicleLookupInFlight {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    if vehicleLookupInFlight {
+                        Text("Looking up vehicle details for \(plateValue) in \(plateRegionValue)…")
+                    } else if let details = vehicleLookupDetails {
+                        Text(details.summary)
+                        Text("Vehicle details from LookupAPlate")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let vehicleLookupMessage {
+                        Text(vehicleLookupMessage)
+                    }
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 

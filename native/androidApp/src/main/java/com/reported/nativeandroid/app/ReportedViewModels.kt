@@ -24,6 +24,7 @@ import com.reported.shared.model.ReportFilter
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.SubmitReportCommand
 import com.reported.shared.model.SubmitReportMediaFile
+import com.reported.shared.model.VehicleLookupDetails
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -706,6 +708,7 @@ class ComposerViewModel : ViewModel() {
     private val _events = MutableSharedFlow<ComposerEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<ComposerEvent> = _events.asSharedFlow()
     private var vehicleClassificationDebugJob: Job? = null
+    private var vehicleDetailsLookupJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -835,6 +838,7 @@ class ComposerViewModel : ViewModel() {
                     error = null
                 )
             }
+            refreshVehicleLookups()
         }
     }
 
@@ -885,7 +889,7 @@ class ComposerViewModel : ViewModel() {
             ).withMediaAddedTiming(previous = it)
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     fun confirmPendingComplaint(complaintId: String) {
@@ -1058,7 +1062,7 @@ class ComposerViewModel : ViewModel() {
             }
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     private fun rejectMedia(media: SubmissionMedia, message: String) {
@@ -1168,7 +1172,7 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     fun applyVehicleDescription(vehicleDescription: VehicleDescription) {
@@ -1212,7 +1216,7 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     fun updateAddressQuery(value: String) {
@@ -1244,6 +1248,7 @@ class ComposerViewModel : ViewModel() {
     }
 
     fun chooseAddress(suggestion: AddressSuggestion) {
+        val previousLookupKey = _state.value.vehicleLookupKey()
         _state.update {
             it.copy(
                 address = suggestion.label,
@@ -1261,6 +1266,9 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
+        if (_state.value.vehicleLookupKey() != previousLookupKey) {
+            refreshVehicleLookups()
+        }
     }
 
     fun applyDetectedMetadata(
@@ -1326,6 +1334,87 @@ class ComposerViewModel : ViewModel() {
         }
     }
 
+    private fun refreshVehicleLookups() {
+        refreshVehicleDetailsLookup()
+        refreshVehicleClassificationDebugNote()
+    }
+
+    private fun refreshVehicleDetailsLookup() {
+        val previousDetails = _state.value.vehicleLookupDetails
+        val lookupPlate = PlatePatternClassifier.normalizePlateInput(_state.value.plate)
+            .takeIf { it.length in 2..PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH }
+        val lookupState = _state.value.plateRegion.trim().uppercase()
+            .takeIf { it.matches(Regex("^[A-Z]{2}$")) }
+        vehicleDetailsLookupJob?.cancel()
+        if (previousDetails != null) {
+            _state.update { current ->
+                current.copy(
+                    philadelphiaMobilityAccessDetails = current.philadelphiaMobilityAccessDetails
+                        .withoutVehicleLookupPrefill(previousDetails)
+                )
+            }
+        }
+        if (lookupPlate == null || lookupState == null) {
+            _state.update {
+                it.copy(
+                    vehicleLookupDetails = null,
+                    vehicleLookupInFlight = false,
+                    vehicleLookupMessage = null
+                )
+            }
+            return
+        }
+
+        val lookupKey = "$lookupState:$lookupPlate"
+        _state.update {
+            it.copy(
+                vehicleLookupDetails = null,
+                vehicleLookupInFlight = true,
+                vehicleLookupMessage = null
+            )
+        }
+        vehicleDetailsLookupJob = viewModelScope.launch {
+            delay(500)
+            try {
+                val details = AppGraph.shared.lookupVehicleDetailsUseCase.execute(lookupPlate, lookupState)
+                if (_state.value.vehicleLookupKey() != lookupKey) return@launch
+                _state.update { current ->
+                    current.copy(
+                        vehicleLookupDetails = details,
+                        vehicleLookupInFlight = false,
+                        vehicleLookupMessage = if (details == null) {
+                            "No vehicle details were found for this plate."
+                        } else {
+                            null
+                        },
+                        philadelphiaMobilityAccessDetails = details?.let { vehicle ->
+                            current.philadelphiaMobilityAccessDetails.copy(
+                                vehicleMake = current.philadelphiaMobilityAccessDetails.vehicleMake
+                                    .ifBlank { vehicle.vehicleMake.orEmpty() },
+                                vehicleModel = current.philadelphiaMobilityAccessDetails.vehicleModel
+                                    .ifBlank { vehicle.vehicleModel.orEmpty() },
+                                bodyStyle = current.philadelphiaMobilityAccessDetails.bodyStyle
+                                    .ifBlank { vehicle.vehicleBody.orEmpty() }
+                            )
+                        } ?: current.philadelphiaMobilityAccessDetails
+                    )
+                }
+                if (details != null) persistDraft()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (_state.value.vehicleLookupKey() != lookupKey) return@launch
+                _state.update {
+                    it.copy(
+                        vehicleLookupDetails = null,
+                        vehicleLookupInFlight = false,
+                        vehicleLookupMessage = "Vehicle details are unavailable right now. You can still submit the report."
+                    )
+                }
+            }
+        }
+    }
+
     private fun applyVehicleClassificationDebugNote(debugNote: String?) {
         if (!BuildConfig.DEBUG) return
         _state.update { current ->
@@ -1355,7 +1444,7 @@ class ComposerViewModel : ViewModel() {
     ) {
         val normalizedPlate = PlatePatternClassifier.normalizePlateInput(plate)
             .take(PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH)
-        val didChangePlate = normalizedPlate != _state.value.plate
+        val previousLookupKey = _state.value.vehicleLookupKey()
         _state.update {
             it.copy(
                 plate = normalizedPlate,
@@ -1376,8 +1465,8 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
-        if (didChangePlate) {
-            refreshVehicleClassificationDebugNote()
+        if (_state.value.vehicleLookupKey() != previousLookupKey) {
+            refreshVehicleLookups()
         }
     }
 
@@ -1423,7 +1512,7 @@ class ComposerViewModel : ViewModel() {
             )
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     private fun keepPlateCorrection() {
@@ -1520,10 +1609,14 @@ class ComposerViewModel : ViewModel() {
                     vehicleColor = philadelphiaDetails?.vehicleColor?.ifBlank { null }
                         ?: snapshot.vehicleDescription?.color,
                     vehicleMake = philadelphiaDetails?.vehicleMake?.ifBlank { null }
+                        ?: snapshot.vehicleLookupDetails?.vehicleMake
                         ?: snapshot.vehicleDescription?.make,
                     vehicleModel = philadelphiaDetails?.vehicleModel?.ifBlank { null }
+                        ?: snapshot.vehicleLookupDetails?.vehicleModel
                         ?: snapshot.vehicleDescription?.model,
-                    vehicleBodyClass = philadelphiaDetails?.bodyStyle?.ifBlank { null },
+                    vehicleYear = snapshot.vehicleLookupDetails?.vehicleYear,
+                    vehicleBodyClass = philadelphiaDetails?.bodyStyle?.ifBlank { null }
+                        ?: snapshot.vehicleLookupDetails?.vehicleBody,
                     philadelphiaMobilityAccessDetails = philadelphiaDetails
                 )
                 lastSubmitCommand = attemptedCommand
@@ -1603,14 +1696,18 @@ class ComposerViewModel : ViewModel() {
                         vehicleMake = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
                             ?.vehicleMake
                             ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleLookupDetails?.vehicleMake
                             ?: failedSnapshot.vehicleDescription?.make,
                         vehicleModel = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
                             ?.vehicleModel
                             ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleLookupDetails?.vehicleModel
                             ?: failedSnapshot.vehicleDescription?.model,
+                        vehicleYear = failedSnapshot.vehicleLookupDetails?.vehicleYear,
                         vehicleBodyClass = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
                             ?.bodyStyle
-                            ?.ifBlank { null },
+                            ?.ifBlank { null }
+                            ?: failedSnapshot.vehicleLookupDetails?.vehicleBody,
                         philadelphiaMobilityAccessDetails = failedSnapshot.submittablePhiladelphiaMobilityAccessDetails()
                     )
                 )
@@ -1783,6 +1880,30 @@ private fun PlateCandidate.toDraftPlateCandidate() = DraftPlateCandidate(
 
 private fun ComposerUiState.hasMedia(media: SubmissionMedia): Boolean =
     primaryMedia?.uri == media.uri || extraMedia.any { it.uri == media.uri }
+
+private fun ComposerUiState.vehicleLookupKey(): String? {
+    val normalizedPlate = PlatePatternClassifier.normalizePlateInput(plate)
+        .takeIf { it.length in 2..PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH }
+        ?: return null
+    val normalizedState = plateRegion.trim().uppercase()
+        .takeIf { it.matches(Regex("^[A-Z]{2}$")) }
+        ?: return null
+    return "$normalizedState:$normalizedPlate"
+}
+
+private fun PhiladelphiaMobilityAccessDetails.withoutVehicleLookupPrefill(
+    details: VehicleLookupDetails
+): PhiladelphiaMobilityAccessDetails = copy(
+    vehicleMake = vehicleMake.takeUnless {
+        it.equals(details.vehicleMake, ignoreCase = true)
+    }.orEmpty(),
+    vehicleModel = vehicleModel.takeUnless {
+        it.equals(details.vehicleModel, ignoreCase = true)
+    }.orEmpty(),
+    bodyStyle = bodyStyle.takeUnless {
+        it.equals(details.vehicleBody, ignoreCase = true)
+    }.orEmpty()
+)
 
 private const val MaxSubmissionMediaCount = 3
 private const val MaxSubmissionVideoCount = 1

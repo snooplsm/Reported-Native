@@ -703,6 +703,9 @@ struct ComposerState {
     var detectionFrameCandidates: [PlateCandidate] = []
     var plateCandidates: [PlateCandidate] = []
     var selectedPlateCandidate: String?
+    var vehicleLookupDetails: VehicleLookupDetails?
+    var vehicleLookupInFlight = false
+    var vehicleLookupMessage: String?
     var latitude: Double?
     var longitude: Double?
     var addressQuery = ""
@@ -1460,6 +1463,7 @@ final class ComposerViewModel: ObservableObject {
     private let duplicateSubmissionMediaMessage = "That photo or video is already attached."
     private let vehicleClassificationDebugPrefix = "[DEBUG] Vehicle classification"
     private var vehicleClassificationDebugTask: Task<Void, Never>?
+    private var vehicleDetailsLookupTask: Task<Void, Never>?
 
     var remainingMediaSlots: Int {
         max(0, (state.isPhiladelphiaSubmission ? philadelphiaSubmissionMediaCount : maxSubmissionMediaCount) - mediaItems.count)
@@ -1482,6 +1486,7 @@ final class ComposerViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(remoteConfigObserver)
         }
         vehicleClassificationDebugTask?.cancel()
+        vehicleDetailsLookupTask?.cancel()
     }
 
     func refreshRemoteConfigValues() {
@@ -1659,6 +1664,7 @@ final class ComposerViewModel: ObservableObject {
                     }
                 }
                 state.draftLoaded = true
+                refreshVehicleLookups()
             } catch {
                 state.draftLoaded = true
                 state.error = error.localizedDescription
@@ -1720,6 +1726,7 @@ final class ComposerViewModel: ObservableObject {
         state.complaintSheetOpen = true
         markFirstMediaAddedIfNeeded(hadMedia: hadMedia)
         persistDraft()
+        refreshVehicleLookups()
     }
 
     func confirmPendingComplaint(_ complaintId: String) {
@@ -1780,6 +1787,7 @@ final class ComposerViewModel: ObservableObject {
             state.firstMediaAddedAt = nil
         }
         persistDraft()
+        refreshVehicleLookups()
     }
 
     func rejectMedia(_ media: ComposerState.SubmissionMedia, message: String) {
@@ -1886,7 +1894,7 @@ final class ComposerViewModel: ObservableObject {
             state.plateRegion = inferredState
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     func choosePlateCandidate(_ candidate: ComposerState.PlateCandidate) {
@@ -1908,7 +1916,7 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.plateRegion = nil
         }
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     func updateAddressQuery(_ value: String) {
@@ -1938,6 +1946,7 @@ final class ComposerViewModel: ObservableObject {
     }
 
     func chooseAddress(_ suggestion: ComposerState.AddressSuggestion) {
+        let previousLookupKey = vehicleLookupKey
         state.address = suggestion.label
         state.addressQuery = suggestion.label
         state.latitude = suggestion.latitude
@@ -1953,6 +1962,9 @@ final class ComposerViewModel: ObservableObject {
             state.validationErrors.plateRegion = nil
         }
         persistDraft()
+        if vehicleLookupKey != previousLookupKey {
+            refreshVehicleLookups()
+        }
     }
 
     func applyDetectedMetadata(
@@ -1997,12 +2009,11 @@ final class ComposerViewModel: ObservableObject {
         notes: String? = nil,
         occurredAtIso: String? = nil
     ) {
-        var didChangePlate = false
+        let previousLookupKey = vehicleLookupKey
         if let plate {
             let normalizedPlate = Self.normalizedPlateInput(plate)
             if normalizedPlate != state.plate {
                 state.keptPlateCorrectionRaw = nil
-                didChangePlate = true
             }
             state.plate = normalizedPlate
             state.plateCorrectionPrompt = nil
@@ -2020,8 +2031,8 @@ final class ComposerViewModel: ObservableObject {
         if let address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.address = nil }
         if let occurredAtIso, !occurredAtIso.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.occurredAt = nil }
         persistDraft()
-        if didChangePlate {
-            refreshVehicleClassificationDebugNote()
+        if vehicleLookupKey != previousLookupKey {
+            refreshVehicleLookups()
         }
     }
 
@@ -2076,7 +2087,7 @@ final class ComposerViewModel: ObservableObject {
         state.validationErrors.plate = nil
         state.validationErrors.plateRegion = nil
         persistDraft()
-        refreshVehicleClassificationDebugNote()
+        refreshVehicleLookups()
     }
 
     func keepPlateCorrection() {
@@ -2118,6 +2129,105 @@ final class ComposerViewModel: ObservableObject {
             }
         }
         #endif
+    }
+
+    private func refreshVehicleLookups() {
+        refreshVehicleDetailsLookup()
+        refreshVehicleClassificationDebugNote()
+    }
+
+    private var vehicleLookupKey: String? {
+        let plate = Self.normalizedPlateInput(state.plate)
+        let region = state.plateRegion.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard plate.count >= 2,
+              plate.count <= 10,
+              region.count == 2,
+              region.allSatisfy(\.isLetter) else {
+            return nil
+        }
+        return "\(region):\(plate)"
+    }
+
+    private func refreshVehicleDetailsLookup() {
+        vehicleDetailsLookupTask?.cancel()
+        if let previousDetails = state.vehicleLookupDetails {
+            clearPhiladelphiaVehicleLookupPrefill(previousDetails)
+        }
+        guard let lookupKey = vehicleLookupKey else {
+            state.vehicleLookupDetails = nil
+            state.vehicleLookupInFlight = false
+            state.vehicleLookupMessage = nil
+            return
+        }
+        let components = lookupKey.split(separator: ":", maxSplits: 1).map(String.init)
+        guard components.count == 2 else { return }
+        let lookupState = components[0]
+        let lookupPlate = components[1]
+
+        state.vehicleLookupDetails = nil
+        state.vehicleLookupInFlight = true
+        state.vehicleLookupMessage = nil
+        vehicleDetailsLookupTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            do {
+                let details = try await SharedBridge.shared.container.lookupVehicleDetailsUseCase.execute(
+                    plate: lookupPlate,
+                    licenseState: lookupState
+                )
+                guard !Task.isCancelled, self.vehicleLookupKey == lookupKey else { return }
+                self.state.vehicleLookupDetails = details
+                self.state.vehicleLookupInFlight = false
+                self.state.vehicleLookupMessage = details == nil
+                    ? "No vehicle details were found for this plate."
+                    : nil
+                if let details {
+                    self.prefillPhiladelphiaVehicleDetails(from: details)
+                    self.persistDraft()
+                }
+            } catch {
+                guard !Task.isCancelled, self.vehicleLookupKey == lookupKey else { return }
+                self.state.vehicleLookupDetails = nil
+                self.state.vehicleLookupInFlight = false
+                self.state.vehicleLookupMessage = "Vehicle details are unavailable right now. You can still submit the report."
+            }
+        }
+    }
+
+    private func prefillPhiladelphiaVehicleDetails(from details: VehicleLookupDetails) {
+        let current = state.philadelphiaMobilityAccessDetails
+        state.philadelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(
+            blockNumber: current.blockNumber,
+            streetName: current.streetName,
+            zipCode: current.zipCode,
+            vehicleMake: current.vehicleMake.isEmpty ? (details.vehicleMake ?? "") : current.vehicleMake,
+            vehicleModel: current.vehicleModel.isEmpty ? (details.vehicleModel ?? "") : current.vehicleModel,
+            bodyStyle: current.bodyStyle.isEmpty ? (details.vehicleBody ?? "") : current.bodyStyle,
+            vehicleColor: current.vehicleColor,
+            violationObserved: current.violationObserved,
+            frequency: current.frequency
+        )
+    }
+
+    private func clearPhiladelphiaVehicleLookupPrefill(_ details: VehicleLookupDetails) {
+        let current = state.philadelphiaMobilityAccessDetails
+        state.philadelphiaMobilityAccessDetails = PhiladelphiaMobilityAccessDetails(
+            blockNumber: current.blockNumber,
+            streetName: current.streetName,
+            zipCode: current.zipCode,
+            vehicleMake: current.vehicleMake.caseInsensitiveCompare(details.vehicleMake ?? "") == .orderedSame
+                ? ""
+                : current.vehicleMake,
+            vehicleModel: current.vehicleModel.caseInsensitiveCompare(details.vehicleModel ?? "") == .orderedSame
+                ? ""
+                : current.vehicleModel,
+            bodyStyle: current.bodyStyle.caseInsensitiveCompare(details.vehicleBody ?? "") == .orderedSame
+                ? ""
+                : current.bodyStyle,
+            vehicleColor: current.vehicleColor,
+            violationObserved: current.violationObserved,
+            frequency: current.frequency
+        )
     }
 
     private func applyVehicleClassificationDebugNote(_ debugNote: String?) {
@@ -2373,13 +2483,16 @@ final class ComposerViewModel: ObservableObject {
                     longitude: state.longitude.map { KotlinDouble(double: $0) },
                     vehicleImageDescription: nil,
                     vehicleColor: philadelphiaDetails?.vehicleColor.nilIfBlank,
-                    vehicleMake: philadelphiaDetails?.vehicleMake.nilIfBlank,
-                    vehicleModel: philadelphiaDetails?.vehicleModel.nilIfBlank,
+                    vehicleMake: philadelphiaDetails?.vehicleMake.nilIfBlank
+                        ?? state.vehicleLookupDetails?.vehicleMake?.nilIfBlank,
+                    vehicleModel: philadelphiaDetails?.vehicleModel.nilIfBlank
+                        ?? state.vehicleLookupDetails?.vehicleModel?.nilIfBlank,
                     mediaUrls: [],
                     mediaFiles: mediaFiles,
                     vehicleVin: nil,
-                    vehicleYear: nil,
-                    vehicleBodyClass: philadelphiaDetails?.bodyStyle.nilIfBlank,
+                    vehicleYear: state.vehicleLookupDetails?.vehicleYear?.nilIfBlank,
+                    vehicleBodyClass: philadelphiaDetails?.bodyStyle.nilIfBlank
+                        ?? state.vehicleLookupDetails?.vehicleBody?.nilIfBlank,
                     philadelphiaMobilityAccessDetails: philadelphiaDetails
                 )
                 await MainActor.run {

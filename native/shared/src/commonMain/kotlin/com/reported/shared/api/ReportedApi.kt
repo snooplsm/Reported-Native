@@ -13,6 +13,7 @@ import com.reported.shared.model.PlateType
 import com.reported.shared.model.RemoteConfigOverrides
 import com.reported.shared.model.SubmitReportCommand
 import com.reported.shared.model.UserSession
+import com.reported.shared.model.VehicleLookupDetails
 import com.reported.shared.session.SessionStore
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -254,6 +255,49 @@ class ReportedApi(
             saveVehicleClassification(it, submissionId, session.sessionToken)
         }
         return submissionId
+    }
+
+    suspend fun lookupVehicleDetails(plate: String, licenseState: String): VehicleLookupDetails? {
+        val normalizedPlate = PlatePatternClassifier.normalizePlateInput(plate)
+            .takeIf { it.length in 2..PlatePatternClassifier.MAX_LICENSE_PLATE_LENGTH }
+            ?: return null
+        val normalizedState = licenseState.trim().uppercase()
+            .takeIf { it.matches(Regex("^[A-Z]{2}$")) }
+            ?: return null
+        val start = TimeSource.Monotonic.markNow()
+        return try {
+            val responseBody = withTimeoutOrNull(vehicleLookupTimeoutMillis) {
+                client.get("$reportedWebVehicleLookupUrl/$normalizedPlate/$normalizedState") {
+                    headers {
+                        append("Accept", "application/json")
+                    }
+                }.bodyAsText()
+            } ?: error("Vehicle lookup timed out")
+            val details = decodeVehicleLookupResponse(
+                json = json,
+                responseBody = responseBody,
+                requestedPlate = normalizedPlate,
+                requestedState = normalizedState
+            )
+            trackVehicleEnrichmentEndpoint(
+                provider = lookupAPlateProvider,
+                success = details != null,
+                reason = if (details == null) "no_match" else "ok",
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            details
+        } catch (error: Throwable) {
+            if (error is CancellationException) {
+                throw error
+            }
+            trackVehicleEnrichmentEndpoint(
+                provider = lookupAPlateProvider,
+                success = false,
+                reason = error.analyticsReason(),
+                durationMillis = start.elapsedNow().inWholeMilliseconds
+            )
+            throw error
+        }
     }
 
     suspend fun previewVehicleEnrichmentDebugNote(plate: String): String? {
@@ -585,6 +629,7 @@ class ReportedApi(
             command.vehicleColor?.takeIf { it.isNotBlank() }?.let { put("vehicleColor", it) }
             command.vehicleMake?.takeIf { it.isNotBlank() }?.let { put("vehicleMake", it) }
             command.vehicleModel?.takeIf { it.isNotBlank() }?.let { put("vehicleModel", it) }
+            command.vehicleYear?.takeIf { it.isNotBlank() }?.let { put("vehicleYear", it) }
             command.vehicleBodyClass?.takeIf { it.isNotBlank() }?.let { put("vehicleBodyClass", it) }
             if (command.notes.isNotBlank()) {
                 put("notes", command.notes)
@@ -1155,7 +1200,9 @@ class ReportedApi(
         const val parseReportsPageSize = 100
         const val nativeVersionNumber = 90
         const val vehicleEnrichmentTimeoutMillis = 5_000L
+        const val vehicleLookupTimeoutMillis = 5_000L
         const val vehicleEnrichmentProvider = "vehicle_enrichment"
+        const val lookupAPlateProvider = "lookup_a_plate"
         const val tlcActiveVehiclesProvider = "tlc_active_vehicles"
         const val tlcMedallionVehiclesProvider = "tlc_medallion_vehicles"
         const val vpicDecodeVinProvider = "vpic_decode_vin"
@@ -1167,6 +1214,7 @@ class ReportedApi(
         const val tlcActiveVehiclesUrl = "https://data.cityofnewyork.us/resource/8wbx-tsch.json"
         const val tlcMedallionVehiclesUrl = "https://data.cityofnewyork.us/resource/rhe8-mgbb.json"
         const val vpicDecodeVinValuesExtendedUrl = "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended"
+        const val reportedWebVehicleLookupUrl = "https://reported-web.herokuapp.com/getVehicleType"
     }
 }
 
