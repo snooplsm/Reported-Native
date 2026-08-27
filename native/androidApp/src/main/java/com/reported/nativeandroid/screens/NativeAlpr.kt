@@ -18,6 +18,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import com.reported.nativeandroid.BuildConfig
@@ -865,6 +866,18 @@ internal object NativeAlprEngine {
         label: String
     ): OrtSession {
         val modelBytes = context.assets.open(asset).use { it.readBytes() }
+        if (isX86Emulator()) {
+            val cpuOptions = OrtSession.SessionOptions().also {
+                configureDebugOrtProfiling(context, it, label, "cpu-emulator")
+            }
+            return ortEnvironment.createSession(modelBytes, cpuOptions).also {
+                sessionLabels[it] = "$label ORT CPU on x86 emulator"
+                Log.i(
+                    PLATE_DETECTION_LOG_TAG,
+                    "Loaded $label with ORT CPU because NNAPI is unsafe on x86 emulators: $asset"
+                )
+            }
+        }
         val nnapiOptions = OrtSession.SessionOptions()
         return try {
             configureDebugOrtProfiling(context, nnapiOptions, label, "nnapi")
@@ -900,6 +913,15 @@ internal object NativeAlprEngine {
                 Log.i(PLATE_DETECTION_LOG_TAG, "Loaded $label with ORT CPU provider: $asset")
             }
         }
+    }
+
+    private fun isX86Emulator(): Boolean {
+        val usesX86Abi = Build.SUPPORTED_ABIS.any { abi ->
+            abi.equals("x86", ignoreCase = true) || abi.equals("x86_64", ignoreCase = true)
+        }
+        val usesEmulatorHardware = Build.HARDWARE.equals("ranchu", ignoreCase = true) ||
+            Build.HARDWARE.equals("goldfish", ignoreCase = true)
+        return usesX86Abi && usesEmulatorHardware
     }
 
     private fun configureDebugOrtProfiling(
