@@ -753,6 +753,163 @@ private struct AnimatedSparkleIcon: View {
     }
 }
 
+@MainActor
+private final class ReportedAiModelDownloadController: ObservableObject {
+    static let shared = ReportedAiModelDownloadController()
+
+    @Published private(set) var isInstalled: Bool
+    @Published private(set) var isDownloading = false
+    @Published private(set) var progress: Double?
+    @Published private(set) var message: String?
+
+    private var downloadTask: Task<Void, Never>?
+
+    private init() {
+        isInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+    }
+
+    var statusText: String {
+        OnDeviceGemmaVoiceDraftEngine.settingsStatusText
+    }
+
+    func refresh() {
+        isInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+    }
+
+    func install() {
+        guard !isDownloading else { return }
+        refresh()
+        guard !isInstalled else { return }
+
+        isDownloading = true
+        progress = nil
+        message = nil
+        downloadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await OnDeviceGemmaVoiceDraftEngine.downloadModel { downloadedBytes, totalBytes in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if totalBytes > 0 {
+                            progress = min(1, max(0, Double(downloadedBytes) / Double(totalBytes)))
+                        } else {
+                            progress = nil
+                        }
+                    }
+                }
+                isInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+                progress = isInstalled ? 1 : nil
+                message = isInstalled ? "REPORTED AI installed." : "REPORTED AI did not finish installing."
+            } catch {
+                isInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
+                message = error.localizedDescription
+            }
+            isDownloading = false
+            downloadTask = nil
+        }
+    }
+}
+
+private struct ReportedAiInstallPanel: View {
+    @ObservedObject private var controller = ReportedAiModelDownloadController.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sparkleArrived = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                AnimatedSparkleIcon(size: 20)
+                    .frame(width: 36, height: 36)
+                    .background(Color.reportedOrange.opacity(0.14))
+                    .overlay(
+                        Circle()
+                            .stroke(Color.reportedOrange.opacity(0.35), lineWidth: 1)
+                    )
+                    .clipShape(Circle())
+                    .offset(x: sparkleArrived || reduceMotion ? 0 : 260)
+                    .opacity(sparkleArrived || reduceMotion ? 1 : 0)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Reported AI")
+                        .font(.headline)
+                    Text(controller.statusText)
+                        .font(.subheadline.weight(.semibold))
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if !OnDeviceGemmaVoiceDraftEngine.accelerationMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(OnDeviceGemmaVoiceDraftEngine.accelerationMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if controller.isDownloading {
+                if let progress = controller.progress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                    Text("Installing REPORTED AI… \(Int(progress * 100))%")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Installing REPORTED AI…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else if !controller.isInstalled {
+                Text("Install the optional on-device model to use Reported AI without sending report details to an AI service.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    controller.install()
+                } label: {
+                    Label(
+                        "Install REPORTED AI (\(OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel))",
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.reportedOrange)
+            }
+
+            if let message = controller.message {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(controller.isInstalled ? Color.secondary : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.reportedOrange.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.reportedOrange.opacity(0.28), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onAppear {
+            controller.refresh()
+            sparkleArrived = reduceMotion
+            guard !reduceMotion else { return }
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.76).delay(0.12)) {
+                    sparkleArrived = true
+                }
+            }
+        }
+    }
+}
+
 struct LeftGliderNavView: View {
     let selection: MainShellDestination
     let onSelect: (MainShellDestination) -> Void
@@ -5434,6 +5591,9 @@ struct AutoReportScreen: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    ReportedAiInstallPanel()
+
                     HStack(spacing: 10) {
                         Picker("Scan window", selection: $scanWindow) {
                             ForEach(AutoReportScanWindow.options) { option in
@@ -7218,17 +7378,7 @@ struct SettingsScreen: View {
                             }
                         }
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Reported AI")
-                            .font(.headline)
-                        Text(OnDeviceGemmaVoiceDraftEngine.settingsStatusText)
-                            .font(.subheadline.weight(.semibold))
-                        if !OnDeviceGemmaVoiceDraftEngine.accelerationMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(OnDeviceGemmaVoiceDraftEngine.accelerationMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    ReportedAiInstallPanel()
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Auto-Report")
                             .font(.headline)
