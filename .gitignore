@@ -4,10 +4,14 @@ node_modules
 .expo-shared/
 npm-debug.*
 *.jks
+*.keystore
 *.p8
 *.p12
+*.pfx
+*.pem
 *.key
 *.mobileprovision
+keystore.properties
 *.apk
 *.aab
 .DS_Store
