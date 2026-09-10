@@ -296,10 +296,12 @@ fun ComposerUiState.isPhiladelphiaSubmission(): Boolean =
 
 sealed interface ComposerEvent {
     data class ReportSubmitted(val objectId: String) : ComposerEvent
+    data object RequireLogin : ComposerEvent
 }
 
 sealed interface ComposerAction {
     data object LoadDraft : ComposerAction
+    data class SubmitRequested(val isAuthorized: Boolean) : ComposerAction
     data object SubmitPressed : ComposerAction
     data object DiscardDraftConfirmed : ComposerAction
     data object ClearComposerError : ComposerAction

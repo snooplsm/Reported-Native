@@ -1,6 +1,5 @@
 package com.reported.nativeandroid.profile
 
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -16,17 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reported.nativeandroid.app.ProfileAction
 import com.reported.nativeandroid.app.ProfileViewModel
-import com.reported.nativeandroid.ai.ReportedAiModelStore
 import com.reported.nativeandroid.media.AutoReportThresholds
-import com.reported.nativeandroid.media.MediaScannerScheduler
-import com.reported.nativeandroid.media.MediaScannerSettings
 import com.reported.nativeandroid.screens.ComplaintChipGroup
 import com.reported.nativeandroid.screens.LoginRequiredScreen
 import com.reported.nativeandroid.screens.MessageCard
@@ -34,10 +28,7 @@ import com.reported.nativeandroid.screens.PrimaryButton
 import com.reported.nativeandroid.screens.ReportedField
 import com.reported.nativeandroid.screens.ScreenSection
 import com.reported.shared.model.AppThemeMode
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-private const val REPORTED_ROBOFLOW_PROJECT_URL = "https://app.roboflow.com/reported/reported/13"
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -173,100 +164,33 @@ fun ProfileScreen(
 fun SettingsScreen(
     onThemeModeSelected: (AppThemeMode) -> Unit,
     onOpenMenu: () -> Unit,
-    vm: ProfileViewModel = viewModel()
+    vm: ProfileViewModel = viewModel(),
+    settingsViewModel: SettingsViewModel = viewModel()
 ) {
     val state by vm.state.collectAsState()
-    val context = LocalContext.current
+    val settingsState by settingsViewModel.state.collectAsState()
     val uriHandler = LocalUriHandler.current
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val backgroundScanningSupported = MediaScannerSettings.supportsBackgroundLibraryScanning()
-    var mediaScannerEnabled by remember { mutableStateOf(MediaScannerSettings.isEnabled(context)) }
-    var offlineProcessingEnabled by remember { mutableStateOf(MediaScannerSettings.isOfflineProcessingEnabled(context)) }
-    val scope = rememberCoroutineScope()
-    var reportedAiInstalled by remember { mutableStateOf(ReportedAiModelStore.isModelInstalled(context)) }
-    var reportedAiModelSize by remember { mutableStateOf(ReportedAiModelStore.installedModelSizeLabel(context)) }
-    var reportedAiAccelerationMessage by remember { mutableStateOf(ReportedAiModelStore.accelerationMessage(context)) }
-    var reportedAiDownloading by remember { mutableStateOf(false) }
-    var reportedAiDownloadProgress by remember { mutableStateOf<Float?>(null) }
-    var reportedAiMessage by remember { mutableStateOf<String?>(null) }
-    var notificationsEnabled by remember {
-        mutableStateOf(MediaScannerSettings.isNotificationsEnabled(context) && MediaScannerSettings.hasNotificationPermission(context))
-    }
-    var autoReportPlateThreshold by remember { mutableStateOf(AutoReportThresholds.plateConfidence(context)) }
-    var autoReportStateThreshold by remember { mutableStateOf(AutoReportThresholds.stateConfidence(context)) }
-    var autoReportComplaintThreshold by remember { mutableStateOf(AutoReportThresholds.complaintConfidence(context)) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        notificationsEnabled = granted || MediaScannerSettings.hasNotificationPermission(context)
-        MediaScannerSettings.setNotificationsEnabled(context, notificationsEnabled)
-        MediaScannerSettings.markNotificationPermissionAsked(context)
+        settingsViewModel.onAction(SettingsAction.NotificationPermissionResult(granted))
     }
     val mediaScannerPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        if (!backgroundScanningSupported) {
-            mediaScannerEnabled = false
-            MediaScannerSettings.setEnabled(context, false)
-            return@rememberLauncherForActivityResult
-        }
-        val granted = MediaScannerSettings.requiredPermissions().all { permission ->
-            grants[permission] == true ||
-                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
-        mediaScannerEnabled = granted
-        MediaScannerSettings.setEnabled(context, granted)
-        if (granted && offlineProcessingEnabled) {
-            MediaScannerScheduler.scanNow(context)
-        }
+        settingsViewModel.onAction(SettingsAction.MediaScannerPermissionResult(grants))
     }
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.onAction(ProfileAction.Load) }
-
-    fun refreshReportedAiModelState() {
-        reportedAiInstalled = ReportedAiModelStore.isModelInstalled(context)
-        reportedAiModelSize = ReportedAiModelStore.installedModelSizeLabel(context)
-        reportedAiAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
-    }
-
-    fun downloadReportedAiModel() {
-        if (reportedAiDownloading) return
-        reportedAiDownloading = true
-        reportedAiDownloadProgress = null
-        reportedAiMessage = null
-        scope.launch {
-            ReportedAiModelStore.downloadModel(context) { downloadedBytes, totalBytes ->
-                reportedAiDownloadProgress = if (totalBytes > 0L) {
-                    (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
-                } else {
-                    null
-                }
-            }.fold(
-                onSuccess = {
-                    refreshReportedAiModelState()
-                    reportedAiDownloadProgress = 1f
-                    reportedAiMessage = "REPORTED AI installed."
-                },
-                onFailure = { error ->
-                    refreshReportedAiModelState()
-                    reportedAiMessage = error.message ?: "Could not install REPORTED AI."
-                }
-            )
-            reportedAiDownloading = false
-        }
-    }
-
-    fun deleteReportedAiModel() {
-        if (reportedAiDownloading) return
-        reportedAiMessage = null
-        scope.launch {
-            val deleted = ReportedAiModelStore.deleteModel(context)
-            refreshReportedAiModelState()
-            reportedAiDownloadProgress = null
-            reportedAiMessage = if (deleted > 0) {
-                "REPORTED AI deleted."
-            } else {
-                "No REPORTED AI model was installed."
+    androidx.compose.runtime.LaunchedEffect(settingsViewModel) {
+        settingsViewModel.effects.collect { effect ->
+            when (effect) {
+                is SettingsEffect.RequestNotificationPermission ->
+                    notificationPermissionLauncher.launch(effect.permission)
+                is SettingsEffect.RequestMediaScannerPermissions ->
+                    mediaScannerPermissionLauncher.launch(effect.permissions)
+                is SettingsEffect.OpenUrl -> uriHandler.openUri(effect.url)
             }
         }
     }
@@ -336,44 +260,44 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             val statusText = when {
-                                reportedAiDownloading -> "Installing"
-                                reportedAiInstalled -> "Installed${reportedAiModelSize?.let { " ($it)" }.orEmpty()}"
+                                settingsState.reportedAiDownloading -> "Installing"
+                                settingsState.reportedAiInstalled -> "Installed${settingsState.reportedAiModelSize?.let { " ($it)" }.orEmpty()}"
                                 else -> "Not installed"
                             }
                             Text(statusText, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                reportedAiAccelerationMessage,
+                                settingsState.reportedAiAccelerationMessage,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (reportedAiDownloading) {
-                                reportedAiDownloadProgress?.let { progress ->
+                            if (settingsState.reportedAiDownloading) {
+                                settingsState.reportedAiDownloadProgress?.let { progress ->
                                     LinearProgressIndicator(
                                         progress = { progress },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
-                            reportedAiMessage?.let {
+                            settingsState.reportedAiMessage?.let {
                                 Text(
                                     it,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            if (reportedAiInstalled) {
+                            if (settingsState.reportedAiInstalled) {
                                 OutlinedButton(
-                                    onClick = ::deleteReportedAiModel,
-                                    enabled = !reportedAiDownloading,
+                                    onClick = { settingsViewModel.onAction(SettingsAction.DeleteReportedAi) },
+                                    enabled = !settingsState.reportedAiDownloading,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("Delete REPORTED AI")
                                 }
                             } else {
                                 PrimaryButton(
-                                    text = "Install REPORTED AI (${ReportedAiModelStore.compactDownloadSizeLabel})",
-                                    onClick = ::downloadReportedAiModel,
-                                    enabled = !reportedAiDownloading
+                                    text = "Install REPORTED AI (${settingsState.reportedAiDownloadSizeLabel})",
+                                    onClick = { settingsViewModel.onAction(SettingsAction.InstallReportedAi) },
+                                    enabled = !settingsState.reportedAiDownloading
                                 )
                             }
                         }
@@ -396,7 +320,7 @@ fun SettingsScreen(
                         ) {
                             Text("Confidence thresholds", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                AutoReportThresholds.summary(context),
+                                "Thresholds: plate ${AutoReportThresholds.percent(settingsState.autoReportPlateThreshold)}+, state ${AutoReportThresholds.percent(settingsState.autoReportStateThreshold)}+, infraction ${AutoReportThresholds.percent(settingsState.autoReportComplaintThreshold)}+.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -405,48 +329,33 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            TextButton(onClick = { uriHandler.openUri(REPORTED_ROBOFLOW_PROJECT_URL) }) {
+                            TextButton(onClick = { settingsViewModel.onAction(SettingsAction.RoboflowProjectPressed) }) {
                                 Text("View Roboflow project")
                             }
                             SettingsThresholdSlider(
                                 title = "Plate",
-                                value = autoReportPlateThreshold,
-                                onValueChange = { value ->
-                                    autoReportPlateThreshold = value
-                                    AutoReportThresholds.setPlateConfidence(context, value)
-                                    AutoReportThresholds.setPostInferencePlateConfidence(context, value)
-                                }
+                                value = settingsState.autoReportPlateThreshold,
+                                onValueChange = { settingsViewModel.onAction(SettingsAction.PlateThresholdChanged(it)) }
                             )
                             SettingsThresholdSlider(
                                 title = "State",
-                                value = autoReportStateThreshold,
-                                onValueChange = { value ->
-                                    autoReportStateThreshold = value
-                                    AutoReportThresholds.setStateConfidence(context, value)
-                                }
+                                value = settingsState.autoReportStateThreshold,
+                                onValueChange = { settingsViewModel.onAction(SettingsAction.StateThresholdChanged(it)) }
                             )
                             SettingsThresholdSlider(
                                 title = "Infraction",
-                                value = autoReportComplaintThreshold,
-                                onValueChange = { value ->
-                                    autoReportComplaintThreshold = value
-                                    AutoReportThresholds.setComplaintConfidence(context, value)
-                                }
+                                value = settingsState.autoReportComplaintThreshold,
+                                onValueChange = { settingsViewModel.onAction(SettingsAction.ComplaintThresholdChanged(it)) }
                             )
                             TextButton(
-                                onClick = {
-                                    AutoReportThresholds.reset(context)
-                                    autoReportPlateThreshold = AutoReportThresholds.plateConfidence(context)
-                                    autoReportStateThreshold = AutoReportThresholds.stateConfidence(context)
-                                    autoReportComplaintThreshold = AutoReportThresholds.complaintConfidence(context)
-                                }
+                                onClick = { settingsViewModel.onAction(SettingsAction.ResetThresholds) }
                             ) {
                                 Text("Reset thresholds")
                             }
                         }
                     }
 
-                    if (backgroundScanningSupported) {
+                    if (settingsState.backgroundScanningSupported) {
                         Text(
                             "Scanner",
                             style = MaterialTheme.typography.titleMedium,
@@ -460,35 +369,15 @@ fun SettingsScreen(
                                 SettingsSwitchRow(
                                     title = "Notifications",
                                     description = "Notify you when a high-confidence infraction is detected.",
-                                    checked = notificationsEnabled,
-                                    onCheckedChange = { enabled ->
-                                        if (enabled) {
-                                            val permission = MediaScannerSettings.notificationPermission()
-                                            if (permission != null && !MediaScannerSettings.hasNotificationPermission(context)) {
-                                                MediaScannerSettings.setNotificationsEnabled(context, true)
-                                                notificationPermissionLauncher.launch(permission)
-                                            } else {
-                                                notificationsEnabled = true
-                                                MediaScannerSettings.setNotificationsEnabled(context, true)
-                                            }
-                                        } else {
-                                            notificationsEnabled = false
-                                            MediaScannerSettings.setNotificationsEnabled(context, false)
-                                        }
-                                    },
+                                    checked = settingsState.notificationsEnabled,
+                                    onCheckedChange = { settingsViewModel.onAction(SettingsAction.NotificationsChanged(it)) },
                                     modifier = Modifier.weight(1f)
                                 )
                                 SettingsSwitchRow(
                                     title = "Offline processing",
                                     description = "Process new photos locally. Nothing uploads unless you submit.",
-                                    checked = offlineProcessingEnabled,
-                                    onCheckedChange = { enabled ->
-                                        offlineProcessingEnabled = enabled
-                                        MediaScannerSettings.setOfflineProcessingEnabled(context, enabled)
-                                        if (enabled && mediaScannerEnabled) {
-                                            MediaScannerScheduler.scanNow(context)
-                                        }
-                                    },
+                                    checked = settingsState.offlineProcessingEnabled,
+                                    onCheckedChange = { settingsViewModel.onAction(SettingsAction.OfflineProcessingChanged(it)) },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -496,56 +385,21 @@ fun SettingsScreen(
                             SettingsSwitchRow(
                                 title = "Notifications",
                                 description = "Allow Reported to notify you when a high-confidence infraction is detected.",
-                                checked = notificationsEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (enabled) {
-                                        val permission = MediaScannerSettings.notificationPermission()
-                                        if (permission != null && !MediaScannerSettings.hasNotificationPermission(context)) {
-                                            MediaScannerSettings.setNotificationsEnabled(context, true)
-                                            notificationPermissionLauncher.launch(permission)
-                                        } else {
-                                            notificationsEnabled = true
-                                            MediaScannerSettings.setNotificationsEnabled(context, true)
-                                        }
-                                    } else {
-                                        notificationsEnabled = false
-                                        MediaScannerSettings.setNotificationsEnabled(context, false)
-                                    }
-                                }
+                                checked = settingsState.notificationsEnabled,
+                                onCheckedChange = { settingsViewModel.onAction(SettingsAction.NotificationsChanged(it)) }
                             )
                             SettingsSwitchRow(
                                 title = "Allow offline photo processing to detect violations",
                                 description = "Process new photos on this device only. Nothing uploads unless you choose to submit.",
-                                checked = offlineProcessingEnabled,
-                                onCheckedChange = { enabled ->
-                                    offlineProcessingEnabled = enabled
-                                    MediaScannerSettings.setOfflineProcessingEnabled(context, enabled)
-                                    if (enabled && mediaScannerEnabled) {
-                                        MediaScannerScheduler.scanNow(context)
-                                    }
-                                }
+                                checked = settingsState.offlineProcessingEnabled,
+                                onCheckedChange = { settingsViewModel.onAction(SettingsAction.OfflineProcessingChanged(it)) }
                             )
                         }
                         SettingsSwitchRow(
                             title = "Media scanner",
                             description = "Watch for new photos and queue a local scan when offline processing is allowed.",
-                            checked = mediaScannerEnabled,
-                            onCheckedChange = { enabled ->
-                                if (enabled) {
-                                    if (MediaScannerSettings.hasRequiredPermissions(context)) {
-                                        mediaScannerEnabled = true
-                                        MediaScannerSettings.setEnabled(context, true)
-                                        if (offlineProcessingEnabled) {
-                                            MediaScannerScheduler.scanNow(context)
-                                        }
-                                    } else {
-                                        mediaScannerPermissionLauncher.launch(MediaScannerSettings.requiredPermissions())
-                                    }
-                                } else {
-                                    mediaScannerEnabled = false
-                                    MediaScannerSettings.setEnabled(context, false)
-                                }
-                            }
+                            checked = settingsState.mediaScannerEnabled,
+                            onCheckedChange = { settingsViewModel.onAction(SettingsAction.MediaScannerChanged(it)) }
                         )
                     }
                 }

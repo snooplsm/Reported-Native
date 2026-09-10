@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.reported.nativeandroid.app.UdfStore
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -81,10 +82,12 @@ private data class PendingLiveIncident(
     val thumbnailUri: String?
 )
 
-class LiveViewModel(application: Application) : AndroidViewModel(application) {
+class LiveViewModel(application: Application) :
+    AndroidViewModel(application),
+    UdfStore<LiveUiState, LiveAction> {
     private val store = LiveIncidentStore(application)
     private val _state = MutableStateFlow(LiveUiState())
-    val state: StateFlow<LiveUiState> = _state.asStateFlow()
+    override val state: StateFlow<LiveUiState> = _state.asStateFlow()
 
     private var analysisInFlight = false
     private val queuedPlateKeys = mutableSetOf<String>()
@@ -95,7 +98,7 @@ class LiveViewModel(application: Application) : AndroidViewModel(application) {
         onAction(LiveAction.LoadMoreIncidents)
     }
 
-    fun onAction(action: LiveAction) {
+    override fun onAction(action: LiveAction) {
         when (action) {
             is LiveAction.CameraPermissionChanged -> _state.update { it.copy(cameraPermissionGranted = action.granted) }
             is LiveAction.MicrophonePermissionChanged -> _state.update { it.copy(microphonePermissionGranted = action.granted) }

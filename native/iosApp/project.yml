@@ -97,6 +97,14 @@ targets:
       - target: ReportedShareExtension
         embed: true
     preBuildScripts:
+      - name: Verify UDF Architecture
+        script: |
+          VIOLATIONS=$(grep -R -n -E --include='*.swift' 'class[[:space:]]+[A-Za-z0-9_]+ViewModel.*ObservableObject' "$SRCROOT/ReportediOS/Sources" | grep -v 'UdfStore' || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "Every ViewModel must conform to UdfStore:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
       - name: Build SharedCore
         outputFiles:
           - $(DERIVED_FILE_DIR)/SharedCoreBuild.stamp

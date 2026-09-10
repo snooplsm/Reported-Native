@@ -3,8 +3,10 @@
 This `native/` folder is the start of the Expo-to-native conversion:
 
 - `shared/`: Kotlin Multiplatform shared API, repositories, session persistence, and use cases.
-- `androidApp/`: Jetpack Compose Android app using a unidirectional-data-flow MVVM variant.
-- `iosApp/`: SwiftUI iOS app in Swift, generated with XcodeGen, also using a UDF-style MVVM layer.
+- `androidApp/`: Jetpack Compose Android app using unidirectional data flow (UDF).
+- `iosApp/`: SwiftUI iOS app in Swift, generated with XcodeGen, also using UDF.
+
+UDF is required for every feature on both platforms. See [UDF.md](UDF.md) for the state/action/effect contract and the boundary for UI- and ML-owned work.
 
 ## Generate the projects
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Keyboard, View, StyleSheet, ScrollView, Platform } from "react-native";
+import { Alert, Keyboard, View, ScrollView, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as Constants from "expo-constants";
@@ -17,16 +17,14 @@ import * as Location from 'expo-location';
 import { LicenseView } from "./LicenseView2";
 import ImageCarousel from "./ImageCarousel";
 import LogoTitle from "./LogoTitle";
-import { colors, globalStyles } from "./Styles";
+import { globalStyles } from "./Styles";
 import FloatingMainButton from "./FloatingMainButton";
 import { api, uploadFile, reverseGeocode } from "./Api";
 import { alpr } from "./fastAlpr";
-import ComplaintView from "./ComplaintView";
 import { getLocationDataFromExif, checkAddressNotBelongsToNY, findInLocation } from "./utils/locations";
 import { checkForNoNullValuesInArray } from "./utils/others";
-import ImageViewer from "./components/ImageViewer";
-import { SUBMIT_BUTTON_HEIGHT, SUBMIT_BUTTON_PADDING_VERTICAL } from "./common/dimen";
 import { useAuth } from "./AuthProvider";
+import { getAddPhotoText, getTimeofreport, styles, SubmissionComplaintModal, SubmissionImageModal } from "./SubmissionSupport";
 
 const isEqual = require("react-fast-compare");
 const diff = require("deep-diff");
@@ -277,14 +275,6 @@ export default function Submission({ navigation }: SubmissionProps) {
     setImageModal(undefined);
   };
 
-  const addressString = () => {
-    try {
-      return stateLocation.place.formatted_address;
-    } catch (e) {
-      return null;
-    }
-  }
-
   const reportSubmitted = async (result: any) => {
     const thirty =
       result.thirtyDays > 1
@@ -295,50 +285,6 @@ export default function Submission({ navigation }: SubmissionProps) {
     let msg = `Your report has been submitted.  ${thirty}`;
     Alert.alert("Report Submitted", msg);
   };
-
-  const ComplaintModal = () => {
-    if (stateShowComplaintModal) {
-      return (
-        <View style={styles.complaintModal}>
-          <ComplaintView
-            onComplaintsChanged={c => {
-              _complaint.current.blur();
-              setShowComplaintModal(false);
-              setComplaints(c);
-              saveOffline({ complaints: c });
-            }}
-          />
-        </View>
-      );
-    } else {
-      return <></>;
-    }
-  }
-
-  const ImageModal = () => {
-    if (stateImageModal !== undefined) {
-      return (
-        <ImageViewer
-          imagesURLs={stateMedia}
-          onCloseModal={closeModal}
-          onRemoveImage={removeImage}
-        />
-      );
-    } else {
-      return null;
-    }
-  }
-
-  const getTimeofreport = (timeofreport: any) => {
-    if (!timeofreport) {
-      return undefined;
-    }
-    const momy = moment(timeofreport);
-    if (momy.isValid()) {
-      return `${momy.fromNow()} @ ${momy.format("M/D h:mm a")}`;
-    }
-    return "";
-  }
 
   const validatePlate = (from?: () => void) => {
     const okPlate =
@@ -670,13 +616,6 @@ export default function Submission({ navigation }: SubmissionProps) {
       });
   }
 
-  const getTime = () => {
-    if (!stateTimeofreport) {
-      return null;
-    }
-    return moment(stateTimeofreport).toDate();
-  }
-
   const clear = (lambda?: () => void) => {
     setMedia([]);
     setTimeofreport(undefined);
@@ -714,14 +653,6 @@ export default function Submission({ navigation }: SubmissionProps) {
       lat: location.coords.latitude,
       lng: location.coords.longitude,
       altitude: location.coords.altitude,
-    }
-  }
-
-  const getAddPhotoText = () => {
-    if (stateMedia && stateMedia.length > 0) {
-      return "Add Another Photo";
-    } else {
-      return "Add Photo";
     }
   }
 
@@ -909,7 +840,7 @@ export default function Submission({ navigation }: SubmissionProps) {
               buttonStyle={styles.addPhoto}
               containerStyle={styles.addPhotoContainer}
               onPress={_pickImage}
-              title={getAddPhotoText()}
+              title={getAddPhotoText(stateMedia)}
             />
           </View>
           <ImageCarousel
@@ -1038,52 +969,22 @@ export default function Submission({ navigation }: SubmissionProps) {
         title={"SUBMIT"}
         containerStyle={styles.submitButtonWrapper}
       />
-      <ImageModal />
-      <ComplaintModal />
+      <SubmissionImageModal
+        visible={stateImageModal !== undefined}
+        images={stateMedia}
+        onClose={closeModal}
+        onRemove={removeImage}
+      />
+      <SubmissionComplaintModal
+        visible={stateShowComplaintModal}
+        onComplaintsChanged={c => {
+          _complaint.current.blur();
+          setShowComplaintModal(false);
+          setComplaints(c);
+          saveOffline({ complaints: c });
+        }}
+      />
     </>
   );
 
 }
-
-const styles = StyleSheet.create({
-  addPhoto: {
-    height: 55
-  },
-  addPhotoContainer: {
-    padding: 10
-  },
-  submitButtonStyle: {
-    backgroundColor: colors.orange
-  },
-  button: {
-    width: "30%",
-    height: SUBMIT_BUTTON_HEIGHT
-  },
-  container: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "space-between"
-  },
-  imageViewer: {
-    backgroundColor: "yellow",
-    width: 200,
-    height: 200
-  },
-  submitButtonWrapper: {
-    paddingHorizontal: 10,
-    paddingVertical: SUBMIT_BUTTON_PADDING_VERTICAL
-  },
-  inputWrapper: {
-    marginLeft: -8,
-    marginRight: -8
-  },
-  complaintModal: {
-    position: "absolute",
-    bottom: 0,
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 9999,
-    backgroundColor: "white"
-  }
-});
