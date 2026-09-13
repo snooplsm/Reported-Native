@@ -9,7 +9,6 @@ Native Android and iOS apps for reporting unsafe driving and parking, with share
 - [Shared core](native/shared): networking, authentication, session storage, reports, and use cases.
 - [Slack-to-Discord bridge](slack-to-discord): active service for mirroring Slack messages to Discord. See its [setup guide](slack-to-discord/README.md).
 - [Complaint animations](tools/complaint-animations): SVG and Lottie generation tools.
-- [Video projects](videos): promotional video sources and supporting media.
 
 ## Run the apps
 
