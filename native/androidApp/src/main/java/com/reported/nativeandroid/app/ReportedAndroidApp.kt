@@ -30,6 +30,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AddCircle
@@ -681,6 +682,17 @@ private fun LeftGliderNavRail(
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
+            TextButton(
+                onClick = {
+                    uriHandler.openUri("https://join.slack.com/t/reportedcab/shared_invite/zt-2xz2lt5np-9_3CzYUI0X4iGI2OLOZc0g")
+                    closeDrawer()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Chat")
+            }
             if (onLogout != null) {
                 TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
                     Text("Log Out")

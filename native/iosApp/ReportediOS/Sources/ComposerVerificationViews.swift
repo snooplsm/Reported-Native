@@ -106,6 +106,7 @@ extension ComposerScreen {
                     } label: {
                         AnimatedSparkleIcon(size: 17)
                             .frame(width: 30, height: 30)
+                            .modifier(ReportedAIButtonGlass())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.reportedOrange)

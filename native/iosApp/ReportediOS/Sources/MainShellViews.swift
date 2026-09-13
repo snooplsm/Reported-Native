@@ -419,12 +419,7 @@ struct MainShellToolbar: View {
                         Button(action: onVoiceAssist) {
                             AnimatedSparkleIcon(size: compact ? 17 : 19)
                                 .frame(width: compact ? 32 : 36, height: compact ? 32 : 36)
-                                .background(Color.reportedOrange.opacity(0.14))
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.reportedOrange.opacity(0.35), lineWidth: 1)
-                                )
-                                .clipShape(Circle())
+                                .modifier(ReportedAIButtonGlass())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.reportedOrange)
@@ -452,7 +447,7 @@ struct MainShellToolbar: View {
         }
         .padding(.horizontal, compact ? 8 : 20)
         .padding(.vertical, compact ? 6 : 12)
-        .background(Color(.systemBackground))
+        .modifier(ReportedToolbarGlass())
     }
 }
 
@@ -746,6 +741,13 @@ struct LeftGliderNavView: View {
 
             VStack(spacing: 0) {
                 Spacer()
+                Link(destination: URL(string: "https://join.slack.com/t/reportedcab/shared_invite/zt-2xz2lt5np-9_3CzYUI0X4iGI2OLOZc0g")!) {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                        .font(.caption)
+                        .frame(width: 100, height: 44)
+                }
+                .foregroundStyle(Color.reportedOrange)
+                .accessibilityHint("Opens the Reported Slack community")
                 if let onLogout {
                     Button(action: onLogout) {
                         Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
@@ -839,5 +841,35 @@ struct ShellMenuIcon: View {
             }
         }
         .accessibilityLabel("Open menu")
+    }
+}
+
+struct ReportedToolbarGlass: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Self.Content) -> some View {
+        if #available(iOS 26.0, *), !reduceTransparency {
+            content.background {
+                Rectangle().fill(.clear)
+                    .glassEffect(.regular, in: Rectangle())
+            }
+        } else {
+            content.background(Color(.systemBackground))
+        }
+    }
+}
+
+struct ReportedAIButtonGlass: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    @ViewBuilder
+    func body(content: Self.Content) -> some View {
+        if #available(iOS 26.0, *), !reduceTransparency {
+            content.glassEffect(.regular.tint(Color.reportedOrange.opacity(0.15)).interactive(), in: Circle())
+        } else {
+            content.background(Color.reportedOrange.opacity(0.14), in: Circle())
+                .overlay(Circle().stroke(Color.reportedOrange.opacity(0.35), lineWidth: 1))
+        }
     }
 }
