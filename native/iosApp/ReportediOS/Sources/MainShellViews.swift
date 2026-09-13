@@ -76,6 +76,7 @@ struct MainShellView: View {
         GeometryReader { proxy in
             shellContent(proxy: proxy)
         }
+        .environment(\.reportedAvatarURL, sessionViewModel.state.session?.avatarUrl)
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         .onAppear {
             logScreenView(selection.title)
@@ -109,7 +110,10 @@ struct MainShellView: View {
         let currentOffset = min(max(baseOffset + navigationDragTranslation, 0), drawerWidth)
 
         return HStack(spacing: 0) {
-            LeftGliderNavView(selection: selection) { destination in
+            LeftGliderNavView(selection: selection, onLogout: sessionViewModel.state.session?.isAuthorized == true ? {
+                closeNavigation()
+                sessionViewModel.onAction(.logout)
+            } : nil) { destination in
                 select(destination)
             }
             .frame(width: drawerWidth)
@@ -387,7 +391,7 @@ struct MainShellToolbar: View {
 
         HStack {
             Button(action: onMenuTapped) {
-                Image(systemName: "line.3.horizontal")
+                ShellMenuIcon()
                     .font(.system(size: compact ? 22 : 24, weight: .semibold))
                     .frame(width: buttonHeight, height: buttonHeight)
                     .contentShape(Rectangle())
@@ -694,6 +698,7 @@ struct ReportedAiInstallPanel: View {
 
 struct LeftGliderNavView: View {
     let selection: MainShellDestination
+    var onLogout: (() -> Void)? = nil
     let onSelect: (MainShellDestination) -> Void
     @Environment(\.openURL) private var openURL
     @State private var showCoffeeInfo = false
@@ -732,6 +737,15 @@ struct LeftGliderNavView: View {
 
             VStack(spacing: 0) {
                 Spacer()
+                if let onLogout {
+                    Button(action: onLogout) {
+                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+                            .font(.caption)
+                            .frame(width: 100, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 8)
+                }
                 ZStack(alignment: .topTrailing) {
                     Button {
                         ReportedAnalytics.logBuyMeCoffeeTapped(surface: "left_nav")
@@ -788,5 +802,33 @@ struct LeftGliderNavView: View {
         } message: {
             Text("Reported is free to use, but we do have infrastructure costs.")
         }
+    }
+}
+
+private struct ReportedAvatarURLKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var reportedAvatarURL: String? {
+        get { self[ReportedAvatarURLKey.self] }
+        set { self[ReportedAvatarURLKey.self] = newValue }
+    }
+}
+
+struct ShellMenuIcon: View {
+    @Environment(\.reportedAvatarURL) private var avatarURL
+
+    var body: some View {
+        AsyncImage(url: avatarURL.flatMap(URL.init(string:))) { phase in
+            if let image = phase.image {
+                image.resizable().scaledToFill()
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: "line.3.horizontal")
+            }
+        }
+        .accessibilityLabel("Open menu")
     }
 }

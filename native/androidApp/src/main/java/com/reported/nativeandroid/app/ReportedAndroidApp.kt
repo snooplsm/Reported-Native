@@ -30,6 +30,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -215,6 +216,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                 snackbarHost = { SnackbarHost(snackbarHostState) },
             ) { innerPadding ->
                 SliderNavShell(
+                    avatarUrl = sessionState.session?.avatarUrl,
                     modifier = Modifier
                         .fillMaxSize(),
                     contentPadding = innerPadding,
@@ -222,6 +224,10 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                         LeftGliderNavRail(
                             items = items,
                             selectedTab = selectedTab,
+                            onLogout = if (isAuthorized) { {
+                                closeDrawer()
+                                sessionViewModel.onAction(SessionAction.Logout)
+                            } } else null,
                             closeDrawer = closeDrawer,
                             onSelected = { item, closeDrawer ->
                                 if (
@@ -508,6 +514,7 @@ private fun saveDismissedSystemNotice(context: Context, notice: String) {
 
 @Composable
 private fun SliderNavShell(
+    avatarUrl: String?,
     modifier: Modifier = Modifier,
     drawerWidth: androidx.compose.ui.unit.Dp = 116.dp,
     contentPadding: PaddingValues = PaddingValues(),
@@ -563,13 +570,16 @@ private fun SliderNavShell(
                     onDragStopped = { velocity -> settle(currentOffset, velocity) }
                 )
         ) {
-            centerContent(::toggleDrawer)
+            androidx.compose.runtime.CompositionLocalProvider(LocalMenuAvatar provides avatarUrl) {
+                centerContent(::toggleDrawer)
+            }
         }
     }
 }
 
 @Composable
 private fun LeftGliderNavRail(
+    onLogout: (() -> Unit)?,
     items: List<TabDestination>,
     selectedTab: TabDestination,
     closeDrawer: () -> Unit,
@@ -654,6 +664,11 @@ private fun LeftGliderNavRail(
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
+            if (onLogout != null) {
+                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                    Text("Log Out")
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -699,5 +714,22 @@ private fun LeftGliderNavRail(
                 }
             }
         }
+    }
+}
+
+internal val LocalMenuAvatar = androidx.compose.runtime.compositionLocalOf<String?> { null }
+
+@Composable
+fun ShellMenuIcon(tint: androidx.compose.ui.graphics.Color = androidx.compose.material3.LocalContentColor.current) {
+    val painter = coil.compose.rememberAsyncImagePainter(LocalMenuAvatar.current)
+    if (painter.state is coil.compose.AsyncImagePainter.State.Success) {
+        androidx.compose.foundation.Image(
+            painter = painter,
+            contentDescription = "Open menu",
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.size(28.dp).clip(androidx.compose.foundation.shape.CircleShape)
+        )
+    } else {
+        Icon(Icons.Outlined.Menu, contentDescription = "Open menu", tint = tint)
     }
 }

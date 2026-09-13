@@ -1,36 +1,43 @@
-# Native Migration Workspace
+# Native apps
 
-This `native/` folder is the start of the Expo-to-native conversion:
+## Structure
 
-- `shared/`: Kotlin Multiplatform shared API, repositories, session persistence, and use cases.
-- `androidApp/`: Jetpack Compose Android app using unidirectional data flow (UDF).
-- `iosApp/`: SwiftUI iOS app in Swift, generated with XcodeGen, also using UDF.
+- `androidApp/`: Jetpack Compose Android UI and platform integrations.
+- `iosApp/`: SwiftUI iOS UI and platform integrations.
+- `shared/`: Kotlin Multiplatform API clients, authentication, profile, reports, session storage, drafts, and use cases.
 
-UDF is required for every feature on both platforms. See [UDF.md](UDF.md) for the state/action/effect contract and the boundary for UI- and ML-owned work.
+Both apps use unidirectional data flow. See [UDF.md](UDF.md) for the state/action/effect contract.
+The native apps include media capture and selection, location, complaint animations, report submission, social sign-in, and on-device analysis features.
 
-## Generate the projects
+## Prerequisites
 
-From `native/`:
+- Android: JDK 17, Android SDK, and an emulator or connected device. Use the checked-in Gradle wrapper.
+- iOS: macOS, Xcode with the iOS SDK, XcodeGen, and a JDK for the shared Kotlin framework build.
+- Configure Parse before building, as described below. Google sign-in and other provider integrations also require configuration for your own accounts; see `androidApp/build.gradle.kts` and `iosApp/project.yml` for supported settings.
 
-```bash
-./gradlew wrapper
+## Android
+
+From this directory:
+
+```sh
 ./gradlew :androidApp:assembleDebug
-cd iosApp
-xcodegen generate
+./gradlew :androidApp:installDebug
 ```
 
-Then open `iosApp/ReportediOS.xcodeproj` in Xcode.
+Set `sdk.dir` in ignored `local.properties` if your Android SDK is not found automatically.
 
-## Notes
+## iOS
 
-- The shared KMP layer already covers auth, profile, reports, report submission, complaint catalogs, and local draft persistence.
-- Both native apps now use a richer report composer with:
-  - plate plus state/region
-  - complaint selection from shared categories
-  - occurred-at timestamp entry
-  - draft load/save through the shared KMP layer
-- Media capture/upload, geocoding/location, notifications, analytics, and ALPR-native integrations are still the next migration slice.
-- The UI is intentionally visually close to the Expo app, but not pixel-for-pixel parity yet.
+From this directory:
+
+```sh
+cd iosApp
+xcodegen generate
+open ReportediOS.xcodeproj
+```
+
+Select the `ReportediOS` scheme and an installed simulator, then Run. Xcode resolves Swift packages and builds the shared Kotlin framework. Physical-device and distribution builds require your own Apple signing setup.
+Regenerate the Xcode project after changing `project.yml`.
 
 ## Parse configuration
 

@@ -123,9 +123,7 @@ final class ComposerVehicleLookupCoordinator {
                     self.updateState { state in
                         state.vehicleLookupDetails = details
                         state.vehicleLookupInFlight = false
-                        state.vehicleLookupMessage = details == nil
-                            ? "No vehicle details were found for this plate."
-                            : nil
+                        state.vehicleLookupMessage = nil
                         if let details {
                             state.philadelphiaMobilityAccessDetails = Self.prefilling(
                                 state.philadelphiaMobilityAccessDetails,

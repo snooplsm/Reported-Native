@@ -76,7 +76,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudUpload
@@ -356,7 +355,7 @@ internal fun ReportComposerTopBar(
                     .align(Alignment.CenterStart)
                     .size(40.dp)
             ) {
-                Icon(Icons.Outlined.Menu, contentDescription = "Open menu")
+                com.reported.nativeandroid.app.ShellMenuIcon()
             }
             Box(
                 modifier = Modifier.align(Alignment.Center),
@@ -395,7 +394,7 @@ internal fun ReportComposerTopBar(
             ),
             navigationIcon = {
                 IconButton(onClick = onOpenMenu) {
-                    Icon(Icons.Outlined.Menu, contentDescription = "Open menu")
+                    com.reported.nativeandroid.app.ShellMenuIcon()
                 }
             },
             actions = {

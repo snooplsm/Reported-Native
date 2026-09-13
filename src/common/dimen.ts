@@ -1,2 +1,0 @@
-export const SUBMIT_BUTTON_HEIGHT = 60;
-export const SUBMIT_BUTTON_PADDING_VERTICAL = 5;

@@ -116,7 +116,7 @@ extension ComposerScreen {
 
             HStack {
                 Button(action: onMenuTapped) {
-                    Image(systemName: "line.3.horizontal")
+                    ShellMenuIcon()
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.primary)
                         .frame(width: 34, height: 34)

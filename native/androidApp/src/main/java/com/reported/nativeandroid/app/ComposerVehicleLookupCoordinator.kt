@@ -121,11 +121,7 @@ private fun refreshVehicleDetailsLookup() {
                 current.copy(
                     vehicleLookupDetails = details,
                     vehicleLookupInFlight = false,
-                    vehicleLookupMessage = if (details == null) {
-                        "No vehicle details were found for this plate."
-                    } else {
-                        null
-                    },
+                    vehicleLookupMessage = null,
                     philadelphiaMobilityAccessDetails = details?.let { vehicle ->
                         current.philadelphiaMobilityAccessDetails.copy(
                             vehicleMake = current.philadelphiaMobilityAccessDetails.vehicleMake

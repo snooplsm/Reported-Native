@@ -47,7 +47,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material3.AlertDialog
@@ -220,7 +219,7 @@ internal fun LiveTopBar(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onOpenMenu) {
-                    Icon(Icons.Outlined.Menu, contentDescription = "Menu", tint = Color.White)
+                    com.reported.nativeandroid.app.ShellMenuIcon(tint = Color.White)
                 }
                 Text(
                     text = "Live",

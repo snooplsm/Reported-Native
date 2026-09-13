@@ -11,6 +11,7 @@ data class UserSession(
     val lastName: String = "",
     val phone: String = "",
     val sessionToken: String = "",
+    val avatarUrl: String? = null,
     val testify: Boolean = false
 ) {
     val isAuthorized: Boolean
