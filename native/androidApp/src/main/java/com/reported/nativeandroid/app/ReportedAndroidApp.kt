@@ -119,6 +119,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     val themeViewModel: ThemeViewModel = viewModel()
     val themeState by themeViewModel.state.collectAsState()
     val sharedMediaRequest by SharedMediaIntents.requests.collectAsState()
+    var showLogoutConfirmation by remember { mutableStateOf(false) }
     var authOverlay by remember { mutableStateOf<AuthOverlayDestination?>(null) }
     var afterAuthAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val systemDark = isSystemInDarkTheme()
@@ -142,6 +143,22 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     }
 
     ReportedTheme(darkTheme = darkTheme) {
+        if (showLogoutConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showLogoutConfirmation = false },
+                title = { Text("Log out?") },
+                text = { Text("Are you sure you want to log out?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showLogoutConfirmation = false
+                        sessionViewModel.onAction(SessionAction.Logout)
+                    }) { Text("Log Out") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogoutConfirmation = false }) { Text("Cancel") }
+                }
+            )
+        }
         val isAuthorized = sessionState.session?.isAuthorized == true
         val inMainShell = isAuthorized || sessionState.isGuest
 
@@ -226,7 +243,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                             selectedTab = selectedTab,
                             onLogout = if (isAuthorized) { {
                                 closeDrawer()
-                                sessionViewModel.onAction(SessionAction.Logout)
+                                showLogoutConfirmation = true
                             } } else null,
                             closeDrawer = closeDrawer,
                             onSelected = { item, closeDrawer ->
@@ -328,7 +345,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                 ProfileScreen(
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
-                                    onLogout = { sessionViewModel.onAction(SessionAction.Logout) },
+                                    onLogout = { showLogoutConfirmation = true },
                                     onOpenMenu = onOpenMenu
                                 )
                             }

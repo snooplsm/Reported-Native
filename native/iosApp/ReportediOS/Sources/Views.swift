@@ -730,7 +730,7 @@ struct FlowLayout<Content: View>: View {
 struct ProviderSignInButton: View {
     let title: String
     let systemImage: String?
-    let iconText: String?
+    let assetImage: String?
     let foregroundColor: Color
     let backgroundColor: Color
     let borderColor: Color
@@ -742,12 +742,14 @@ struct ProviderSignInButton: View {
             HStack(spacing: 12) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.title3.weight(.semibold))
+                        .font(.system(size: 22))
                         .frame(width: 24, height: 24)
-                } else if let iconText {
-                    Text(iconText)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.blue)
+                } else if let assetImage {
+                    Image(assetImage)
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
                         .frame(width: 24, height: 24)
                 }
                 Text(title)

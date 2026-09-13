@@ -62,6 +62,7 @@ struct MainShellView: View {
     @Binding var detectedDraftOpenRequest: UUID?
     @State private var selection: MainShellDestination = .report
     @State private var isNavigationOpen = false
+    @State private var showLogoutConfirmation = false
     @State private var reportHasDraftContent = false
     @State private var reportClearRequest = 0
     @State private var reportVoiceAssistRequest = 0
@@ -78,6 +79,14 @@ struct MainShellView: View {
         }
         .environment(\.reportedAvatarURL, sessionViewModel.state.session?.avatarUrl)
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
+        .alert("Log out?", isPresented: $showLogoutConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Log Out", role: .destructive) {
+                sessionViewModel.onAction(.logout)
+            }
+        } message: {
+            Text("Are you sure you want to log out?")
+        }
         .onAppear {
             logScreenView(selection.title)
         }
@@ -112,7 +121,7 @@ struct MainShellView: View {
         return HStack(spacing: 0) {
             LeftGliderNavView(selection: selection, onLogout: sessionViewModel.state.session?.isAuthorized == true ? {
                 closeNavigation()
-                sessionViewModel.onAction(.logout)
+                showLogoutConfirmation = true
             } : nil) { destination in
                 select(destination)
             }
@@ -202,7 +211,7 @@ struct MainShellView: View {
                 title: selection.title,
                 showClear: selection == .report && reportHasDraftContent,
                 trailingActionTitle: profileLogoutUsesToolbar ? "Logout" : nil,
-                trailingAction: profileLogoutUsesToolbar ? { sessionViewModel.onAction(.logout) } : nil,
+                trailingAction: profileLogoutUsesToolbar ? { showLogoutConfirmation = true } : nil,
                 onMenuTapped: { toggleNavigation() },
                 onClear: { reportClearRequest += 1 }
             )
@@ -253,7 +262,7 @@ struct MainShellView: View {
                 isAuthorized: sessionViewModel.state.session?.isAuthorized == true,
                 onRequireLogin: onRequireLogin,
                 showsLogoutInToolbar: profileLogoutUsesToolbar,
-                onLogout: { sessionViewModel.onAction(.logout) }
+                onLogout: { showLogoutConfirmation = true }
             )
         case .settings:
             SettingsScreen(

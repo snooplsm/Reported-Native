@@ -29,7 +29,7 @@ struct LoginScreen: View {
                 ProviderSignInButton(
                     title: "Sign in with Google",
                     systemImage: nil,
-                    iconText: "G",
+                    assetImage: "GoogleSignInLogo",
                     foregroundColor: Color(red: 60 / 255, green: 64 / 255, blue: 67 / 255),
                     backgroundColor: .white,
                     borderColor: Color(.separator),
@@ -40,7 +40,7 @@ struct LoginScreen: View {
                 ProviderSignInButton(
                     title: "Sign in with Apple",
                     systemImage: "apple.logo",
-                    iconText: nil,
+                    assetImage: nil,
                     foregroundColor: .white,
                     backgroundColor: .black,
                     borderColor: .black,
@@ -103,7 +103,7 @@ struct RegisterScreen: View {
                 ProviderSignInButton(
                     title: "Sign in with Google",
                     systemImage: nil,
-                    iconText: "G",
+                    assetImage: "GoogleSignInLogo",
                     foregroundColor: Color(red: 60 / 255, green: 64 / 255, blue: 67 / 255),
                     backgroundColor: .white,
                     borderColor: Color(.separator),
@@ -114,7 +114,7 @@ struct RegisterScreen: View {
                 ProviderSignInButton(
                     title: "Sign in with Apple",
                     systemImage: "apple.logo",
-                    iconText: nil,
+                    assetImage: nil,
                     foregroundColor: .white,
                     backgroundColor: .black,
                     borderColor: .black,
