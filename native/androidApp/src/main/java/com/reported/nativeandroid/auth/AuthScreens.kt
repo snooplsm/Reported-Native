@@ -301,7 +301,7 @@ private fun AuthScreenScaffold(
     ) {
         CenterAlignedTopAppBar(
             title = { Text(title) },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,

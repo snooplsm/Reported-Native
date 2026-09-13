@@ -30,7 +30,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

@@ -10,7 +10,13 @@ if (tasks.findByName("prepareKotlinBuildScriptModel") == null) {
 
 kotlin {
     jvmToolchain(21)
-    androidTarget()
+    android {
+        namespace = "com.reported.shared"
+        compileSdk = 37
+        minSdk = providers.gradleProperty("reported.minSdk").get().toInt()
+        compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        withHostTestBuilder {}.configure {}
+    }
     iosX64()
     iosArm64()
     iosSimulatorArm64()
@@ -43,19 +49,5 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktorClientDarwin)
         }
-    }
-}
-
-android {
-    namespace = "com.reported.shared"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = providers.gradleProperty("reported.minSdk").get().toInt()
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
     }
 }

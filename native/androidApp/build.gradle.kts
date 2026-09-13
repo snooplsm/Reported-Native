@@ -5,7 +5,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.comAndroidApplication)
-    alias(libs.plugins.orgJetbrainsKotlinAndroid)
     alias(libs.plugins.orgJetbrainsKotlinPluginCompose)
     alias(libs.plugins.comGoogleGmsGoogleServices)
     alias(libs.plugins.comGoogleFirebaseCrashlytics)
@@ -79,7 +78,7 @@ val hasReleaseSigningConfig = listOf(
 
 android {
     namespace = "com.reported.nativeandroid"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "cab.reported.nyc"
@@ -160,13 +159,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    kotlin {
-        jvmToolchain(21)
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_21)
-            freeCompilerArgs.add("-Xskip-metadata-version-check")
-        }
-    }
 
     buildFeatures {
         compose = true
@@ -175,7 +167,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            assets.srcDir("../../assets")
+            assets.directories.add("../../assets")
         }
     }
 
@@ -241,4 +233,11 @@ dependencies {
     implementation(libs.onnxruntimeAndroid)
     debugImplementation(libs.uiTooling)
     debugImplementation(libs.uiTestManifest)
+}
+
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
 }

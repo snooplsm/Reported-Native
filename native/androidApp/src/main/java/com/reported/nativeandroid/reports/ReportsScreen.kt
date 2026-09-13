@@ -113,7 +113,7 @@ fun ReportsScreen(
 
         CenterAlignedTopAppBar(
             title = { Text("My Reports") },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,

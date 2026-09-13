@@ -2,7 +2,7 @@ package com.reported.shared.reports
 
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.SubmitReportCommand
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlin.math.abs
 
 private const val duplicateIncidentWindowMillis = 60 * 60 * 1000L

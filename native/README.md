@@ -63,3 +63,5 @@ key here. Removing source literals does not remove previous Git history.
 Dependency and plugin versions are centralized in `gradle/libs.versions.toml`. The build scripts remain Kotlin DSL. Both Android modules use the Java 21 toolchain. On macOS, set `JAVA_HOME` with `export JAVA_HOME=$(/usr/libexec/java_home -v 21)`.
 
 Android `minSdk`, `targetSdk`, `versionCode`, and `versionName` are configured in `gradle.properties` using the `reported.` prefix. Both Android modules share `reported.minSdk`.
+
+The Android build uses AGP 9.4 / Gradle 9.6 with built-in Kotlin; `shared` uses the Android-KMP library plugin. Compile SDK is 37; target and minimum SDK remain in `gradle.properties`. Run shared JVM tests with `./gradlew :shared:testAndroidHostTest`.

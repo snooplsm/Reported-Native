@@ -690,11 +690,11 @@ internal object NativeAlprEngine {
                 (boundsLeft ?: return null) * rotatedWidth,
                 (boundsTop ?: return null) * rotatedHeight,
                 (boundsRight ?: return null) * rotatedWidth,
-                (boundsTop ?: return null) * rotatedHeight,
-                (boundsRight ?: return null) * rotatedWidth,
+                boundsTop * rotatedHeight,
+                boundsRight * rotatedWidth,
                 (boundsBottom ?: return null) * rotatedHeight,
-                (boundsLeft ?: return null) * rotatedWidth,
-                (boundsBottom ?: return null) * rotatedHeight
+                boundsLeft * rotatedWidth,
+                boundsBottom * rotatedHeight
             )
         }
         inverse.mapPoints(points)

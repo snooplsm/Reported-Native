@@ -52,7 +52,7 @@ class SubmitLiveIncidentWorker(
             attemptedCommand = baseCommand.copy(mediaFiles = listOfNotNull(uploaded))
             AppGraph.shared.submitReportUseCase.execute(attemptedCommand)
             store.delete(incident.id)
-            incident.videoUri?.deleteLocalFileUri()
+            incident.videoUri.deleteLocalFileUri()
             incident.thumbnailUri?.deleteLocalFileUri()
             Result.success()
         }.getOrElse { error ->

@@ -59,7 +59,7 @@ fun ProfileScreen(
     ) {
         CenterAlignedTopAppBar(
             title = { Text("Profile") },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
@@ -201,7 +201,7 @@ fun SettingsScreen(
     ) {
         CenterAlignedTopAppBar(
             title = { Text("Settings") },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,

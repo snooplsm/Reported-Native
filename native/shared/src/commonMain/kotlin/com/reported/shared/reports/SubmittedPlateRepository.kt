@@ -3,7 +3,7 @@ package com.reported.shared.reports
 import com.reported.shared.model.ReportSummary
 import com.reported.shared.model.SubmitReportCommand
 import com.reported.shared.session.platformSettings
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString

@@ -385,7 +385,7 @@ internal fun ReportComposerTopBar(
                     Text("Report")
                 }
             },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
                 navigationIconContentColor = MaterialTheme.colorScheme.onSurface,

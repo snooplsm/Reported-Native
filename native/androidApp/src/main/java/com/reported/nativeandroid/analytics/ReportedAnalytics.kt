@@ -2,7 +2,6 @@ package com.reported.nativeandroid.analytics
 
 import android.content.Context
 import android.os.Bundle
-import androidx.core.os.bundleOf
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.reported.shared.api.VehicleEnrichmentTracker
@@ -23,10 +22,10 @@ object ReportedAnalytics {
     fun logScreenView(name: String) {
         analytics?.logEvent(
             FirebaseAnalytics.Event.SCREEN_VIEW,
-            bundleOf(
-                FirebaseAnalytics.Param.SCREEN_NAME to name,
-                FirebaseAnalytics.Param.SCREEN_CLASS to name
-            )
+            Bundle().apply {
+                putString(FirebaseAnalytics.Param.SCREEN_NAME, name)
+                putString(FirebaseAnalytics.Param.SCREEN_CLASS, name)
+            }
         )
     }
 
@@ -54,7 +53,9 @@ object ReportedAnalytics {
         setUser(session)
         logAction(
             FirebaseAnalytics.Event.LOGIN,
-            bundleOf(FirebaseAnalytics.Param.METHOD to method)
+            Bundle().apply {
+                putString(FirebaseAnalytics.Param.METHOD, method)
+            }
         )
     }
 
@@ -70,11 +71,11 @@ object ReportedAnalytics {
     fun logReportsSearch(hasLicense: Boolean, hasStartDate: Boolean, hasEndDate: Boolean) {
         logAction(
             "reports_search",
-            bundleOf(
-                "has_license" to hasLicense.toLongParam(),
-                "has_start_date" to hasStartDate.toLongParam(),
-                "has_end_date" to hasEndDate.toLongParam()
-            )
+            Bundle().apply {
+                putLong("has_license", hasLicense.toLongParam())
+                putLong("has_start_date", hasStartDate.toLongParam())
+                putLong("has_end_date", hasEndDate.toLongParam())
+            }
         )
     }
 
@@ -97,16 +98,18 @@ object ReportedAnalytics {
     fun logReportMediaAdded(surface: String, mediaCount: Int, hasVideo: Boolean) {
         logAction(
             "report_media_added",
-            bundleOf(
-                "surface" to surface.firebaseSafeAnalyticsValue(),
-                "media_count" to mediaCount.toLong(),
-                "has_video" to hasVideo.toLongParam()
-            )
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+                putLong("media_count", mediaCount.toLong())
+                putLong("has_video", hasVideo.toLongParam())
+            }
         )
     }
 
     fun logAiSparkleTapped(surface: String) {
-        logAction("ai_sparkle_tap", bundleOf("surface" to surface))
+        logAction("ai_sparkle_tap", Bundle().apply {
+            putString("surface", surface)
+        })
     }
 
     fun logReportedAiBulkSubmit(
@@ -132,7 +135,9 @@ object ReportedAnalytics {
     fun logAutoReportScanStarted(scanWindow: String) {
         logAction(
             "auto_report_scan_start",
-            bundleOf("scan_window" to scanWindow.firebaseSafeAnalyticsValue())
+            Bundle().apply {
+                putString("scan_window", scanWindow.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
@@ -146,15 +151,15 @@ object ReportedAnalytics {
     ) {
         logAction(
             "auto_report_summary",
-            bundleOf(
-                "count" to count.toLong(),
-                "report_count" to count.toLong(),
-                "kept_count" to keptCount.toLong(),
-                "discarded_count" to discardedCount.toLong(),
-                "invalid_count" to invalidCount.toLong(),
-                "media_count" to mediaCount.toLong(),
-                "processed_photo_count" to processedPhotoCount.toLong()
-            )
+            Bundle().apply {
+                putLong("count", count.toLong())
+                putLong("report_count", count.toLong())
+                putLong("kept_count", keptCount.toLong())
+                putLong("discarded_count", discardedCount.toLong())
+                putLong("invalid_count", invalidCount.toLong())
+                putLong("media_count", mediaCount.toLong())
+                putLong("processed_photo_count", processedPhotoCount.toLong())
+            }
         )
     }
 
@@ -167,12 +172,12 @@ object ReportedAnalytics {
     ) {
         logAction(
             if (keep) "auto_report_keep" else "auto_report_discard",
-            bundleOf(
-                "report_index" to reportIndex.toLong(),
-                "report_count" to reportCount.toLong(),
-                "kept_count" to keptCount.toLong(),
-                "media_count" to mediaCount.toLong()
-            )
+            Bundle().apply {
+                putLong("report_index", reportIndex.toLong())
+                putLong("report_count", reportCount.toLong())
+                putLong("kept_count", keptCount.toLong())
+                putLong("media_count", mediaCount.toLong())
+            }
         )
     }
 
@@ -202,19 +207,23 @@ object ReportedAnalytics {
     fun logPlateChooserTapped(candidateCount: Int, hasPlate: Boolean) {
         logAction(
             "plate_chooser_tap",
-            bundleOf(
-                "candidate_count" to candidateCount.toLong(),
-                "has_plate" to hasPlate.toLongParam()
-            )
+            Bundle().apply {
+                putLong("candidate_count", candidateCount.toLong())
+                putLong("has_plate", hasPlate.toLongParam())
+            }
         )
     }
 
     fun logStateChooserTapped(currentRegion: String) {
-        logAction("state_chooser_tap", bundleOf("current_state" to currentRegion))
+        logAction("state_chooser_tap", Bundle().apply {
+            putString("current_state", currentRegion)
+        })
     }
 
     fun logStateSelected(region: String) {
-        logAction("state_selected", bundleOf("plate_region" to region))
+        logAction("state_selected", Bundle().apply {
+            putString("plate_region", region)
+        })
     }
 
     fun logComplaintChooserTapped(surface: String, selectedComplaintId: String?) {
@@ -230,38 +239,44 @@ object ReportedAnalytics {
     fun logComplaintSelected(complaintId: String, surface: String) {
         logAction(
             "complaint_selected",
-            bundleOf(
-                "complaint_id" to complaintId,
-                "surface" to surface
-            )
+            Bundle().apply {
+                putString("complaint_id", complaintId)
+                putString("surface", surface)
+            }
         )
     }
 
     fun logSettingsTapped(surface: String) {
-        logAction("settings_tap", bundleOf("surface" to surface))
+        logAction("settings_tap", Bundle().apply {
+            putString("surface", surface)
+        })
     }
 
     fun logBuyMeCoffeeTapped(surface: String) {
         logAction(
             "buy_me_coffee_tap",
-            bundleOf("surface" to surface.firebaseSafeAnalyticsValue())
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
     fun logBuyMeCoffeeInfoTapped(surface: String) {
         logAction(
             "buy_me_coffee_info_tap",
-            bundleOf("surface" to surface.firebaseSafeAnalyticsValue())
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
     fun logBuyMeCoffeeOpen(surface: String, source: String) {
         logAction(
             "buy_me_coffee_open",
-            bundleOf(
-                "surface" to surface.firebaseSafeAnalyticsValue(),
-                "source" to source.firebaseSafeAnalyticsValue()
-            )
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+                putString("source", source.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
@@ -296,13 +311,13 @@ object ReportedAnalytics {
     ) {
         logAction(
             "vehicle_enrichment_endpoint",
-            bundleOf(
-                "provider" to provider.firebaseSafeAnalyticsValue(),
-                "success" to success.toLongParam(),
-                "reason" to reason.firebaseSafeAnalyticsValue(),
-                "duration_ms" to durationMillis,
-                "operating_system" to operatingSystem.firebaseSafeAnalyticsValue()
-            )
+            Bundle().apply {
+                putString("provider", provider.firebaseSafeAnalyticsValue())
+                putLong("success", success.toLongParam())
+                putString("reason", reason.firebaseSafeAnalyticsValue())
+                putLong("duration_ms", durationMillis)
+                putString("operating_system", operatingSystem.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
@@ -319,17 +334,17 @@ object ReportedAnalytics {
     ) {
         logAction(
             "vehicle_classification_result",
-            bundleOf(
-                "surface" to surface.firebaseSafeAnalyticsValue(),
-                "stage" to stage.firebaseSafeAnalyticsValue(),
-                "success" to success.toLongParam(),
-                "reason" to reason.firebaseSafeAnalyticsValue(),
-                "duration_ms" to durationMillis,
-                "plate_prefix" to platePrefix.firebaseSafeAnalyticsValue(),
-                "has_vin" to hasVin.toLongParam(),
-                "has_decoded_vin" to hasDecodedVin.toLongParam(),
-                "operating_system" to operatingSystem.firebaseSafeAnalyticsValue()
-            )
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+                putString("stage", stage.firebaseSafeAnalyticsValue())
+                putLong("success", success.toLongParam())
+                putString("reason", reason.firebaseSafeAnalyticsValue())
+                putLong("duration_ms", durationMillis)
+                putString("plate_prefix", platePrefix.firebaseSafeAnalyticsValue())
+                putLong("has_vin", hasVin.toLongParam())
+                putLong("has_decoded_vin", hasDecodedVin.toLongParam())
+                putString("operating_system", operatingSystem.firebaseSafeAnalyticsValue())
+            }
         )
     }
 
@@ -347,17 +362,17 @@ object ReportedAnalytics {
     ) {
         logAction(
             "submit_report_failed",
-            bundleOf(
-                "surface" to surface.firebaseSafeAnalyticsValue(),
-                "stage" to stage.firebaseSafeAnalyticsValue(),
-                "error_type" to error.javaClass.simpleName.firebaseSafeAnalyticsValue(),
-                "error_message" to (error.message ?: error.toString()).firebaseSafeAnalyticsValue(),
-                "plate_region" to plateRegion.firebaseSafeAnalyticsValue(),
-                "complaint_count" to complaintCount.toLong(),
-                "media_count" to mediaCount.toLong(),
-                "has_video" to hasVideo.toLongParam(),
-                "report_count" to reportCount.toLong()
-            )
+            Bundle().apply {
+                putString("surface", surface.firebaseSafeAnalyticsValue())
+                putString("stage", stage.firebaseSafeAnalyticsValue())
+                putString("error_type", error.javaClass.simpleName.firebaseSafeAnalyticsValue())
+                putString("error_message", (error.message ?: error.toString()).firebaseSafeAnalyticsValue())
+                putString("plate_region", plateRegion.firebaseSafeAnalyticsValue())
+                putLong("complaint_count", complaintCount.toLong())
+                putLong("media_count", mediaCount.toLong())
+                putLong("has_video", hasVideo.toLongParam())
+                putLong("report_count", reportCount.toLong())
+            }
         )
         ReportSubmissionFailureLogger.log(
             surface = surface,

@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.comAndroidApplication) apply false
     alias(libs.plugins.comAndroidLibrary) apply false
-    alias(libs.plugins.orgJetbrainsKotlinAndroid) apply false
     alias(libs.plugins.orgJetbrainsKotlinMultiplatform) apply false
     alias(libs.plugins.orgJetbrainsKotlinPluginSerialization) apply false
     alias(libs.plugins.orgJetbrainsKotlinPluginCompose) apply false
@@ -9,7 +8,7 @@ plugins {
     alias(libs.plugins.comGoogleFirebaseCrashlytics) apply false
 }
 
-val verifyUdfArchitecture by tasks.registering {
+val verifyUdfArchitecture = tasks.register("verifyUdfArchitecture") {
     group = "verification"
     description = "Requires every Android and iOS ViewModel to use the native UDF contract."
 
