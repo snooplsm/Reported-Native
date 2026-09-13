@@ -1,12 +1,12 @@
 plugins {
-    id("com.android.application") version "8.13.2" apply false
-    id("com.android.library") version "8.13.2" apply false
-    kotlin("android") version "2.1.20" apply false
-    kotlin("multiplatform") version "2.1.20" apply false
-    kotlin("plugin.serialization") version "2.1.20" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.1.20" apply false
-    id("com.google.gms.google-services") version "4.4.4" apply false
-    id("com.google.firebase.crashlytics") version "3.0.7" apply false
+    alias(libs.plugins.comAndroidApplication) apply false
+    alias(libs.plugins.comAndroidLibrary) apply false
+    alias(libs.plugins.orgJetbrainsKotlinAndroid) apply false
+    alias(libs.plugins.orgJetbrainsKotlinMultiplatform) apply false
+    alias(libs.plugins.orgJetbrainsKotlinPluginSerialization) apply false
+    alias(libs.plugins.orgJetbrainsKotlinPluginCompose) apply false
+    alias(libs.plugins.comGoogleGmsGoogleServices) apply false
+    alias(libs.plugins.comGoogleFirebaseCrashlytics) apply false
 }
 
 val verifyUdfArchitecture by tasks.registering {

@@ -1,0 +1,100 @@
+[versions]
+agp = "8.13.2"
+kotlin = "2.1.20"
+comGoogleGmsGoogleServices = "4.4.4"
+comGoogleFirebaseCrashlytics = "3.0.7"
+composeBom = "2024.09.03"
+coreKtx = "1.15.0"
+lifecycleRuntimeKtx = "2.8.7"
+lifecycleRuntimeCompose = "2.8.7"
+activityCompose = "1.9.3"
+cameraCamera2 = "1.4.1"
+cameraCore = "1.4.1"
+cameraLifecycle = "1.4.1"
+cameraVideo = "1.4.1"
+cameraView = "1.4.1"
+credentials = "1.5.0"
+credentialsPlayServicesAuth = "1.5.0"
+workRuntimeKtx = "2.10.0"
+lifecycleViewmodelCompose = "2.8.7"
+navigationCompose = "2.8.4"
+exifinterface = "1.3.7"
+media3Exoplayer = "1.5.1"
+media3Ui = "1.5.1"
+playServicesMaps = "19.0.0"
+googleid = "1.1.1"
+mapsCompose = "4.4.1"
+firebaseBom = "34.12.0"
+genaiImageDescription = "1.0.0-beta1"
+textRecognition = "16.0.1"
+litertlmAndroid = "0.13.1"
+coilCompose = "2.7.0"
+coilSvg = "2.7.0"
+lottieCompose = "6.6.1"
+onnxruntimeAndroid = "1.25.0"
+ktor = "2.3.12"
+coroutines = "1.10.2"
+serialization = "1.8.1"
+datetime = "0.6.2"
+settings = "1.2.0"
+
+[libraries]
+composeBom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+coreKtx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+lifecycleRuntimeKtx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+lifecycleRuntimeCompose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycleRuntimeCompose" }
+activityCompose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+cameraCamera2 = { module = "androidx.camera:camera-camera2", version.ref = "cameraCamera2" }
+cameraCore = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
+cameraLifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "cameraLifecycle" }
+cameraVideo = { module = "androidx.camera:camera-video", version.ref = "cameraVideo" }
+cameraView = { module = "androidx.camera:camera-view", version.ref = "cameraView" }
+credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
+credentialsPlayServicesAuth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentialsPlayServicesAuth" }
+workRuntimeKtx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
+lifecycleViewmodelCompose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
+navigationCompose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+material3 = { module = "androidx.compose.material3:material3" }
+materialIconsExtended = { module = "androidx.compose.material:material-icons-extended" }
+ui = { module = "androidx.compose.ui:ui" }
+uiToolingPreview = { module = "androidx.compose.ui:ui-tooling-preview" }
+exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
+media3Exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
+media3Ui = { module = "androidx.media3:media3-ui", version.ref = "media3Ui" }
+playServicesMaps = { module = "com.google.android.gms:play-services-maps", version.ref = "playServicesMaps" }
+googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
+mapsCompose = { module = "com.google.maps.android:maps-compose", version.ref = "mapsCompose" }
+firebaseBom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebaseAnalytics = { module = "com.google.firebase:firebase-analytics" }
+firebaseCrashlytics = { module = "com.google.firebase:firebase-crashlytics" }
+firebaseConfig = { module = "com.google.firebase:firebase-config" }
+firebaseFirestore = { module = "com.google.firebase:firebase-firestore" }
+genaiImageDescription = { module = "com.google.mlkit:genai-image-description", version.ref = "genaiImageDescription" }
+textRecognition = { module = "com.google.mlkit:text-recognition", version.ref = "textRecognition" }
+litertlmAndroid = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlmAndroid" }
+coilCompose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
+coilSvg = { module = "io.coil-kt:coil-svg", version.ref = "coilSvg" }
+lottieCompose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottieCompose" }
+onnxruntimeAndroid = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
+uiTooling = { module = "androidx.compose.ui:ui-tooling" }
+uiTestManifest = { module = "androidx.compose.ui:ui-test-manifest" }
+ktorClientCore = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktorClientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktorSerializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktorClientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
+kotlinxCoroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinxSerializationJson = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+kotlinxDatetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
+multiplatformSettingsNoArg = { module = "com.russhwolf:multiplatform-settings-no-arg", version.ref = "settings" }
+ktorClientOkhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktorClientDarwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+
+[plugins]
+comAndroidApplication = { id = "com.android.application", version.ref = "agp" }
+comAndroidLibrary = { id = "com.android.library", version.ref = "agp" }
+orgJetbrainsKotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+orgJetbrainsKotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+orgJetbrainsKotlinPluginSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+orgJetbrainsKotlinPluginCompose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+comGoogleGmsGoogleServices = { id = "com.google.gms.google-services", version.ref = "comGoogleGmsGoogleServices" }
+comGoogleFirebaseCrashlytics = { id = "com.google.firebase.crashlytics", version.ref = "comGoogleFirebaseCrashlytics" }

@@ -1,7 +1,7 @@
 plugins {
-    kotlin("multiplatform")
-    id("com.android.library")
-    kotlin("plugin.serialization")
+    alias(libs.plugins.orgJetbrainsKotlinMultiplatform)
+    alias(libs.plugins.comAndroidLibrary)
+    alias(libs.plugins.orgJetbrainsKotlinPluginSerialization)
 }
 
 if (tasks.findByName("prepareKotlinBuildScriptModel") == null) {
@@ -9,6 +9,7 @@ if (tasks.findByName("prepareKotlinBuildScriptModel") == null) {
 }
 
 kotlin {
+    jvmToolchain(21)
     androidTarget()
     iosX64()
     iosArm64()
@@ -22,30 +23,25 @@ kotlin {
     }
 
     sourceSets {
-        val ktorVersion = "2.3.12"
-        val settingsVersion = "1.2.0"
-        val coroutinesVersion = "1.10.2"
-        val serializationVersion = "1.8.1"
-        val datetimeVersion = "0.6.2"
 
         commonMain.dependencies {
-            implementation("io.ktor:ktor-client-core:$ktorVersion")
-            implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
-            implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
-            implementation("io.ktor:ktor-client-logging:$ktorVersion")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$serializationVersion")
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:$datetimeVersion")
-            implementation("com.russhwolf:multiplatform-settings-no-arg:$settingsVersion")
+            implementation(libs.ktorClientCore)
+            implementation(libs.ktorClientContentNegotiation)
+            implementation(libs.ktorSerializationKotlinxJson)
+            implementation(libs.ktorClientLogging)
+            implementation(libs.kotlinxCoroutinesCore)
+            implementation(libs.kotlinxSerializationJson)
+            implementation(libs.kotlinxDatetime)
+            implementation(libs.multiplatformSettingsNoArg)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
         androidMain.dependencies {
-            implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
+            implementation(libs.ktorClientOkhttp)
         }
         iosMain.dependencies {
-            implementation("io.ktor:ktor-client-darwin:$ktorVersion")
+            implementation(libs.ktorClientDarwin)
         }
     }
 }
@@ -55,11 +51,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        minSdk = 25
+        minSdk = providers.gradleProperty("reported.minSdk").get().toInt()
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 }

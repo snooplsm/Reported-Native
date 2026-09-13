@@ -109,7 +109,7 @@ targets:
         outputFiles:
           - $(DERIVED_FILE_DIR)/SharedCoreBuild.stamp
         script: |
-          export JAVA_HOME=$(/usr/libexec/java_home)
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-daemon
           touch "${DERIVED_FILE_DIR}/SharedCoreBuild.stamp"
