@@ -3,6 +3,7 @@ import SharedCore
 
 private let vehicleClassificationDebugPrefix = "[DEBUG] Vehicle classification"
 
+@MainActor
 final class ComposerVehicleLookupCoordinator {
     typealias StateMutation = (inout ComposerState) -> Void
 
@@ -30,6 +31,10 @@ final class ComposerVehicleLookupCoordinator {
     func refresh() {
         refreshVehicleDetailsLookup()
         refreshVehicleClassificationDebugNote()
+    }
+
+    var currentLookupKey: String? {
+        vehicleLookupKey(for: currentState())
     }
 
     private func refreshVehicleClassificationDebugNote() {

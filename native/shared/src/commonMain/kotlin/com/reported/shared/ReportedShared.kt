@@ -46,7 +46,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 class ReportedShared(
-    val config: ReportedConfig = ReportedConfig(),
+    val config: ReportedConfig,
     private val vehicleEnrichmentTracker: VehicleEnrichmentTracker = NoOpVehicleEnrichmentTracker,
     private val vehicleEnrichmentPolicy: VehicleEnrichmentPolicy = AlwaysAttemptVehicleEnrichmentPolicy
 ) {

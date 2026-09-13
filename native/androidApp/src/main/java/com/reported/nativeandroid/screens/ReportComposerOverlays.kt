@@ -247,7 +247,7 @@ import kotlin.math.sqrt
 internal fun ReportComposerOverlays(
     state: ComposerUiState,
     complaintOptions: List<ComplaintOption>,
-    activeAnimatedOptionIndex: Int,
+
     showReportTutorial: Boolean,
     tutorialScannerEnabled: Boolean,
     tutorialNotificationsEnabled: Boolean,
@@ -268,7 +268,7 @@ internal fun ReportComposerOverlays(
     showAddressMap: Boolean,
     pendingPlateCandidate: PlateCandidate?,
     onAction: (ComposerAction) -> Unit,
-    onAdvanceAnimatedComplaint: (Int) -> Unit,
+
     onTutorialScannerEnabledChange: (Boolean) -> Unit,
     onTutorialNotificationsEnabledChange: (Boolean) -> Unit,
     onRequestMediaLocationPermission: () -> Unit,
@@ -309,11 +309,8 @@ internal fun ReportComposerOverlays(
                             ComplaintTile(
                                 option = option,
                                 modifier = Modifier.weight(1f),
-                                animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
+
                                 showImage = state.showComplaintImages,
-                                onAnimationFinished = {
-                                    onAdvanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
-                                },
                                 onClick = {
                                     ReportedAnalytics.logComplaintSelected(option.id, "pending_media")
                                     onAction(ComposerAction.PendingComplaintConfirmed(option.id))

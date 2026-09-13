@@ -62,9 +62,9 @@ val googleServerClientId = configuredGoogleServerClientId
     ?: googleServicesWebClientId
 val appleClientId = readConfigValue("REPORTED_APPLE_CLIENT_ID")
 val appleRedirectUri = readConfigValue("REPORTED_APPLE_REDIRECT_URI", "reported://oauth/apple")
-val parseServerUrl = readConfigValue("REPORTED_PARSE_SERVER_URL", "https://parseapi.back4app.com")
-val parseApplicationId = readConfigValue("REPORTED_PARSE_APPLICATION_ID", "jkAZF8ojV4vOGnhSBjdwiMWBKpWML5tM4SWGKgOV")
-val parseJavascriptKey = readConfigValue("REPORTED_PARSE_JAVASCRIPT_KEY", "LeBKOerWTXGBGRLE0yvg2bXa5RRv4e8PuC6INEFA")
+val parseServerUrl = readConfigValue("REPORTED_PARSE_SERVER_URL").also { require(it.isNotBlank()) { "Set REPORTED_PARSE_SERVER_URL in the environment or native/local.properties" } }
+val parseApplicationId = readConfigValue("REPORTED_PARSE_APPLICATION_ID").also { require(it.isNotBlank()) { "Set REPORTED_PARSE_APPLICATION_ID in the environment or native/local.properties" } }
+val parseJavascriptKey = readConfigValue("REPORTED_PARSE_JAVASCRIPT_KEY").also { require(it.isNotBlank()) { "Set REPORTED_PARSE_JAVASCRIPT_KEY in the environment or native/local.properties" } }
 val philadelphiaAisGatekeeperKey = readConfigValue("REPORTED_PHILADELPHIA_AIS_GATEKEEPER_KEY")
 val releaseKeystorePath = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_PATH")
 val releaseKeystoreAlias = readOptionalConfigValue("REPORTED_ANDROID_KEYSTORE_ALIAS")

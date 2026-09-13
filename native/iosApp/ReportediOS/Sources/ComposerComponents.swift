@@ -68,8 +68,8 @@ struct ComplaintOption: Identifiable {
 }
 
 let complaintOptionsList: [ComplaintOption] = [
-    ComplaintOption(id: "blocked_bike_lane", title: "Blocked bike lane", imageName: "bikelane", imageExtension: "svg"),
-    ComplaintOption(id: "blocked_crosswalk", title: "Blocked crosswalk", imageName: "crosswalk", imageExtension: "svg"),
+    ComplaintOption(id: "blocked_bike_lane", title: "Blocked bike lane", imageName: "bikelane", imageExtension: "svg", lottieName: "bikelane"),
+    ComplaintOption(id: "blocked_crosswalk", title: "Blocked crosswalk", imageName: "crosswalk", imageExtension: "svg", lottieName: "crosswalk"),
     ComplaintOption(id: "ran_red_light", title: "Ran red light", imageName: "ranredlight", imageExtension: "jpg", lottieName: "ranredlight"),
     ComplaintOption(id: "drove_recklessly", title: "Drove recklessly", imageName: "reckless", imageExtension: "png", lottieName: "reckless"),
     ComplaintOption(id: "parked_illegally", title: "Parked illegally", imageName: "parkedillegally", imageExtension: "jpg", lottieName: "parkedillegally")
@@ -79,12 +79,12 @@ func complaintOptionsFor(_ categories: [ComplaintCategory]) -> [ComplaintOption]
     [
         complaintOptionFor(
             categories,
-            fallback: ComplaintOption(id: "blocked_bike_lane", title: "Blocked bike lane", imageName: "bikelane", imageExtension: "svg"),
+            fallback: ComplaintOption(id: "blocked_bike_lane", title: "Blocked bike lane", imageName: "bikelane", imageExtension: "svg", lottieName: "bikelane"),
             keywords: ["bike lane"]
         ),
         complaintOptionFor(
             categories,
-            fallback: ComplaintOption(id: "blocked_crosswalk", title: "Blocked crosswalk", imageName: "crosswalk", imageExtension: "svg"),
+            fallback: ComplaintOption(id: "blocked_crosswalk", title: "Blocked crosswalk", imageName: "crosswalk", imageExtension: "svg", lottieName: "crosswalk"),
             keywords: ["crosswalk"]
         ),
         complaintOptionFor(
@@ -135,7 +135,7 @@ struct ComplaintChooserSheet: View {
     let title: String
     let options: [ComplaintOption]
     let selectedComplaintId: String?
-    let activeAnimatedComplaintId: String?
+
     let onSelected: (ComplaintOption) -> Void
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -150,7 +150,7 @@ struct ComplaintChooserSheet: View {
                             ZStack(alignment: .topTrailing) {
                                 ComplaintMediaTile(
                                     option: option,
-                                    animate: option.id == activeAnimatedComplaintId,
+
                                     showImage: true,
                                     imageHeight: tileMetrics(for: geometry.size.width).imageHeight,
                                     minHeight: tileMetrics(for: geometry.size.width).minHeight,
@@ -180,7 +180,7 @@ struct ComplaintChooserSheet: View {
 
     private func columns(for width: CGFloat) -> [GridItem] {
         let columnCount = width >= 700 ? 3 : 2
-        return Array(repeating: GridItem(.flexible(), spacing: isTabletLayout ? 16 : 12), count: columnCount)
+        return Array(repeating: GridItem(.flexible(), spacing: isTabletLayout ? 16 : 12, alignment: .top), count: columnCount)
     }
 
     private func maxContentWidth(for width: CGFloat) -> CGFloat {
@@ -198,7 +198,8 @@ struct ComplaintChooserSheet: View {
 
 struct ComplaintMediaTile: View {
     let option: ComplaintOption
-    var animate = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
     var showImage = true
     var imageHeight: CGFloat = 96
     var minHeight: CGFloat = 150
@@ -209,8 +210,8 @@ struct ComplaintMediaTile: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 if showImage {
-                    ComplaintOptionImage(option: option, animate: animate)
-                        .frame(height: imageHeight)
+                    ComplaintOptionImage(option: option, animate: isVisible && scenePhase == .active)
+                        .aspectRatio(1, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
@@ -219,46 +220,49 @@ struct ComplaintMediaTile: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.82)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
             }
-            .padding(8)
-            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .top)
-            .background(Color(.secondarySystemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(.separator), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .top)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
     }
 }
 
 struct ComplaintOptionImage: View {
+    @Environment(\.colorScheme) private var colorScheme
     let option: ComplaintOption
     var animate = false
 
     var body: some View {
         if let lottieName = option.lottieName {
             ZStack {
-                option.artBackground
+                Color(red: colorScheme == .dark ? 37 / 255 : 227 / 255,
+                      green: colorScheme == .dark ? 43 / 255 : 228 / 255,
+                      blue: colorScheme == .dark ? 51 / 255 : 222 / 255)
                 LottieAssetView(
-                    animationName: lottieName,
+                    animationName: colorScheme == .dark ? "\(lottieName)_dark" : lottieName,
                     isPlaying: animate,
-                    contentMode: .scaleAspectFit
+                    contentMode: .scaleAspectFit,
+                    previewProgress: option.lottieName == "ranredlight" ? 0.23 : 0.4
                 )
-                .scaleEffect(option.id == "ran_red_light" ? 1.18 : 1, anchor: .bottom)
                 .clipped()
             }
         } else if option.imageExtension.lowercased() == "svg" {
             ZStack {
-                option.artBackground
+                Color(red: colorScheme == .dark ? 37 / 255 : 227 / 255,
+                      green: colorScheme == .dark ? 43 / 255 : 228 / 255,
+                      blue: colorScheme == .dark ? 51 / 255 : 222 / 255)
                 SvgAssetView(name: option.imageName)
             }
         } else if let image = complaintUIImage(option: option) {
             ZStack {
-                option.artBackground
+                Color(red: colorScheme == .dark ? 37 / 255 : 227 / 255,
+                      green: colorScheme == .dark ? 43 / 255 : 228 / 255,
+                      blue: colorScheme == .dark ? 51 / 255 : 222 / 255)
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
@@ -282,7 +286,7 @@ struct ComplaintOptionImage: View {
 
 extension ComplaintOption {
     var artBackground: Color {
-        id == "ran_red_light" ? .black : Color(.secondarySystemBackground)
+        Color(red: 243 / 255, green: 245 / 255, blue: 238 / 255)
     }
 
     var animationDuration: TimeInterval? {
@@ -345,6 +349,7 @@ struct LottieAssetView: UIViewRepresentable {
     let animationName: String
     var isPlaying = true
     var contentMode: UIView.ContentMode = .scaleAspectFit
+    var previewProgress: AnimationProgressTime = 0
 
     func makeUIView(context: Context) -> UIView {
         let container = UIView()
@@ -353,7 +358,7 @@ struct LottieAssetView: UIViewRepresentable {
         let animationView = LottieAnimationView()
         animationView.translatesAutoresizingMaskIntoConstraints = false
         animationView.contentMode = contentMode
-        animationView.loopMode = .playOnce
+        animationView.loopMode = .loop
         animationView.backgroundBehavior = .pauseAndRestore
         animationView.animation = loadAnimation()
 
@@ -365,15 +370,22 @@ struct LottieAssetView: UIViewRepresentable {
             animationView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
 
+        context.coordinator.animationName = animationName
         context.coordinator.animationView = animationView
-        updatePlayback(animationView)
+        updatePlayback(animationView, coordinator: context.coordinator)
         return container
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
         guard let animationView = context.coordinator.animationView else { return }
         animationView.contentMode = contentMode
-        updatePlayback(animationView)
+        if context.coordinator.animationName != animationName {
+            let progress = animationView.currentProgress
+            animationView.animation = loadAnimation()
+            animationView.currentProgress = progress
+            context.coordinator.animationName = animationName
+        }
+        updatePlayback(animationView, coordinator: context.coordinator)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -390,20 +402,23 @@ struct LottieAssetView: UIViewRepresentable {
         return LottieAnimation.named(animationName)
     }
 
-    private func updatePlayback(_ animationView: LottieAnimationView) {
+    private func updatePlayback(_ animationView: LottieAnimationView, coordinator: Coordinator) {
         if isPlaying {
-            animationView.loopMode = .playOnce
-            if animationView.isAnimationPlaying != true {
-                animationView.currentProgress = 0
+            if !animationView.isAnimationPlaying {
+                coordinator.hasPlayed = true
                 animationView.play()
             }
         } else {
-            animationView.stop()
-            animationView.currentProgress = 0
+            animationView.pause()
+            if !coordinator.hasPlayed {
+                animationView.currentProgress = previewProgress
+            }
         }
     }
 
     final class Coordinator {
+        var animationName: String?
+        var hasPlayed = false
         weak var animationView: LottieAnimationView?
     }
 }
@@ -417,22 +432,20 @@ struct UploadMediaTile: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Spacer()
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: iconSize, weight: .medium))
-                    .foregroundStyle(Color.reportedOrange)
-                Text("Upload")
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.secondarySystemBackground))
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: iconSize, weight: .medium))
+                        .foregroundStyle(Color.reportedOrange)
+                }
+                .aspectRatio(1, contentMode: .fit)
+                Text("Add Photo")
                     .font(titleFont)
                     .foregroundStyle(.primary)
-                Spacer()
             }
-            .frame(maxWidth: .infinity, minHeight: minHeight)
-            .background(Color(.secondarySystemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.reportedOrange, lineWidth: 1.5)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .top)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

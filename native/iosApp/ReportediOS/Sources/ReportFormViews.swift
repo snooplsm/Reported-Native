@@ -78,9 +78,9 @@ struct ReportVerifyFields: View {
     let plateValue: String
     let plateCandidateCount: Int
     let plateRegionValue: String
-    let vehicleLookupDetails: VehicleLookupDetails? = nil
-    let vehicleLookupInFlight: Bool = false
-    let vehicleLookupMessage: String? = nil
+    var vehicleLookupDetails: VehicleLookupDetails? = nil
+    var vehicleLookupInFlight: Bool = false
+    var vehicleLookupMessage: String? = nil
     let addressValue: String
     let occurredAtValue: String
     let validationErrors: ComposerState.ValidationErrors

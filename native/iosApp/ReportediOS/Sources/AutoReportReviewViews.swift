@@ -498,8 +498,7 @@ struct AutoReportIncidentCard: View {
             ComplaintChooserSheet(
                 title: "Choose Complaint",
                 options: complaintOptions,
-                selectedComplaintId: incident.complaintId,
-                activeAnimatedComplaintId: nil
+                selectedComplaintId: incident.complaintId
             ) { option in
                 incident.complaintId = option.id
                 showComplaintChooser = false

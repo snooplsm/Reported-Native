@@ -269,6 +269,7 @@ fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOpti
             fallbackId = "blocked_bike_lane",
             fallbackTitle = "Blocked bike lane",
             imageUri = "file:///android_asset/complaints/bikelane.svg",
+            lottieAssetPath = "complaints/bikelane.json",
             keywords = listOf("bike lane")
         ),
         complaintOptionFor(
@@ -276,6 +277,7 @@ fun complaintOptionsFor(categories: List<ComplaintCategory>): List<ComplaintOpti
             fallbackId = "blocked_crosswalk",
             fallbackTitle = "Blocked crosswalk",
             imageUri = "file:///android_asset/complaints/crosswalk.svg",
+            lottieAssetPath = "complaints/crosswalk.json",
             keywords = listOf("crosswalk")
         ),
         complaintOptionFor(

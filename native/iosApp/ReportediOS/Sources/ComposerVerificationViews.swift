@@ -14,6 +14,7 @@ import UIKit
 import WebKit
 
 extension ComposerScreen {
+    @ViewBuilder
     func verifyContent(isLandscape: Bool, availableSize: CGSize) -> some View {
         let selectedCandidate = viewModel.state.plateCandidates.first { $0.plate == viewModel.state.selectedPlateCandidate }
             ?? viewModel.state.plateCandidates.first

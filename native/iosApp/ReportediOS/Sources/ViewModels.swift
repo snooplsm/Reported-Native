@@ -508,7 +508,7 @@ final class ComposerViewModel: ObservableObject, UdfStore {
     }
 
     func chooseAddress(_ suggestion: ComposerState.AddressSuggestion) {
-        let previousLookupKey = vehicleLookupKey
+        let previousLookupKey = vehicleLookupCoordinator.currentLookupKey
         state.address = suggestion.label
         state.addressQuery = suggestion.label
         state.latitude = suggestion.latitude
@@ -524,7 +524,7 @@ final class ComposerViewModel: ObservableObject, UdfStore {
             state.validationErrors.plateRegion = nil
         }
         persistDraft()
-        if vehicleLookupKey != previousLookupKey {
+        if vehicleLookupCoordinator.currentLookupKey != previousLookupKey {
             vehicleLookupCoordinator.refresh()
         }
     }
@@ -571,7 +571,7 @@ final class ComposerViewModel: ObservableObject, UdfStore {
         notes: String? = nil,
         occurredAtIso: String? = nil
     ) {
-        let previousLookupKey = vehicleLookupKey
+        let previousLookupKey = vehicleLookupCoordinator.currentLookupKey
         if let plate {
             let normalizedPlate = Self.normalizedPlateInput(plate)
             if normalizedPlate != state.plate {
@@ -593,7 +593,7 @@ final class ComposerViewModel: ObservableObject, UdfStore {
         if let address, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.address = nil }
         if let occurredAtIso, !occurredAtIso.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { state.validationErrors.occurredAt = nil }
         persistDraft()
-        if vehicleLookupKey != previousLookupKey {
+        if vehicleLookupCoordinator.currentLookupKey != previousLookupKey {
             vehicleLookupCoordinator.refresh()
         }
     }

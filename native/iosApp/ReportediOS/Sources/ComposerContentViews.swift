@@ -33,10 +33,10 @@ extension ComposerScreen {
                             if isLandscape && showEmbeddedLandscapeToolbar {
                                 VStack(alignment: .leading, spacing: 10) {
                                     embeddedLandscapeToolbar
-                                    pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding)
+                                    pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding, availableHeight: geometry.size.height - verticalPadding * 2 - bottomPadding - (isLandscape && showEmbeddedLandscapeToolbar ? 54 : 0))
                                 }
                             } else {
-                                pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding)
+                                pickMediaContent(availableWidth: geometry.size.width - leadingPadding - trailingPadding, availableHeight: geometry.size.height - verticalPadding * 2 - bottomPadding - (isLandscape && showEmbeddedLandscapeToolbar ? 54 : 0))
                             }
                         case .verify:
                             verifyContent(isLandscape: isLandscape, availableSize: geometry.size)
@@ -91,8 +91,7 @@ extension ComposerScreen {
         ComplaintChooserSheet(
             title: "What kind of complaint is this?",
             options: complaintOptions,
-            selectedComplaintId: viewModel.state.selectedComplaintId,
-            activeAnimatedComplaintId: activeAnimatedComplaintId
+            selectedComplaintId: viewModel.state.selectedComplaintId
         ) { option in
             ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "pending_media")
             viewModel.onAction(.pendingComplaintConfirmed(option.id))
@@ -188,43 +187,37 @@ extension ComposerScreen {
         }
     }
 
-    func cycleComplaintAnimations() async {
-        let ids = animatedComplaintIds
-        guard !ids.isEmpty else { return }
-        var index = ids.firstIndex(of: activeAnimatedComplaintId ?? "") ?? 0
-        while !Task.isCancelled {
-            let nextId = ids[index]
-            await MainActor.run {
-                activeAnimatedComplaintId = nextId
-            }
-            let duration = complaintOptions.first { $0.id == nextId }?.animationDuration ?? 1.8
-            let boundedDuration = min(max(duration, 0.5), 8.0)
-            let nanoseconds = UInt64((boundedDuration * 1_000_000_000).rounded())
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            index = (index + 1) % ids.count
-        }
-    }
-
     @ViewBuilder
-    func pickMediaContent(availableWidth: CGFloat) -> some View {
+    func pickMediaContent(availableWidth: CGFloat, availableHeight: CGFloat) -> some View {
         let pickerMaxWidth = complaintPickerMaxWidth(for: availableWidth)
         let tileMetrics = complaintTileMetrics(for: availableWidth)
+        let columnCount = availableWidth >= 700 ? 3 : 2
+        let rowCount = CGFloat((complaintOptions.count + columnCount) / columnCount)
+        let gap: CGFloat = 10
+        let headerHeight: CGFloat = 82
+        let labelHeight: CGFloat = 30
+        let widthLimit = (pickerMaxWidth - gap * CGFloat(columnCount - 1)) / CGFloat(columnCount)
+        let heightLimit = (availableHeight - headerHeight - rowCount * labelHeight - gap * (rowCount - 1)) / rowCount
+        let tileSide = min(widthLimit, max(104, heightLimit))
+        let columns = Array(repeating: GridItem(.fixed(tileSide), spacing: gap, alignment: .top), count: columnCount)
         ScreenCard {
-            VStack(spacing: 12) {
-                Text("Upload Photo of Complaint")
-                    .font(.system(size: 30, weight: .bold))
+            VStack(spacing: 8) {
+                Text("Add Photo")
+                    .font(.system(size: 28, weight: .bold))
                     .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
                     .frame(maxWidth: .infinity)
-                Text("Pick a complaint to preselect it, or use Upload to choose after selecting media.")
-                    .font(.subheadline)
+                Text("Choose a complaint or add a photo.")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                LazyVGrid(columns: complaintPickerColumns(for: availableWidth), spacing: availableWidth >= 700 ? 18 : 10) {
+                LazyVGrid(columns: columns, spacing: gap) {
                     ForEach(complaintOptions) { option in
                         ComplaintMediaTile(
                             option: option,
-                            animate: option.id == activeAnimatedComplaintId,
+
                             showImage: viewModel.state.showComplaintImages,
                             imageHeight: tileMetrics.imageHeight,
                             minHeight: tileMetrics.minHeight,
@@ -475,5 +468,4 @@ extension ComposerScreen {
         }
     }
 
-    @ViewBuilder
 }

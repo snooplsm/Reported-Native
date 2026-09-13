@@ -246,7 +246,7 @@ import kotlin.math.sqrt
 internal fun ReportComposerStageContent(
     state: ComposerUiState,
     complaintOptions: List<ComplaintOption>,
-    activeAnimatedOptionIndex: Int,
+
     isAuthorized: Boolean,
     isKeyboardVisible: Boolean,
     isScreenLandscape: Boolean,
@@ -264,7 +264,7 @@ internal fun ReportComposerStageContent(
     onChooseMedia: (String?) -> Unit,
     onLaunchMediaPicker: () -> Unit,
     onClearRequested: () -> Unit,
-    onAdvanceAnimatedComplaint: (Int) -> Unit,
+
     onOpenComplaintChooser: (String) -> Unit,
     onOpenPlateChooser: () -> Unit,
     onPlateCandidateTapped: (PlateCandidate) -> Unit,
@@ -348,17 +348,13 @@ internal fun ReportComposerStageContent(
                                 onClear = { onClearRequested() }
                             )
                             Text(
-                                if (selectedComplaintOption == null) "What happened?" else "Upload Photo of Complaint",
+                                "Add Photo",
                                 style = MaterialTheme.typography.headlineMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Start
                             )
                             Text(
-                                if (selectedComplaintOption == null) {
-                                    "Choose a complaint type to pick a photo or video. We'll help verify the plate, time, and address next."
-                                } else {
-                                    "${selectedComplaintOption.title} selected. Pick a photo or video to continue."
-                                },
+                                "Choose a complaint or add a photo.",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth(),
@@ -408,11 +404,8 @@ internal fun ReportComposerStageContent(
                                             ComplaintTile(
                                                 option = option,
                                                 modifier = Modifier.weight(1f),
-                                                animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
+
                                                 showImage = state.showComplaintImages,
-                                                onAnimationFinished = {
-                                                    onAdvanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
-                                                },
                                                 onClick = {
                                                     ReportedAnalytics.logComplaintSelected(option.id, "pick_media")
                                                     onChooseMedia(option.id)
@@ -440,30 +433,27 @@ internal fun ReportComposerStageContent(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 28.dp),
+                        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         item {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                                    .padding(horizontal = 6.dp, vertical = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    if (selectedComplaintOption == null) "What happened?" else "Upload Photo of Complaint",
-                                    style = MaterialTheme.typography.headlineLarge,
+                                    "Add Photo",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
                                 Text(
-                                    if (selectedComplaintOption == null) {
-                                        "Choose a complaint type to pick a photo or video. We'll help verify the plate, time, and address next."
-                                    } else {
-                                        "${selectedComplaintOption.title} selected. Pick a photo or video to continue."
-                                    },
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    "Choose a complaint or add a photo.",
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth(),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -504,11 +494,8 @@ internal fun ReportComposerStageContent(
                                         ComplaintTile(
                                             option = option,
                                             modifier = Modifier.weight(1f),
-                                            animate = complaintOptions.indexOfFirst { it.id == option.id } == activeAnimatedOptionIndex,
+
                                             showImage = state.showComplaintImages,
-                                            onAnimationFinished = {
-                                                onAdvanceAnimatedComplaint(complaintOptions.indexOfFirst { it.id == option.id })
-                                            },
                                             onClick = {
                                                 ReportedAnalytics.logComplaintSelected(option.id, "pick_media")
                                                 onChooseMedia(option.id)

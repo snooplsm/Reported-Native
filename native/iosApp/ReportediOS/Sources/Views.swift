@@ -82,6 +82,7 @@ struct ComposerScreen: View {
     @State var showAddressSearchScreen = false
     @State var showPlateEntryScreen = false
     @State var showVoiceAssistSheet = false
+    @State var voiceAssistantMeasuredHeight: CGFloat = voiceAssistantCompactSheetHeight
     @State var voiceAssistSheetDetent: PresentationDetent = .height(voiceAssistantCompactSheetHeight)
     @State var showComplaintChooser = false
     @StateObject var voiceAudio = VoiceReportAudioController()
@@ -106,7 +107,7 @@ struct ComposerScreen: View {
     @State var videoScanPaused = false
     @State var videoScanGeneration = 0
     @State var videoPreviewScrubSeconds = 0.0
-    @State var activeAnimatedComplaintId: String?
+
     @State var showReportTutorial = false
     @State var reportTutorialChecked = false
     @State var tutorialScannerEnabled = true
@@ -122,7 +123,7 @@ struct ComposerScreen: View {
     func complaintPickerColumns(for width: CGFloat) -> [GridItem] {
         let spacing: CGFloat = width >= 700 ? 18 : 10
         let columnCount = 2
-        return Array(repeating: GridItem(.flexible(), spacing: spacing), count: columnCount)
+        return Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: .top), count: columnCount)
     }
 
     func complaintPickerMaxWidth(for width: CGFloat) -> CGFloat {
@@ -142,9 +143,6 @@ struct ComposerScreen: View {
 
     var complaintOptions: [ComplaintOption] {
         complaintOptionsFor(viewModel.state.complaintCategories)
-    }
-    var animatedComplaintIds: [String] {
-        complaintOptions.compactMap { $0.lottieName == nil ? nil : $0.id }
     }
     var primaryPlateSourceImage: UIImage? {
         guard let media = viewModel.state.primaryMedia, !media.isVideo else { return nil }
@@ -417,9 +415,6 @@ struct ComposerScreen: View {
             handledVoiceAssistRequest = token
             openVoiceAssistant()
         })
-        view = AnyView(view.task(id: animatedComplaintIds.joined(separator: "|")) {
-            await cycleComplaintAnimations()
-        })
         view = AnyView(view.modifier(ComposerPickerModifier(
             singlePickerPresented: $singlePickerPresented,
             multiPickerPresented: $multiPickerPresented,
@@ -469,8 +464,7 @@ struct ComposerScreen: View {
             ComplaintChooserSheet(
                 title: "What kind of complaint is this?",
                 options: complaintOptions,
-                selectedComplaintId: viewModel.state.selectedComplaintId,
-                activeAnimatedComplaintId: activeAnimatedComplaintId
+                selectedComplaintId: viewModel.state.selectedComplaintId
             ) { option in
                 ReportedAnalytics.logComplaintSelected(complaintId: option.id, surface: "verify")
                 viewModel.onAction(.selectedComplaintChanged(option.id))
@@ -892,7 +886,7 @@ struct ThemeChip: View {
     }
 }
 
-private func appPreferredColorScheme(for mode: AppThemeMode) -> ColorScheme? {
+func appPreferredColorScheme(for mode: AppThemeMode) -> ColorScheme? {
     switch mode {
     case .light:
         return .light

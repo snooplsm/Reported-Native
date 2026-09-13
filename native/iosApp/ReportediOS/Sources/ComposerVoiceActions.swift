@@ -279,6 +279,7 @@ extension ComposerScreen {
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .animation(.snappy, value: showVoiceAssistSheet)
             .animation(.snappy, value: voiceAssistSheetDetent)
+            .animation(.snappy, value: voiceAssistantMeasuredHeight)
         }
     }
 
@@ -328,18 +329,21 @@ extension ComposerScreen {
             onApply: { draft in
                 applyVoiceDraft(draft)
             },
-            onDismiss: dismissVoiceAssistant
+            onDismiss: dismissVoiceAssistant,
+            onContentHeightChange: { height in
+                if abs(voiceAssistantMeasuredHeight - height) > 1 {
+                    voiceAssistantMeasuredHeight = height
+                }
+            }
         )
     }
 
     func voiceAssistantOverlayHeight(for availableHeight: CGFloat) -> CGFloat {
         let desiredHeight: CGFloat
-        if voiceAssistSheetDetent == .large {
-            desiredHeight = availableHeight - 18
-        } else if isVoiceAssistSheetMinimized {
+        if isVoiceAssistSheetMinimized {
             desiredHeight = voiceAssistantMinimizedSheetHeight
         } else {
-            desiredHeight = voiceAssistantCompactSheetHeight
+            desiredHeight = voiceAssistantMeasuredHeight
         }
         let maximumHeight = max(voiceAssistantMinimizedSheetHeight, availableHeight - 6)
         return min(max(desiredHeight, voiceAssistantMinimizedSheetHeight), maximumHeight)

@@ -357,5 +357,3 @@ enum ComposerAction {
     case plateCorrectionKept
     case plateCorrectionDismissed
 }
-
-@MainActor

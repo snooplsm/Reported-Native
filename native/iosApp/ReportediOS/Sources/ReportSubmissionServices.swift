@@ -238,7 +238,7 @@ enum ParseMediaUploader {
     }
 
     private static func parseBaseUrl() -> String {
-        let fallback = ProcessInfo.processInfo.environment["REPORTED_PARSE_SERVER_URL"] ?? "https://parseapi.back4app.com"
+        let fallback = ParseSettings.value("REPORTED_PARSE_SERVER_URL")
         let raw = RemoteConfigOverrides.shared.parseServerUrl(fallback: fallback)
         let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if trimmed.hasSuffix("/parse") || trimmed.contains("parseapi.back4app.com") {
@@ -248,11 +248,11 @@ enum ParseMediaUploader {
     }
 
     private static func parseApplicationId() -> String {
-        ProcessInfo.processInfo.environment["REPORTED_PARSE_APPLICATION_ID"] ?? "jkAZF8ojV4vOGnhSBjdwiMWBKpWML5tM4SWGKgOV"
+        ParseSettings.value("REPORTED_PARSE_APPLICATION_ID")
     }
 
     private static func parseJavascriptKey() -> String {
-        ProcessInfo.processInfo.environment["REPORTED_PARSE_JAVASCRIPT_KEY"] ?? "LeBKOerWTXGBGRLE0yvg2bXa5RRv4e8PuC6INEFA"
+        ParseSettings.value("REPORTED_PARSE_JAVASCRIPT_KEY")
     }
 
     private struct UploadPayload {

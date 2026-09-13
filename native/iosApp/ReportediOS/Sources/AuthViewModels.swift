@@ -317,5 +317,3 @@ final class RegisterViewModel: ObservableObject, UdfStore {
         }
     }
 }
-
-@MainActor

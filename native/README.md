@@ -31,3 +31,24 @@ Then open `iosApp/ReportediOS.xcodeproj` in Xcode.
   - draft load/save through the shared KMP layer
 - Media capture/upload, geocoding/location, notifications, analytics, and ALPR-native integrations are still the next migration slice.
 - The UI is intentionally visually close to the Expo app, but not pixel-for-pixel parity yet.
+
+## Parse configuration
+
+Set these environment variables before running Gradle or `xcodebuild`:
+
+```bash
+export REPORTED_PARSE_SERVER_URL="https://your-parse-server.example"
+export REPORTED_PARSE_APPLICATION_ID="your-application-id"
+export REPORTED_PARSE_JAVASCRIPT_KEY="your-client-key"
+```
+
+For local development, both builds also read these names as `NAME=value` entries
+in ignored `native/local.properties`. Environment variables take precedence.
+Android additionally supports Gradle properties. Missing or blank settings fail
+the build. CI should supply all three environment variables.
+
+iOS generates `ParseConfig.plist` inside the built app; runtime environment
+variables can override it when launching from Xcode. After changing `project.yml`,
+run `xcodegen generate` in `native/iosApp`. Rebuild after changing configuration.
+The client credentials are still bundled in the apps; do not use a Parse master
+key here. Removing source literals does not remove previous Git history.

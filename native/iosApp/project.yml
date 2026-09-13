@@ -114,6 +114,9 @@ targets:
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-daemon
           touch "${DERIVED_FILE_DIR}/SharedCoreBuild.stamp"
     postBuildScripts:
+      - name: Configure Parse
+        script: /usr/bin/python3 "$SRCROOT/scripts/write-parse-config.py"
+        basedOnDependencyAnalysis: false
       - name: Normalize Embedded Framework Minimum OS
         outputFiles:
           - $(DERIVED_FILE_DIR)/NormalizeOnnxMinimumOS.stamp

@@ -13,6 +13,13 @@ import UniformTypeIdentifiers
 import UIKit
 import WebKit
 
+private struct VoiceAssistantContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct VoiceReportAssistantSheet: View {
     @ObservedObject var audio: VoiceReportAudioController
     let transcript: String
@@ -34,6 +41,7 @@ struct VoiceReportAssistantSheet: View {
     let onClear: () -> Void
     let onApply: (VoiceReportDraft) -> Void
     let onDismiss: () -> Void
+    var onContentHeightChange: (CGFloat) -> Void = { _ in }
     @State private var elapsedSeconds: TimeInterval = 0
     @State private var currentSourceFields: Set<VoiceDraftField> = []
     @State private var undoCurrentSourceFields: Set<VoiceDraftField>?
@@ -207,15 +215,24 @@ struct VoiceReportAssistantSheet: View {
                                 }
                             }
                         }
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: VoiceAssistantContentHeightKey.self, value: geometry.size.height)
+                            }
+                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 14)
-                    .padding(.bottom, 0)
+                    .padding(.bottom, 18)
                     .onChange(of: reviewContentKey) { _, key in
                         scrollToReviewContent(proxy: proxy, key: key)
                     }
                 }
             }
+        }
+        .onPreferenceChange(VoiceAssistantContentHeightKey.self) { height in
+            guard height > 0 else { return }
+            onContentHeightChange(height + 14 + 18 + voiceAssistantFloatingSheetBottomPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(.systemBackground))

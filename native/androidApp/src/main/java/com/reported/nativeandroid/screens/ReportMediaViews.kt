@@ -134,6 +134,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -173,6 +174,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.decode.SvgDecoder
 import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieConstants
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
@@ -246,109 +251,70 @@ import kotlin.math.sqrt
 internal fun ComplaintTile(
     option: ComplaintOption,
     modifier: Modifier = Modifier,
-    animate: Boolean = false,
     showImage: Boolean,
-    onAnimationFinished: () -> Unit = {},
     onClick: () -> Unit
 ) {
-    OutlinedCard(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant
-        )
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (showImage) {
-                ComplaintTileArt(
-                    option = option,
-                    animate = animate,
-                    onAnimationFinished = onAnimationFinished,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                )
-                Text(
-                    option.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = complaintTileTitleSize(option.title)
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            } else {
-                Text(
-                    option.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = complaintTileTitleSize(option.title)
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        if (showImage) {
+            ComplaintTileArt(
+                option = option,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+            )
         }
+        Text(
+            option.title,
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = complaintTileTitleSize(option.title)),
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            minLines = 1,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
 internal fun ComplaintTileArt(
     option: ComplaintOption,
-    animate: Boolean,
-    onAnimationFinished: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val shape = RoundedCornerShape(12.dp)
-    val isRanRedLightOrStopSign = option.isRanRedLightOrStopSign()
-    val artBackground = if (isRanRedLightOrStopSign) {
-        Color.Black
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
+    val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val artBackground = if (darkTheme) Color(0xFF252B33) else Color(0xFFE3E4DE)
     val artModifier = modifier
         .background(artBackground, shape)
         .clip(shape)
-    val lottieContentScale = if (isRanRedLightOrStopSign) ContentScale.Fit else ContentScale.Crop
+    val lottieContentScale = ContentScale.Fit
     if (option.lottieAssetPath != null) {
-        val composition by rememberLottieComposition(LottieCompositionSpec.Asset(option.lottieAssetPath))
-        val progress by animateLottieCompositionAsState(
-            composition = composition,
-            isPlaying = animate,
-            iterations = 1,
-            restartOnPlay = true
-        )
-        var notifiedFinished by remember(option.id, animate) { mutableStateOf(false) }
-        LaunchedEffect(animate, progress) {
-            if (!animate) {
-                notifiedFinished = false
-                return@LaunchedEffect
-            }
-            if (progress >= 0.999f && !notifiedFinished) {
-                notifiedFinished = true
-                onAnimationFinished()
-            }
+        val assetPath = if (darkTheme) option.lottieAssetPath.removeSuffix(".json") + "_dark.json" else option.lottieAssetPath
+        val composition by rememberLottieComposition(LottieCompositionSpec.Asset(assetPath))
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        var screenActive by remember(lifecycle) {
+            mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         }
+        DisposableEffect(lifecycle) {
+            val observer = LifecycleEventObserver { _, _ ->
+                screenActive = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            }
+            lifecycle.addObserver(observer)
+            onDispose { lifecycle.removeObserver(observer) }
+        }
+        val progress by animateLottieCompositionAsState(
+            composition,
+            isPlaying = screenActive,
+            iterations = LottieConstants.IterateForever,
+            restartOnPlay = false
+        )
         if (composition != null) {
             LottieAnimation(
                 composition = composition,
-                progress = { if (animate) progress else 0f },
+                progress = { progress },
                 modifier = artModifier,
                 contentScale = lottieContentScale,
                 alignment = Alignment.Center
@@ -380,63 +346,22 @@ internal fun UploadTile(
     showImage: Boolean,
     onClick: () -> Unit
 ) {
-    OutlinedCard(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-        )
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            if (showImage) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    ) {
-                        Icon(
-                            Icons.Outlined.AddPhotoAlternate,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .padding(18.dp)
-                                .size(34.dp)
-                        )
-                    }
-                }
-            } else {
-                Icon(
-                    Icons.Outlined.AddPhotoAlternate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-            Text(
-                "Add media",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
         }
+        Text("Add Photo", style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold, minLines = 1,
+            color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

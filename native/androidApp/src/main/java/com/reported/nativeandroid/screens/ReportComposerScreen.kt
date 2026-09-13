@@ -101,12 +101,6 @@ fun ReportComposerScreen(
     val complaintOptions = remember(state.complaintCategories) {
         complaintOptionsFor(state.complaintCategories)
     }
-    val animatedComplaintIndices = remember(complaintOptions) {
-        complaintOptions.mapIndexedNotNull { index, option -> index.takeIf { option.lottieAssetPath != null } }
-    }
-    var activeAnimatedOptionIndex by remember(animatedComplaintIndices) {
-        mutableIntStateOf(animatedComplaintIndices.firstOrNull() ?: -1)
-    }
     var pendingComplaintId by remember { mutableStateOf<String?>(null) }
     var pendingMultipleSelection by remember { mutableStateOf(false) }
     var pendingMediaForCurrentReport by remember { mutableStateOf(false) }
@@ -164,20 +158,6 @@ fun ReportComposerScreen(
             state.longitude != null ||
             state.detectingPlates ||
             state.plateCandidates.isNotEmpty()
-    }
-
-    fun advanceAnimatedComplaint(fromIndex: Int) {
-        if (animatedComplaintIndices.isEmpty() || activeAnimatedOptionIndex != fromIndex) return
-        val currentPosition = animatedComplaintIndices.indexOf(fromIndex).takeIf { it >= 0 } ?: 0
-        activeAnimatedOptionIndex = animatedComplaintIndices[(currentPosition + 1) % animatedComplaintIndices.size]
-    }
-
-    LaunchedEffect(animatedComplaintIndices) {
-        activeAnimatedOptionIndex = when {
-            animatedComplaintIndices.isEmpty() -> -1
-            activeAnimatedOptionIndex in animatedComplaintIndices -> activeAnimatedOptionIndex
-            else -> animatedComplaintIndices.first()
-        }
     }
 
     LaunchedEffect(Unit) {
@@ -756,7 +736,7 @@ fun ReportComposerScreen(
     ReportComposerOverlays(
         state = state,
         complaintOptions = complaintOptions,
-        activeAnimatedOptionIndex = activeAnimatedOptionIndex,
+
         showReportTutorial = showReportTutorial,
         tutorialScannerEnabled = tutorialScannerEnabled,
         tutorialNotificationsEnabled = tutorialNotificationsEnabled,
@@ -777,7 +757,7 @@ fun ReportComposerScreen(
         showAddressMap = showAddressMap,
         pendingPlateCandidate = pendingPlateCandidate,
         onAction = vm::onAction,
-        onAdvanceAnimatedComplaint = ::advanceAnimatedComplaint,
+
         onTutorialScannerEnabledChange = { tutorialScannerEnabled = it },
         onTutorialNotificationsEnabledChange = { tutorialNotificationsEnabled = it },
         onRequestMediaLocationPermission = {
@@ -837,7 +817,7 @@ fun ReportComposerScreen(
     ReportComposerStageContent(
         state = state,
         complaintOptions = complaintOptions,
-        activeAnimatedOptionIndex = activeAnimatedOptionIndex,
+
         isAuthorized = isAuthorized,
         isKeyboardVisible = isKeyboardVisible,
         isScreenLandscape = isScreenLandscape,
@@ -871,7 +851,7 @@ fun ReportComposerScreen(
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
         },
         onClearRequested = { showDiscardDialog = true },
-        onAdvanceAnimatedComplaint = ::advanceAnimatedComplaint,
+
         onOpenComplaintChooser = ::openComplaintChooser,
         onOpenPlateChooser = ::openPlateChooser,
         onPlateCandidateTapped = { pendingPlateCandidate = it },

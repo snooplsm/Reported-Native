@@ -318,5 +318,3 @@ final class ThemeViewModel: ObservableObject, UdfStore {
         }
     }
 }
-
-@MainActor
