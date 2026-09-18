@@ -4,6 +4,8 @@ kotlin = "2.4.20"
 comGoogleGmsGoogleServices = "4.5.0"
 comGoogleFirebaseCrashlytics = "3.0.8"
 composeBom = "2026.09.00"
+material3 = "1.5.0-alpha28"
+desugarJdkLibs = "2.1.5"
 coreKtx = "1.19.0"
 lifecycleRuntimeKtx = "2.11.0"
 lifecycleRuntimeCompose = "2.11.0"
@@ -54,7 +56,8 @@ credentialsPlayServicesAuth = { module = "androidx.credentials:credentials-play-
 workRuntimeKtx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
 lifecycleViewmodelCompose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 navigationCompose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
-material3 = { module = "androidx.compose.material3:material3" }
+material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+desugarJdkLibs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 materialIconsExtended = { module = "androidx.compose.material:material-icons-extended" }
 ui = { module = "androidx.compose.ui:ui" }
 uiToolingPreview = { module = "androidx.compose.ui:ui-tooling-preview" }

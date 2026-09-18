@@ -24,7 +24,12 @@ struct SettingsFeatureState {
     var autoReportComplaintThreshold = IOSMediaScannerSettings.defaultAutoReportConfidenceThreshold
 
     var confidenceThresholdSummary: String {
-        "Thresholds: plate \(autoReportPercent(autoReportPlateThreshold))+, state \(autoReportPercent(autoReportStateThreshold))+, infraction \(autoReportPercent(autoReportComplaintThreshold))+."
+        reportedLocalizedFormat(
+            "Thresholds: plate %@+, state %@+, infraction %@+.",
+            autoReportPercent(autoReportPlateThreshold),
+            autoReportPercent(autoReportStateThreshold),
+            autoReportPercent(autoReportComplaintThreshold)
+        )
     }
 }
 
@@ -353,10 +358,10 @@ struct ReportTutorialPage: View {
                 .frame(width: 70, height: 70)
                 .background(Color.reportedOrange.opacity(0.12))
                 .clipShape(Circle())
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
-            Text(bodyText)
+            Text(reportedLocalized(bodyText))
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -397,7 +402,7 @@ struct SettingsConfidenceThresholdSlider: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(title)
+                Text(reportedLocalized(title))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(autoReportPercent(value))
@@ -432,15 +437,15 @@ struct SettingsToggleRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(reportedLocalized(title))
                     .font(.subheadline.weight(.semibold))
-                Text(description)
+                Text(reportedLocalized(description))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            Toggle(title, isOn: $isOn)
+            Toggle(reportedLocalized(title), isOn: $isOn)
                 .labelsHidden()
                 .tint(Color.reportedOrange)
         }

@@ -111,7 +111,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -267,7 +267,7 @@ internal fun VoiceReportAssistantSheet(
     onDismiss: () -> Unit
 ) {
     val maxRecordingMillis = 29_900L
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
     val rowFields = remember(changeRows) { changeRows.map { it.field } }
     var currentSourceFields by remember { mutableStateOf<Set<VoiceDraftField>>(emptySet()) }
     var undoCurrentSourceFields by remember { mutableStateOf<Set<VoiceDraftField>?>(null) }

@@ -1,6 +1,8 @@
 package com.reported.nativeandroid.ai
 
 import android.content.Context
+import com.reported.nativeandroid.R
+import com.reported.nativeandroid.di.MessageResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -53,18 +55,19 @@ object ReportedAiModelStore {
             .apply()
     }
 
-    fun accelerationMessage(context: Context): String =
+    fun accelerationMessage(context: Context, messages: MessageResolver): String =
         when (accelerationStatus(context)) {
             AccelerationStatus.Accelerated ->
-                "Hardware acceleration is available for REPORTED AI on this device."
+                messages.resolve(R.string.reported_ai_acceleration_available)
             AccelerationStatus.CpuFallback ->
-                "Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly."
+                messages.resolve(R.string.reported_ai_acceleration_unavailable)
             AccelerationStatus.Unknown ->
-                "REPORTED AI will try hardware acceleration when supported. Unsupported devices may run slowly."
+                messages.resolve(R.string.reported_ai_acceleration_unknown)
         }
 
     suspend fun downloadModel(
         context: Context,
+        messages: MessageResolver,
         onProgress: suspend (downloadedBytes: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
@@ -75,7 +78,7 @@ object ReportedAiModelStore {
             val partialFile = File(modelsDir, "$DownloadFileName.part")
             if (partialFile.exists()) partialFile.delete()
             if (modelsDir.usableSpace in 1 until DownloadEstimatedBytes) {
-                error("Not enough free storage for REPORTED AI. It needs about $compactDownloadSizeLabel.")
+                error(messages.resolve(R.string.reported_ai_storage_required, compactDownloadSizeLabel))
             }
 
             val connection = (URL(DownloadUrl).openConnection() as HttpURLConnection).apply {
@@ -87,7 +90,7 @@ object ReportedAiModelStore {
             try {
                 val responseCode = connection.responseCode
                 if (responseCode !in 200..299) {
-                    error("Could not install REPORTED AI. Server returned HTTP $responseCode.")
+                    error(messages.resolve(R.string.reported_ai_server_error, responseCode))
                 }
                 val totalBytes = connection.contentLengthLong
                     .takeIf { it > 0L }
@@ -131,7 +134,7 @@ object ReportedAiModelStore {
                 partialFile.delete()
             }
             destinationFile.takeIf { it.isUsableModelFile() }
-                ?: error("REPORTED AI did not finish installing correctly.")
+                ?: error(messages.resolve(R.string.reported_ai_install_incomplete))
         }
     }
 

@@ -152,7 +152,7 @@ struct AuthToolbar: View {
 
     var body: some View {
         ZStack {
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(.title2.weight(.semibold))
             HStack {
                 if let onBack {

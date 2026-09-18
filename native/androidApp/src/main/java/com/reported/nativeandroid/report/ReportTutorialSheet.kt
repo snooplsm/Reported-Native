@@ -11,9 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.screens.PrimaryButton
 import kotlinx.coroutines.launch
 
@@ -33,7 +35,10 @@ fun NewReportTutorialSheet(
     val lastPage = pageCount - 1
     val pagerState = rememberPagerState(pageCount = { pageCount })
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+    )
 
     fun advance() {
         when (pagerState.currentPage) {
@@ -66,18 +71,18 @@ fun NewReportTutorialSheet(
             ) { page ->
                 when (page) {
                     0 -> TutorialPage(
-                        title = "Report faster",
-                        body = "Reported can fill in plate, time, and address details from your photo or video so you spend less time typing.",
+                        title = stringResource(R.string.tutorial_report_faster_title),
+                        body = stringResource(R.string.tutorial_report_faster_body),
                         icon = "1"
                     )
                     1 -> TutorialPage(
-                        title = "Photo time and location",
-                        body = "Media/location access lets us read image metadata for the location and time of incident. We use it only to prefill your report.",
+                        title = stringResource(R.string.tutorial_metadata_title),
+                        body = stringResource(R.string.tutorial_metadata_body),
                         icon = "2"
                     )
                     2 -> TutorialPage(
-                        title = "Reported AI + Auto-Report",
-                        body = "Reported AI can draft fields from photos. Auto-Report can scan recent photos, group likely blocked bike lane or crosswalk reports, and keeps you in review before submit.",
+                        title = stringResource(R.string.tutorial_ai_title),
+                        body = stringResource(R.string.tutorial_ai_body),
                         icon = "3"
                     )
                     else -> TutorialScannerPage(
@@ -110,10 +115,14 @@ fun NewReportTutorialSheet(
                     onClick = onSkip,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.action_skip))
                 }
                 PrimaryButton(
-                    text = if (pagerState.currentPage == lastPage) "Done" else "Continue",
+                    text = if (pagerState.currentPage == lastPage) {
+                        stringResource(R.string.action_done)
+                    } else {
+                        stringResource(R.string.action_continue)
+                    },
                     onClick = ::advance,
                     modifier = Modifier.weight(1f)
                 )
@@ -177,12 +186,12 @@ private fun TutorialScannerPage(
                     .size(38.dp)
             )
         }
-        Text("Private media checks", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.tutorial_private_media_title), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(
             if (scannerAvailable) {
-                "Reported can scan media you choose or share with the app. Background library scanning is only available in debug builds for testing and is off by default."
+                stringResource(R.string.tutorial_scanner_available_body)
             } else {
-                "Reported uses the privacy-preserving picker and Share sheet. Choose or share a photo when you want us to scan it; we do not keep broad access to your photo library."
+                stringResource(R.string.tutorial_picker_body)
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

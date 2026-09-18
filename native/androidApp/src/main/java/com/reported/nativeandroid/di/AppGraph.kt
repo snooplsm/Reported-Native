@@ -12,8 +12,12 @@ object AppGraph {
     lateinit var applicationContext: Context
         private set
 
+    lateinit var messages: MessageResolver
+        private set
+
     fun initialize(context: Context) {
         applicationContext = context.applicationContext
+        messages = AndroidMessageResolver(applicationContext.resources)
     }
 
     val shared by lazy {

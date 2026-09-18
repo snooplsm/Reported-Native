@@ -240,11 +240,23 @@ private fun concatenateMp4Segments(sourceFiles: List<File>, outputFile: File) {
                     val sampleSize = extractor.readSampleData(buffer, 0)
                     if (sampleSize < 0) break
                     val sampleTimeUs = extractor.sampleTime.takeIf { it >= 0L } ?: break
+                    val sampleFlags = extractor.sampleFlags
+                    val bufferFlags =
+                        (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+                            MediaCodec.BUFFER_FLAG_KEY_FRAME
+                        } else {
+                            0
+                        }) or
+                            (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME != 0) {
+                                MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+                            } else {
+                                0
+                            })
                     bufferInfo.set(
                         0,
                         sampleSize,
                         presentationOffsetUs + sampleTimeUs,
-                        extractor.sampleFlags
+                        bufferFlags
                     )
                     muxer.writeSampleData(muxerTrack, buffer, bufferInfo)
                     lastSampleTimeUs = sampleTimeUs

@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.reported.nativeandroid.auth
 
 import android.net.Uri
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -87,9 +90,9 @@ fun SplashScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                PrimaryButton(text = "Login", onClick = onLogin)
-                SecondaryButton(text = "Register", onClick = onRegister)
-                TertiaryButton(text = "Skip", onClick = onSkip, textColor = Color.White)
+                PrimaryButton(text = stringResource(R.string.auth_login), onClick = onLogin)
+                SecondaryButton(text = stringResource(R.string.auth_register), onClick = onRegister)
+                TertiaryButton(text = stringResource(R.string.action_skip), onClick = onSkip, textColor = Color.White)
             }
         }
     }
@@ -143,14 +146,15 @@ fun LoginScreen(
     val backAction = onBack ?: onDismiss
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val googleSignInRequiresScreen = stringResource(R.string.auth_google_requires_screen)
     state.passwordResetMessage?.let { message ->
         AlertDialog(
             onDismissRequest = { vm.onAction(LoginAction.PasswordResetMessageDismissed) },
-            title = { Text("Check your email") },
+            title = { Text(stringResource(R.string.auth_check_email)) },
             text = { Text(message) },
             confirmButton = {
                 TextButton(onClick = { vm.onAction(LoginAction.PasswordResetMessageDismissed) }) {
-                    Text("OK")
+                    Text(stringResource(R.string.action_ok))
                 }
             }
         )
@@ -158,7 +162,7 @@ fun LoginScreen(
     fun startGoogleSignIn() {
         val activity = context.findActivity()
         if (activity == null) {
-            vm.onAction(LoginAction.SocialSignInFailed("Google", "Google sign-in needs an active screen."))
+            vm.onAction(LoginAction.SocialSignInFailed("Google", googleSignInRequiresScreen))
             return
         }
         scope.launch {
@@ -179,7 +183,7 @@ fun LoginScreen(
     }
 
     AuthScreenScaffold(
-        title = "Login",
+        title = stringResource(R.string.auth_login),
         onBack = backAction,
         modal = modal
     ) {
@@ -187,16 +191,16 @@ fun LoginScreen(
             SignInWithGoogleButton(onClick = ::startGoogleSignIn, enabled = !state.loading)
             SignInWithAppleButton(onClick = ::startAppleSignIn, enabled = !state.loading)
             AuthDivider()
-            ReportedField("Email", state.email, onValueChange = { vm.onAction(LoginAction.EmailChanged(it)) })
-            ReportedPasswordField("Password", state.password, onValueChange = { vm.onAction(LoginAction.PasswordChanged(it)) })
-            PrimaryButton("Login", onClick = { vm.onAction(LoginAction.LoginPressed(onSuccess)) }, enabled = !state.loading)
+            ReportedField(stringResource(R.string.field_email), state.email, onValueChange = { vm.onAction(LoginAction.EmailChanged(it)) })
+            ReportedPasswordField(stringResource(R.string.field_password), state.password, onValueChange = { vm.onAction(LoginAction.PasswordChanged(it)) })
+            PrimaryButton(stringResource(R.string.auth_login), onClick = { vm.onAction(LoginAction.LoginPressed(onSuccess)) }, enabled = !state.loading)
             Text(
-                text = "Forgot Password?",
+                text = stringResource(R.string.auth_forgot_password),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable { vm.onAction(LoginAction.ForgotPasswordPressed) }
             )
             Text(
-                text = "Need an account? Register",
+                text = stringResource(R.string.auth_need_account),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(onClick = onRegister)
             )
@@ -217,10 +221,11 @@ fun RegisterScreen(
     val backAction = onBack ?: onDismiss
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val googleSignInRequiresScreen = stringResource(R.string.auth_google_requires_screen)
     fun startGoogleSignIn() {
         val activity = context.findActivity()
         if (activity == null) {
-            vm.onAction(RegisterAction.SocialSignInFailed("Google", "Google sign-in needs an active screen."))
+            vm.onAction(RegisterAction.SocialSignInFailed("Google", googleSignInRequiresScreen))
             return
         }
         scope.launch {
@@ -241,7 +246,7 @@ fun RegisterScreen(
     }
 
     AuthScreenScaffold(
-        title = "Register",
+        title = stringResource(R.string.auth_register),
         onBack = backAction,
         modal = modal
     ) {
@@ -249,11 +254,11 @@ fun RegisterScreen(
             SignInWithGoogleButton(onClick = ::startGoogleSignIn, enabled = !state.loading)
             SignInWithAppleButton(onClick = ::startAppleSignIn, enabled = !state.loading)
             AuthDivider()
-            ReportedField("First Name", state.firstName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(firstName = it)) })
-            ReportedField("Last Name", state.lastName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(lastName = it)) })
-            ReportedField("Phone", state.phone, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(phone = it)) })
-            ReportedField("Email", state.email, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(email = it)) })
-            ReportedPasswordField("Password", state.password, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(password = it)) })
+            ReportedField(stringResource(R.string.field_first_name), state.firstName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(firstName = it)) })
+            ReportedField(stringResource(R.string.field_last_name), state.lastName, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(lastName = it)) })
+            ReportedField(stringResource(R.string.field_phone), state.phone, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(phone = it)) })
+            ReportedField(stringResource(R.string.field_email), state.email, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(email = it)) })
+            ReportedPasswordField(stringResource(R.string.field_password), state.password, onValueChange = { vm.onAction(RegisterAction.FieldsChanged(password = it)) })
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -265,14 +270,14 @@ fun RegisterScreen(
                     onCheckedChange = { vm.onAction(RegisterAction.FieldsChanged(testify = it)) }
                 )
                 Text(
-                    text = "I'm willing to testify by phone if needed.",
+                    text = stringResource(R.string.testify_by_phone),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            PrimaryButton("Create Account", onClick = { vm.onAction(RegisterAction.RegisterPressed(onSuccess)) }, enabled = !state.loading)
+            PrimaryButton(stringResource(R.string.auth_create_account), onClick = { vm.onAction(RegisterAction.RegisterPressed(onSuccess)) }, enabled = !state.loading)
             Text(
-                text = "Already registered? Login",
+                text = stringResource(R.string.auth_already_registered),
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(onClick = onLogin)
             )
@@ -310,7 +315,7 @@ private fun AuthScreenScaffold(
             navigationIcon = {
                 if (onBack != null) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 }
             }
@@ -351,7 +356,7 @@ private fun AuthDivider() {
     ) {
         HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
         Text(
-            text = "or",
+            text = stringResource(R.string.auth_or),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -365,7 +370,7 @@ private fun SignInWithGoogleButton(
     enabled: Boolean
 ) {
     ProviderSignInButton(
-        text = "Sign in with Google",
+        text = stringResource(R.string.auth_sign_in_google),
         onClick = onClick,
         enabled = enabled,
         containerColor = Color.White,
@@ -388,7 +393,7 @@ private fun SignInWithAppleButton(
     enabled: Boolean
 ) {
     ProviderSignInButton(
-        text = "Sign in with Apple",
+        text = stringResource(R.string.auth_sign_in_apple),
         onClick = onClick,
         enabled = enabled,
         containerColor = Color.Black,
