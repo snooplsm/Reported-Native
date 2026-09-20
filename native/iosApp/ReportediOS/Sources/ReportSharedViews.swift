@@ -25,7 +25,7 @@ struct ScreenCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let title {
-                Text(title)
+                Text(reportedLocalized(title))
                     .font(.largeTitle.bold())
             }
             content
@@ -38,7 +38,7 @@ struct MessageView: View {
     let text: String
 
     var body: some View {
-        Text(text)
+        Text(reportedLocalized(text))
             .font(.callout)
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,7 +381,7 @@ struct ReportedFieldLabel: View {
     var isError = false
 
     var body: some View {
-        Text(title)
+        Text(reportedLocalized(title))
             .font(.headline)
             .foregroundStyle(isError ? Color.red : Color.reportedOrange)
             .lineLimit(1)
@@ -443,7 +443,7 @@ struct InputField: View {
         if fieldMinHeight != nil {
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text(title)
+                    Text(reportedLocalized(title))
                         .foregroundStyle(Color(.placeholderText))
                         .allowsHitTesting(false)
                 }
@@ -458,7 +458,7 @@ struct InputField: View {
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
         } else {
-            TextField(title, text: $text)
+            TextField(reportedLocalized(title), text: $text)
                 .disabled(disabled)
                 .keyboardType(keyboardType)
                 .textContentType(textContentType)
@@ -488,9 +488,9 @@ struct PasswordInputField: View {
             HStack(spacing: 8) {
                 Group {
                     if isPasswordVisible {
-                        TextField(title, text: $text)
+                        TextField(reportedLocalized(title), text: $text)
                     } else {
-                        SecureField(title, text: $text)
+                        SecureField(reportedLocalized(title), text: $text)
                     }
                 }
                 .disabled(disabled)

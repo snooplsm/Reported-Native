@@ -1,3 +1,155 @@
 <resources>
     <string name="app_name">Reported</string>
+
+    <!-- Common actions and fields -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_done">Done</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_ok">OK</string>
+    <string name="action_open">Open</string>
+    <string name="action_save">Save</string>
+    <string name="action_selected">Selected</string>
+    <string name="action_skip">Skip</string>
+    <string name="action_submit">Submit</string>
+    <string name="action_use">Use</string>
+    <string name="action_view">View</string>
+    <string name="field_address">Address</string>
+    <string name="field_email">Email</string>
+    <string name="field_first_name">First Name</string>
+    <string name="field_infraction">Infraction</string>
+    <string name="field_last_name">Last Name</string>
+    <string name="field_license_plate">License plate</string>
+    <string name="field_password">Password</string>
+    <string name="field_phone">Phone</string>
+    <string name="field_plate">Plate</string>
+    <string name="field_state">State</string>
+
+    <!-- Authentication -->
+    <string name="auth_login">Login</string>
+    <string name="auth_register">Register</string>
+    <string name="auth_create_account">Create Account</string>
+    <string name="auth_check_email">Check your email</string>
+    <string name="auth_forgot_password">Forgot Password?</string>
+    <string name="auth_need_account">Need an account? Register</string>
+    <string name="auth_already_registered">Already registered? Login</string>
+    <string name="auth_or">or</string>
+    <string name="auth_sign_in_google">Sign in with Google</string>
+    <string name="auth_sign_in_apple">Sign in with Apple</string>
+    <string name="auth_google_requires_screen">Google sign-in needs an active screen.</string>
+    <string name="testify_by_phone">I’m willing to testify by phone if needed.</string>
+
+    <!-- App shell -->
+    <string name="nav_new_report">New Report</string>
+    <string name="nav_auto_report">Auto-Report</string>
+    <string name="nav_live">Live</string>
+    <string name="nav_my_reports">My Reports</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_settings">Settings</string>
+    <string name="menu_open">Open menu</string>
+    <string name="system_notice_dismiss">Dismiss system notice</string>
+    <string name="logout">Log Out</string>
+    <string name="logout_title">Log out?</string>
+    <string name="logout_confirmation">Are you sure you want to log out?</string>
+    <string name="coffee_title">Buy us coffee!!</string>
+    <string name="coffee_message">Reported is free to use, but we do have infrastructure costs.</string>
+    <string name="coffee_open">Open Buy Me a Coffee</string>
+    <string name="coffee_accessibility">Why support Reported</string>
+    <string name="coffee_nav_label">Buy us\ncoffee!!</string>
+
+    <!-- Profile and settings -->
+    <string name="profile_sign_in_title">Profile</string>
+    <string name="profile_sign_in_message">Sign in to edit your profile and manage your account.</string>
+    <string name="profile_edit">Edit Profile</string>
+    <string name="profile_logout">Logout</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="reported_ai">Reported AI</string>
+    <string name="reported_ai_installing">Installing</string>
+    <string name="reported_ai_installed">Installed</string>
+    <string name="reported_ai_installed_size">Installed (%1$s)</string>
+    <string name="reported_ai_not_installed">Not installed</string>
+    <string name="reported_ai_delete">Delete REPORTED AI</string>
+    <string name="reported_ai_install_size">Install REPORTED AI (%1$s)</string>
+    <string name="reported_ai_acceleration_available">Hardware acceleration is available for REPORTED AI on this device.</string>
+    <string name="reported_ai_acceleration_unavailable">Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly.</string>
+    <string name="reported_ai_acceleration_unknown">REPORTED AI will try hardware acceleration when supported. Unsupported devices may run slowly.</string>
+    <string name="reported_ai_storage_required">Not enough free storage for REPORTED AI. It needs about %1$s.</string>
+    <string name="reported_ai_server_error">Could not install REPORTED AI. Server returned HTTP %1$d.</string>
+    <string name="reported_ai_install_incomplete">REPORTED AI did not finish installing correctly.</string>
+    <string name="reported_ai_installed_message">REPORTED AI installed.</string>
+    <string name="reported_ai_install_error">Could not install REPORTED AI.</string>
+    <string name="reported_ai_deleted_message">REPORTED AI deleted.</string>
+    <string name="reported_ai_not_installed_message">No REPORTED AI model was installed.</string>
+    <string name="settings_confidence_thresholds">Confidence thresholds</string>
+    <string name="settings_threshold_summary">Thresholds: plate %1$s+, state %2$s+, infraction %3$s+.</string>
+    <string name="settings_trained_with_reported">Trained with Reported data.</string>
+    <string name="settings_view_roboflow">View Roboflow project</string>
+    <string name="settings_reset_thresholds">Reset thresholds</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_short">Notify you when a high-confidence infraction is detected.</string>
+    <string name="settings_notifications_long">Allow Reported to notify you when a high-confidence infraction is detected.</string>
+    <string name="settings_offline_processing">Offline processing</string>
+    <string name="settings_offline_processing_title">Allow offline photo processing to detect violations</string>
+    <string name="settings_offline_processing_short">Process new photos locally. Nothing uploads unless you submit.</string>
+    <string name="settings_offline_processing_long">Process new photos on this device only. Nothing uploads unless you choose to submit.</string>
+    <string name="settings_scanner">Scanner</string>
+    <string name="settings_media_scanner">Media scanner</string>
+    <string name="settings_media_scanner_description">Watch for new photos and queue a local scan when offline processing is allowed.</string>
+
+    <!-- Report flow -->
+    <string name="report_submitted">Report Submitted</string>
+    <string name="report_choose_state">Choose State</string>
+    <string name="report_possible_plates">Possible plates</string>
+    <string name="report_no_plate_candidates">No plate candidates found in the image.</string>
+    <string name="report_clear_plate">Clear plate</string>
+    <string name="report_confidence_percent">%1$d%% confidence</string>
+    <string name="report_use_image_address">Use address from image</string>
+    <string name="report_no_image_address">No image address found</string>
+    <string name="report_no_gps_metadata">This photo or video did not include usable GPS metadata.</string>
+
+    <!-- Reports -->
+    <string name="reports_sign_in_message">Sign in to see your history and keep track of the reports you’ve submitted.</string>
+    <string name="reports_delete_title">Delete report?</string>
+    <string name="reports_delete_message">This pending report for %1$s will be removed.</string>
+    <string name="reports_search_filters">Search Filters</string>
+    <string name="reports_error">Error</string>
+    <string name="reports_results">Results</string>
+    <string name="reports_delete_action">Delete report</string>
+    <string name="reports_deleting">Deleting…</string>
+    <string name="reports_intro">Choose how you want to pull your reports. We will not load the list until you ask.</string>
+    <string name="reports_search">Search</string>
+    <string name="reports_list">List</string>
+    <string name="reports_start_date">Start Date</string>
+    <string name="reports_end_date">End Date</string>
+    <string name="reports_search_action">Search reports</string>
+    <string name="reports_unknown_error">Unknown error</string>
+    <string name="reports_none_found">No reports found.</string>
+    <plurals name="reports_count">
+        <item quantity="one">%1$d report</item>
+        <item quantity="other">%1$d reports</item>
+    </plurals>
+    <string name="reports_unknown_address">Unknown address</string>
+    <string name="reports_no_plate">No plate captured</string>
+    <string name="reports_pending">Pending</string>
+    <string name="reports_notes">Notes: %1$s</string>
+    <string name="reports_photo">Report photo</string>
+    <string name="reports_video_number">Video %1$d</string>
+    <string name="reports_no_media">No media attached.</string>
+
+    <!-- New-report tutorial -->
+    <string name="tutorial_report_faster_title">Report faster</string>
+    <string name="tutorial_report_faster_body">Reported can fill in plate, time, and address details from your photo or video so you spend less time typing.</string>
+    <string name="tutorial_metadata_title">Photo time and location</string>
+    <string name="tutorial_metadata_body">Media/location access lets us read image metadata for the location and time of incident. We use it only to prefill your report.</string>
+    <string name="tutorial_ai_title">Reported AI + Auto-Report</string>
+    <string name="tutorial_ai_body">Reported AI can draft fields from photos. Auto-Report can scan recent photos, group likely blocked bike lane or crosswalk reports, and keeps you in review before submit.</string>
+    <string name="tutorial_private_media_title">Private media checks</string>
+    <string name="tutorial_scanner_available_body">Reported can scan media you choose or share with the app. Background library scanning is only available in debug builds for testing and is off by default.</string>
+    <string name="tutorial_picker_body">Reported uses the privacy-preserving picker and Share sheet. Choose or share a photo when you want us to scan it; we do not keep broad access to your photo library.</string>
 </resources>

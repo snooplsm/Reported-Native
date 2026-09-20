@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -125,6 +126,8 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
     var afterAuthAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val systemDark = isSystemInDarkTheme()
     val context = LocalContext.current
+    val reportSubmittedMessage = stringResource(R.string.report_submitted)
+    val viewActionLabel = stringResource(R.string.action_view)
 
     LaunchedEffect(Unit) {
         sessionViewModel.onAction(SessionAction.Load)
@@ -147,16 +150,16 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
         if (showLogoutConfirmation) {
             AlertDialog(
                 onDismissRequest = { showLogoutConfirmation = false },
-                title = { Text("Log out?") },
-                text = { Text("Are you sure you want to log out?") },
+                title = { Text(stringResource(R.string.logout_title)) },
+                text = { Text(stringResource(R.string.logout_confirmation)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showLogoutConfirmation = false
                         sessionViewModel.onAction(SessionAction.Logout)
-                    }) { Text("Log Out") }
+                    }) { Text(stringResource(R.string.logout)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showLogoutConfirmation = false }) { Text("Cancel") }
+                    TextButton(onClick = { showLogoutConfirmation = false }) { Text(stringResource(R.string.action_cancel)) }
                 }
             )
         }
@@ -309,8 +312,8 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                             onReportSubmitted = { objectId ->
                                                 scope.launch {
                                                     val result = snackbarHostState.showSnackbar(
-                                                        message = "Report Submitted",
-                                                        actionLabel = "View",
+                                                        message = reportSubmittedMessage,
+                                                        actionLabel = viewActionLabel,
                                                         withDismissAction = true,
                                                         duration = SnackbarDuration.Long
                                                     )
@@ -335,7 +338,7 @@ fun ReportedAndroidApp(sessionViewModel: SessionViewModel = viewModel()) {
                                     isAuthorized = isAuthorized,
                                     onRequireLogin = { authOverlay = AuthOverlayDestination.Login },
                                     onOpenMenu = onOpenMenu,
-                                    title = "Auto-Report",
+                                    title = stringResource(R.string.nav_auto_report),
                                     autoReportMode = true
                                 )
                             }
@@ -508,7 +511,7 @@ private fun SystemNoticeBanner(
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.Outlined.Close,
-                    contentDescription = "Dismiss system notice",
+                    contentDescription = stringResource(R.string.system_notice_dismiss),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -608,8 +611,8 @@ private fun LeftGliderNavRail(
     if (showCoffeeInfo) {
         AlertDialog(
             onDismissRequest = { showCoffeeInfo = false },
-            title = { Text("Buy us coffee!!") },
-            text = { Text("Reported is free to use, but we do have infrastructure costs.") },
+            title = { Text(stringResource(R.string.coffee_title)) },
+            text = { Text(stringResource(R.string.coffee_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -619,12 +622,12 @@ private fun LeftGliderNavRail(
                         closeDrawer()
                     }
                 ) {
-                    Text("Open Buy Me a Coffee")
+                    Text(stringResource(R.string.coffee_open))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCoffeeInfo = false }) {
-                    Text("OK")
+                    Text(stringResource(R.string.action_ok))
                 }
             }
         )
@@ -645,6 +648,7 @@ private fun LeftGliderNavRail(
         ) {
             items.forEach { item ->
                 val selected = item.route == selectedTab.route
+                val localizedLabel = item.localizedLabel()
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -671,11 +675,11 @@ private fun LeftGliderNavRail(
                     }
                     Icon(
                         imageVector = image,
-                        contentDescription = item.label,
+                        contentDescription = localizedLabel,
                         tint = if (selected) androidx.compose.material3.MaterialTheme.colorScheme.primary else androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = item.label,
+                        text = localizedLabel,
                         color = if (selected) androidx.compose.material3.MaterialTheme.colorScheme.primary else androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                         style = androidx.compose.material3.MaterialTheme.typography.labelMedium
                     )
@@ -695,7 +699,7 @@ private fun LeftGliderNavRail(
             }
             if (onLogout != null) {
                 TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                    Text("Log Out")
+                    Text(stringResource(R.string.logout))
                 }
             }
             Box(
@@ -723,7 +727,7 @@ private fun LeftGliderNavRail(
                         modifier = Modifier.size(28.dp)
                     )
                     Text(
-                        text = "Buy us\ncoffee!!",
+                        text = stringResource(R.string.coffee_nav_label),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
@@ -737,7 +741,7 @@ private fun LeftGliderNavRail(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Info,
-                        contentDescription = "Why support Reported",
+                        contentDescription = stringResource(R.string.coffee_accessibility),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -754,11 +758,21 @@ fun ShellMenuIcon(tint: androidx.compose.ui.graphics.Color = androidx.compose.ma
     if (painter.state is coil.compose.AsyncImagePainter.State.Success) {
         androidx.compose.foundation.Image(
             painter = painter,
-            contentDescription = "Open menu",
+            contentDescription = stringResource(R.string.menu_open),
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier.size(28.dp).clip(androidx.compose.foundation.shape.CircleShape)
         )
     } else {
-        Icon(Icons.Outlined.Menu, contentDescription = "Open menu", tint = tint)
+        Icon(Icons.Outlined.Menu, contentDescription = stringResource(R.string.menu_open), tint = tint)
     }
+}
+
+@Composable
+private fun TabDestination.localizedLabel(): String = when (this) {
+    TabDestination.Report -> stringResource(R.string.nav_new_report)
+    TabDestination.AutoReport -> stringResource(R.string.nav_auto_report)
+    TabDestination.Live -> stringResource(R.string.nav_live)
+    TabDestination.Reports -> stringResource(R.string.nav_my_reports)
+    TabDestination.Profile -> stringResource(R.string.nav_profile)
+    TabDestination.Settings -> stringResource(R.string.nav_settings)
 }
