@@ -15,8 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.app.ProfileAction
 import com.reported.nativeandroid.app.ProfileViewModel
 import com.reported.nativeandroid.media.AutoReportThresholds
@@ -40,8 +42,8 @@ fun ProfileScreen(
 ) {
     if (!isAuthorized) {
         LoginRequiredScreen(
-            title = "Profile",
-            message = "Sign in to edit your profile and manage your account.",
+            title = stringResource(R.string.profile_sign_in_title),
+            message = stringResource(R.string.profile_sign_in_message),
             onLogin = onRequireLogin
         )
         return
@@ -58,7 +60,7 @@ fun ProfileScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         CenterAlignedTopAppBar(
-            title = { Text("Profile") },
+            title = { Text(stringResource(R.string.nav_profile)) },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
@@ -89,14 +91,14 @@ fun ProfileScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             ReportedField(
-                                "First Name",
+                                stringResource(R.string.field_first_name),
                                 state.firstName,
                                 { vm.onAction(ProfileAction.FieldsChanged(firstName = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
                             ReportedField(
-                                "Last Name",
+                                stringResource(R.string.field_last_name),
                                 state.lastName,
                                 { vm.onAction(ProfileAction.FieldsChanged(lastName = it)) },
                                 modifier = Modifier.weight(1f),
@@ -108,14 +110,14 @@ fun ProfileScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             ReportedField(
-                                "Phone",
+                                stringResource(R.string.field_phone),
                                 state.phone,
                                 { vm.onAction(ProfileAction.FieldsChanged(phone = it)) },
                                 modifier = Modifier.weight(1f),
                                 enabled = state.editing
                             )
                             ReportedField(
-                                "Email",
+                                stringResource(R.string.field_email),
                                 state.email,
                                 { vm.onAction(ProfileAction.FieldsChanged(email = it)) },
                                 modifier = Modifier.weight(1f),
@@ -123,10 +125,10 @@ fun ProfileScreen(
                             )
                         }
                     } else {
-                        ReportedField("First Name", state.firstName, { vm.onAction(ProfileAction.FieldsChanged(firstName = it)) }, enabled = state.editing)
-                        ReportedField("Last Name", state.lastName, { vm.onAction(ProfileAction.FieldsChanged(lastName = it)) }, enabled = state.editing)
-                        ReportedField("Phone", state.phone, { vm.onAction(ProfileAction.FieldsChanged(phone = it)) }, enabled = state.editing)
-                        ReportedField("Email", state.email, { vm.onAction(ProfileAction.FieldsChanged(email = it)) }, enabled = state.editing)
+                        ReportedField(stringResource(R.string.field_first_name), state.firstName, { vm.onAction(ProfileAction.FieldsChanged(firstName = it)) }, enabled = state.editing)
+                        ReportedField(stringResource(R.string.field_last_name), state.lastName, { vm.onAction(ProfileAction.FieldsChanged(lastName = it)) }, enabled = state.editing)
+                        ReportedField(stringResource(R.string.field_phone), state.phone, { vm.onAction(ProfileAction.FieldsChanged(phone = it)) }, enabled = state.editing)
+                        ReportedField(stringResource(R.string.field_email), state.email, { vm.onAction(ProfileAction.FieldsChanged(email = it)) }, enabled = state.editing)
                     }
                     Row(
                         modifier = Modifier
@@ -140,15 +142,15 @@ fun ProfileScreen(
                             onCheckedChange = { vm.onAction(ProfileAction.FieldsChanged(testify = it)) },
                             enabled = state.editing
                         )
-                        Text("I'm willing to testify by phone if needed.")
+                        Text(stringResource(R.string.testify_by_phone))
                     }
                     if (state.editing) {
-                        PrimaryButton("Save", onClick = { vm.onAction(ProfileAction.SavePressed()) }, enabled = !state.loading)
+                        PrimaryButton(stringResource(R.string.action_save), onClick = { vm.onAction(ProfileAction.SavePressed()) }, enabled = !state.loading)
                     } else {
-                        PrimaryButton("Edit Profile", onClick = { vm.onAction(ProfileAction.ToggleEditing) })
+                        PrimaryButton(stringResource(R.string.profile_edit), onClick = { vm.onAction(ProfileAction.ToggleEditing) })
                     }
                     Text(
-                        text = "Logout",
+                        text = stringResource(R.string.profile_logout),
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable(onClick = onLogout)
                     )
@@ -200,7 +202,7 @@ fun SettingsScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         CenterAlignedTopAppBar(
-            title = { Text("Settings") },
+            title = { Text(stringResource(R.string.nav_settings)) },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
@@ -225,16 +227,16 @@ fun SettingsScreen(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        "Appearance",
+                        stringResource(R.string.settings_appearance),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     ComplaintChipGroup(
                         selectedIds = listOf(state.themeMode.name),
                         options = listOf(
-                            AppThemeMode.SYSTEM.name to "System",
-                            AppThemeMode.LIGHT.name to "Light",
-                            AppThemeMode.DARK.name to "Dark"
+                            AppThemeMode.SYSTEM.name to stringResource(R.string.theme_system),
+                            AppThemeMode.LIGHT.name to stringResource(R.string.theme_light),
+                            AppThemeMode.DARK.name to stringResource(R.string.theme_dark)
                         ),
                         onToggle = {
                             val mode = AppThemeMode.valueOf(it)
@@ -244,7 +246,7 @@ fun SettingsScreen(
                     )
 
                     Text(
-                        "Reported AI",
+                        stringResource(R.string.reported_ai),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -259,9 +261,11 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             val statusText = when {
-                                settingsState.reportedAiDownloading -> "Installing"
-                                settingsState.reportedAiInstalled -> "Installed${settingsState.reportedAiModelSize?.let { " ($it)" }.orEmpty()}"
-                                else -> "Not installed"
+                                settingsState.reportedAiDownloading -> stringResource(R.string.reported_ai_installing)
+                                settingsState.reportedAiInstalled && settingsState.reportedAiModelSize != null ->
+                                    stringResource(R.string.reported_ai_installed_size, settingsState.reportedAiModelSize!!)
+                                settingsState.reportedAiInstalled -> stringResource(R.string.reported_ai_installed)
+                                else -> stringResource(R.string.reported_ai_not_installed)
                             }
                             Text(statusText, style = MaterialTheme.typography.titleMedium)
                             Text(
@@ -290,11 +294,11 @@ fun SettingsScreen(
                                     enabled = !settingsState.reportedAiDownloading,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Delete REPORTED AI")
+                                    Text(stringResource(R.string.reported_ai_delete))
                                 }
                             } else {
                                 PrimaryButton(
-                                    text = "Install REPORTED AI (${settingsState.reportedAiDownloadSizeLabel})",
+                                    text = stringResource(R.string.reported_ai_install_size, settingsState.reportedAiDownloadSizeLabel),
                                     onClick = { settingsViewModel.onAction(SettingsAction.InstallReportedAi) },
                                     enabled = !settingsState.reportedAiDownloading
                                 )
@@ -303,7 +307,7 @@ fun SettingsScreen(
                     }
 
                     Text(
-                        "Auto-Report",
+                        stringResource(R.string.nav_auto_report),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -317,46 +321,51 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text("Confidence thresholds", style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.settings_confidence_thresholds), style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Thresholds: plate ${AutoReportThresholds.percent(settingsState.autoReportPlateThreshold)}+, state ${AutoReportThresholds.percent(settingsState.autoReportStateThreshold)}+, infraction ${AutoReportThresholds.percent(settingsState.autoReportComplaintThreshold)}+.",
+                                stringResource(
+                                    R.string.settings_threshold_summary,
+                                    AutoReportThresholds.percent(settingsState.autoReportPlateThreshold),
+                                    AutoReportThresholds.percent(settingsState.autoReportStateThreshold),
+                                    AutoReportThresholds.percent(settingsState.autoReportComplaintThreshold)
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                "Trained with Reported data.",
+                                stringResource(R.string.settings_trained_with_reported),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             TextButton(onClick = { settingsViewModel.onAction(SettingsAction.RoboflowProjectPressed) }) {
-                                Text("View Roboflow project")
+                                Text(stringResource(R.string.settings_view_roboflow))
                             }
                             SettingsThresholdSlider(
-                                title = "Plate",
+                                title = stringResource(R.string.field_plate),
                                 value = settingsState.autoReportPlateThreshold,
                                 onValueChange = { settingsViewModel.onAction(SettingsAction.PlateThresholdChanged(it)) }
                             )
                             SettingsThresholdSlider(
-                                title = "State",
+                                title = stringResource(R.string.field_state),
                                 value = settingsState.autoReportStateThreshold,
                                 onValueChange = { settingsViewModel.onAction(SettingsAction.StateThresholdChanged(it)) }
                             )
                             SettingsThresholdSlider(
-                                title = "Infraction",
+                                title = stringResource(R.string.field_infraction),
                                 value = settingsState.autoReportComplaintThreshold,
                                 onValueChange = { settingsViewModel.onAction(SettingsAction.ComplaintThresholdChanged(it)) }
                             )
                             TextButton(
                                 onClick = { settingsViewModel.onAction(SettingsAction.ResetThresholds) }
                             ) {
-                                Text("Reset thresholds")
+                                Text(stringResource(R.string.settings_reset_thresholds))
                             }
                         }
                     }
 
                     if (settingsState.backgroundScanningSupported) {
                         Text(
-                            "Scanner",
+                            stringResource(R.string.settings_scanner),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -366,15 +375,15 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 SettingsSwitchRow(
-                                    title = "Notifications",
-                                    description = "Notify you when a high-confidence infraction is detected.",
+                                    title = stringResource(R.string.settings_notifications),
+                                    description = stringResource(R.string.settings_notifications_short),
                                     checked = settingsState.notificationsEnabled,
                                     onCheckedChange = { settingsViewModel.onAction(SettingsAction.NotificationsChanged(it)) },
                                     modifier = Modifier.weight(1f)
                                 )
                                 SettingsSwitchRow(
-                                    title = "Offline processing",
-                                    description = "Process new photos locally. Nothing uploads unless you submit.",
+                                    title = stringResource(R.string.settings_offline_processing),
+                                    description = stringResource(R.string.settings_offline_processing_short),
                                     checked = settingsState.offlineProcessingEnabled,
                                     onCheckedChange = { settingsViewModel.onAction(SettingsAction.OfflineProcessingChanged(it)) },
                                     modifier = Modifier.weight(1f)
@@ -382,21 +391,21 @@ fun SettingsScreen(
                             }
                         } else {
                             SettingsSwitchRow(
-                                title = "Notifications",
-                                description = "Allow Reported to notify you when a high-confidence infraction is detected.",
+                                title = stringResource(R.string.settings_notifications),
+                                description = stringResource(R.string.settings_notifications_long),
                                 checked = settingsState.notificationsEnabled,
                                 onCheckedChange = { settingsViewModel.onAction(SettingsAction.NotificationsChanged(it)) }
                             )
                             SettingsSwitchRow(
-                                title = "Allow offline photo processing to detect violations",
-                                description = "Process new photos on this device only. Nothing uploads unless you choose to submit.",
+                                title = stringResource(R.string.settings_offline_processing_title),
+                                description = stringResource(R.string.settings_offline_processing_long),
                                 checked = settingsState.offlineProcessingEnabled,
                                 onCheckedChange = { settingsViewModel.onAction(SettingsAction.OfflineProcessingChanged(it)) }
                             )
                         }
                         SettingsSwitchRow(
-                            title = "Media scanner",
-                            description = "Watch for new photos and queue a local scan when offline processing is allowed.",
+                            title = stringResource(R.string.settings_media_scanner),
+                            description = stringResource(R.string.settings_media_scanner_description),
                             checked = settingsState.mediaScannerEnabled,
                             onCheckedChange = { settingsViewModel.onAction(SettingsAction.MediaScannerChanged(it)) }
                         )
@@ -413,6 +422,11 @@ private fun SettingsThresholdSlider(
     value: Float,
     onValueChange: (Float) -> Unit
 ) {
+    val valueRange = AutoReportThresholds.MIN_CONFIDENCE..AutoReportThresholds.MAX_CONFIDENCE
+    val sliderState = remember(valueRange) {
+        SliderState(value = value, steps = 48, trackRange = valueRange)
+    }
+    sliderState.value = value
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -427,13 +441,11 @@ private fun SettingsThresholdSlider(
             )
         }
         Slider(
-            value = value,
+            state = sliderState,
             onValueChange = { next ->
                 val rounded = (next * 100f).roundToInt() / 100f
                 onValueChange(rounded.coerceIn(AutoReportThresholds.MIN_CONFIDENCE, AutoReportThresholds.MAX_CONFIDENCE))
-            },
-            valueRange = AutoReportThresholds.MIN_CONFIDENCE..AutoReportThresholds.MAX_CONFIDENCE,
-            steps = 48
+            }
         )
     }
 }

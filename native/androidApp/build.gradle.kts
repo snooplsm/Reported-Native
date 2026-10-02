@@ -155,6 +155,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -189,6 +190,7 @@ gradle.taskGraph.whenReady {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugarJdkLibs)
     implementation(project(":shared"))
 
     val composeBom = platform(libs.composeBom)

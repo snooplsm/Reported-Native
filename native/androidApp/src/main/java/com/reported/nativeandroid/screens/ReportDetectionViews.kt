@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.reported.nativeandroid.screens
 
 import android.Manifest
@@ -102,6 +104,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -111,7 +114,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -262,7 +265,10 @@ internal fun DetectionProgressDialog(
     onMinimize: () -> Unit
 ) {
     val isVideoScan = videoUri != null
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+    )
     ModalBottomSheet(
         onDismissRequest = onMinimize,
         sheetState = sheetState,
@@ -369,11 +375,16 @@ internal fun VideoScanControls(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        val sliderRange = 0f..videoDurationMs.coerceAtLeast(1L).toFloat()
+        val sliderValue = frameTimeMs.toFloat().coerceIn(sliderRange)
+        val sliderState = remember(sliderRange) {
+            SliderState(value = sliderValue, trackRange = sliderRange)
+        }
+        sliderState.value = sliderValue
         Slider(
-            value = frameTimeMs.toFloat().coerceIn(0f, videoDurationMs.coerceAtLeast(1L).toFloat()),
+            state = sliderState,
             onValueChange = { value -> onSeekFrame(value.toLong()) },
             enabled = paused && videoDurationMs > 0L,
-            valueRange = 0f..videoDurationMs.coerceAtLeast(1L).toFloat(),
             modifier = Modifier.weight(1f)
         )
         Text(

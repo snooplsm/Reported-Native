@@ -101,6 +101,13 @@ object DetectedInfractionNotifications {
             Log.d(TAG, "Not showing needs-edit notification: scanner notifications are disabled")
             return
         }
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.d(TAG, "Not showing needs-edit notification: POST_NOTIFICATIONS is not granted")
+            return
+        }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_reported)
             .setContentTitle("Review detected report")

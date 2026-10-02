@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "Reported";
+"NSMicrophoneUsageDescription" = "Reported usa el micrófono cuando eliges dictar los campos del reporte.";
+"NSPhotoLibraryAddUsageDescription" = "Reported puede guardar temporalmente el contenido generado mientras prepara un envío.";
+"NSPhotoLibraryUsageDescription" = "Reported usa tu fototeca para adjuntar contenido, leer la hora y ubicación de las fotos y ejecutar la detección opcional de infracciones en el dispositivo.";

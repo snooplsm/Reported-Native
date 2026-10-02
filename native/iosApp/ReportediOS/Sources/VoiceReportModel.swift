@@ -172,7 +172,9 @@ enum OnDeviceGemmaVoiceDraftEngine {
     static var accelerationMessage: String {
         supportsFastOnDeviceAI ? "" : slowAccelerationMessage
     }
-    private static let slowAccelerationMessage = "Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly."
+    private static var slowAccelerationMessage: String {
+        reportedLocalized("Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly.")
+    }
     private static let modelDownloadFileName = "gemma-4-E2B-it.litertlm"
     private static let modelDownloadEstimatedBytes: Int64 = 2_590_000_000
     private static let modelDownloadMinimumBytes: Int64 = 512 * 1024 * 1024
@@ -253,12 +255,12 @@ enum OnDeviceGemmaVoiceDraftEngine {
     }
 
     static var settingsStatusText: String {
-        guard let modelURL = resolveModelURL() else { return "Not installed" }
+        guard let modelURL = resolveModelURL() else { return reportedLocalized("Not installed") }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: modelURL.path),
               let size = attributes[.size] as? NSNumber else {
-            return "Installed"
+            return reportedLocalized("Installed")
         }
-        return "Installed (\(formatModelBytes(size.int64Value)))"
+        return reportedLocalizedFormat("Installed (%@)", formatModelBytes(size.int64Value))
     }
 
     static func downloadModel(onProgress: @escaping (Int64, Int64) -> Void) async throws {
@@ -279,7 +281,7 @@ enum OnDeviceGemmaVoiceDraftEngine {
             try? FileManager.default.removeItem(at: destinationURL)
             try FileManager.default.moveItem(at: downloadedURL, to: destinationURL)
             guard usableModelFile(at: destinationURL) else {
-                throw VoiceReportGemmaError.message("REPORTED AI did not finish installing correctly.")
+                throw VoiceReportGemmaError.message(reportedLocalized("REPORTED AI did not finish installing correctly."))
             }
         } catch {
             try? FileManager.default.removeItem(at: partialURL)
@@ -301,7 +303,12 @@ enum OnDeviceGemmaVoiceDraftEngine {
                 throw VoiceReportGemmaError.message("The recording was too short to process.")
             }
             guard let modelURL = resolveModelURL() else {
-                throw VoiceReportGemmaError.message("REPORTED AI is not installed. Install REPORTED AI (\(installSizeLabel(from: modelDownloadSizeLabel))) before voice drafting can run.")
+                throw VoiceReportGemmaError.message(
+                    reportedLocalizedFormat(
+                        "REPORTED AI is not installed. Install REPORTED AI (%@) before voice drafting can run.",
+                        installSizeLabel(from: modelDownloadSizeLabel)
+                    )
+                )
             }
             let prompt = buildVoiceReportGemmaPrompt(
                 complaintOptions: complaintOptions,

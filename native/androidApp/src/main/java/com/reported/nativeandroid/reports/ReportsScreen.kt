@@ -17,10 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.app.ReportsMode
 import com.reported.nativeandroid.app.ReportsAction
 import com.reported.nativeandroid.app.ReportsViewModel
@@ -38,6 +41,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.FormatStyle
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -52,7 +56,7 @@ fun ReportsScreen(
     if (!isAuthorized) {
         LoginRequiredScreen(
             title = "",
-            message = "Sign in to see your history and keep track of the reports you've submitted.",
+            message = stringResource(R.string.reports_sign_in_message),
             onLogin = onRequireLogin
         )
         return
@@ -89,9 +93,14 @@ fun ReportsScreen(
         pendingDeleteReport?.let { report ->
             AlertDialog(
                 onDismissRequest = { pendingDeleteReport = null },
-                title = { Text("Delete report?") },
+                title = { Text(stringResource(R.string.reports_delete_title)) },
                 text = {
-                    Text("This pending report for ${listOf(report.plateRegion, report.plate).filter { it.isNotBlank() }.joinToString(" ")} will be removed.")
+                    Text(
+                        stringResource(
+                            R.string.reports_delete_message,
+                            listOf(report.plateRegion, report.plate).filter { it.isNotBlank() }.joinToString(" ")
+                        )
+                    )
                 },
                 confirmButton = {
                     TextButton(
@@ -100,19 +109,19 @@ fun ReportsScreen(
                             pendingDeleteReport = null
                         }
                     ) {
-                        Text("Delete")
+                        Text(stringResource(R.string.action_delete))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingDeleteReport = null }) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.action_cancel))
                     }
                 }
             )
         }
 
         CenterAlignedTopAppBar(
-            title = { Text("My Reports") },
+            title = { Text(stringResource(R.string.nav_my_reports)) },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent,
@@ -136,7 +145,7 @@ fun ReportsScreen(
             item {
                 ScreenSection {
                     Text(
-                        "Choose how you want to pull your reports. We will not load the list until you ask.",
+                        stringResource(R.string.reports_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -145,12 +154,12 @@ fun ReportsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         SecondaryButton(
-                            "Search",
+                            stringResource(R.string.reports_search),
                             onClick = { vm.onAction(ReportsAction.SearchChosen) },
                             modifier = Modifier.weight(1f)
                         )
                         PrimaryButton(
-                            "List",
+                            stringResource(R.string.reports_list),
                             onClick = { vm.onAction(ReportsAction.ListChosen) },
                             modifier = Modifier.weight(1f)
                         )
@@ -160,26 +169,26 @@ fun ReportsScreen(
 
             if (state.mode == ReportsMode.SEARCH) {
                 item {
-                    ScreenSection(title = "Search Filters") {
+                    ScreenSection(title = stringResource(R.string.reports_search_filters)) {
                         ReportedField(
-                            label = "License plate",
+                            label = stringResource(R.string.field_license_plate),
                             value = state.licenseQuery,
                             onValueChange = { vm.onAction(ReportsAction.SearchFieldsChanged(license = it)) }
                         )
                         OccurredAtField(
-                            label = "Start Date",
+                            label = stringResource(R.string.reports_start_date),
                             isoValue = state.startDate,
                             onValueSelected = { vm.onAction(ReportsAction.SearchFieldsChanged(startDate = it)) },
                             onClear = { vm.onAction(ReportsAction.SearchFieldsChanged(startDate = "")) }
                         )
                         OccurredAtField(
-                            label = "End Date",
+                            label = stringResource(R.string.reports_end_date),
                             isoValue = state.endDate,
                             onValueSelected = { vm.onAction(ReportsAction.SearchFieldsChanged(endDate = it)) },
                             onClear = { vm.onAction(ReportsAction.SearchFieldsChanged(endDate = "")) }
                         )
                         PrimaryButton(
-                            "Search reports",
+                            stringResource(R.string.reports_search_action),
                             onClick = { vm.onAction(ReportsAction.SearchPressed) },
                             enabled = !state.loading
                         )
@@ -189,8 +198,8 @@ fun ReportsScreen(
 
             if (state.error != null) {
                 item {
-                    ScreenSection(title = "Error") {
-                        MessageCard(state.error ?: "Unknown error")
+                    ScreenSection(title = stringResource(R.string.reports_error)) {
+                        MessageCard(state.error ?: stringResource(R.string.reports_unknown_error))
                     }
                 }
             }
@@ -208,9 +217,13 @@ fun ReportsScreen(
                 }
             } else if (state.mode != null) {
                 item {
-                    ScreenSection(title = "Results") {
+                    ScreenSection(title = stringResource(R.string.reports_results)) {
                         Text(
-                            if (state.reports.isEmpty()) "No reports found." else "${state.reports.size} reports",
+                            if (state.reports.isEmpty()) {
+                                stringResource(R.string.reports_none_found)
+                            } else {
+                                pluralStringResource(R.plurals.reports_count, state.reports.size, state.reports.size)
+                            },
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
@@ -243,17 +256,17 @@ fun ReportsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    report.street.ifBlank { "Unknown address" },
+                                    report.street.ifBlank { stringResource(R.string.reports_unknown_address) },
                                     style = MaterialTheme.typography.titleMedium
                                 )
                                 Text(
                                     listOf(report.plate, report.plateRegion).filter { it.isNotBlank() }.joinToString(" - ")
-                                        .ifBlank { "No plate captured" },
+                                        .ifBlank { stringResource(R.string.reports_no_plate) },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Text(
-                                report.status.ifBlank { "Pending" },
+                                report.status.ifBlank { stringResource(R.string.reports_pending) },
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelLarge
                             )
@@ -274,7 +287,7 @@ fun ReportsScreen(
                             }
                             if (detail.notes.isNotBlank()) {
                                 Text(
-                                    "Notes: ${detail.notes}",
+                                    stringResource(R.string.reports_notes, detail.notes),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -289,7 +302,7 @@ fun ReportsScreen(
                                                 .data(url)
                                                 .crossfade(true)
                                                 .build(),
-                                            contentDescription = "Report photo",
+                                            contentDescription = stringResource(R.string.reports_photo),
                                             modifier = Modifier
                                                 .size(112.dp)
                                                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)),
@@ -302,7 +315,7 @@ fun ReportsScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     videoUrls.forEachIndexed { index, _ ->
                                         Text(
-                                            "Video ${index + 1}",
+                                            stringResource(R.string.reports_video_number, index + 1),
                                             style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -311,7 +324,7 @@ fun ReportsScreen(
                             }
                             if (mediaUrls.isEmpty() && videoUrls.isEmpty() && report.objectId !in state.detailLoadingIds) {
                                 Text(
-                                    "No media attached.",
+                                    stringResource(R.string.reports_no_media),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -322,7 +335,10 @@ fun ReportsScreen(
                                     onClick = { pendingDeleteReport = report },
                                     enabled = !isDeleting
                                 ) {
-                                    Text(if (isDeleting) "Deleting..." else "Delete report")
+                                    Text(
+                                        if (isDeleting) stringResource(R.string.reports_deleting)
+                                        else stringResource(R.string.reports_delete_action)
+                                    )
                                 }
                             }
                         }
@@ -348,7 +364,7 @@ fun ReportsScreen(
 private fun String.toReportDateTimeDisplay(): String {
     if (isBlank()) return ""
     val zoneId = ZoneId.systemDefault()
-    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy 'at' h:mm a")
+    val formatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
     return try {
         OffsetDateTime.parse(this).atZoneSameInstant(zoneId).format(formatter)
     } catch (_: DateTimeParseException) {

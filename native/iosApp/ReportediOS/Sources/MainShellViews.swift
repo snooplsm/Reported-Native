@@ -22,11 +22,11 @@ enum MainShellDestination: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .report: return "Report"
-        case .autoReport: return "Auto-Report"
-        case .reports: return "My Reports"
-        case .profile: return "Profile"
-        case .settings: return "Settings"
+        case .report: return reportedLocalized("Report")
+        case .autoReport: return reportedLocalized("Auto-Report")
+        case .reports: return reportedLocalized("My Reports")
+        case .profile: return reportedLocalized("Profile")
+        case .settings: return reportedLocalized("Settings")
         }
     }
 
@@ -37,6 +37,16 @@ enum MainShellDestination: Int, CaseIterable {
         case .reports: return "list.bullet.rectangle"
         case .profile: return "person.crop.circle"
         case .settings: return "gearshape"
+        }
+    }
+
+    var analyticsName: String {
+        switch self {
+        case .report: return "Report"
+        case .autoReport: return "Auto-Report"
+        case .reports: return "My Reports"
+        case .profile: return "Profile"
+        case .settings: return "Settings"
         }
     }
 }
@@ -88,10 +98,10 @@ struct MainShellView: View {
             Text("Are you sure you want to log out?")
         }
         .onAppear {
-            logScreenView(selection.title)
+            logScreenView(selection.analyticsName)
         }
         .onChange(of: selection) { _, destination in
-            logScreenView(destination.title)
+            logScreenView(destination.analyticsName)
         }
         .onChange(of: sharedMediaImportId) { _, importId in
             if importId != nil {
@@ -411,7 +421,7 @@ struct MainShellToolbar: View {
 
             Spacer()
 
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(.system(size: compact ? 20 : 24, weight: .regular))
                 .lineLimit(1)
                 .overlay(alignment: .trailing) {
@@ -513,7 +523,7 @@ struct ReportedAiModelState {
     var isDownloading = false
     var progress: Double?
     var message: String?
-    var statusText = "Not installed"
+    var statusText = reportedLocalized("Not installed")
     var accelerationMessage = ""
 }
 
@@ -575,7 +585,9 @@ final class ReportedAiModelDownloadController: ObservableObject, UdfStore {
                 let installed = OnDeviceGemmaVoiceDraftEngine.isModelInstalled()
                 state = Self.currentState(
                     progress: installed ? 1 : nil,
-                    message: installed ? "REPORTED AI installed." : "REPORTED AI did not finish installing."
+                    message: installed
+                        ? reportedLocalized("REPORTED AI installed.")
+                        : reportedLocalized("REPORTED AI did not finish installing.")
                 )
             } catch {
                 state = Self.currentState(message: error.localizedDescription)
@@ -640,13 +652,13 @@ struct ReportedAiInstallPanel: View {
                 if let progress = controller.state.progress {
                     ProgressView(value: progress)
                         .progressViewStyle(.linear)
-                    Text("Installing REPORTED AI… \(Int(progress * 100))%")
+                    Text(reportedLocalizedFormat("Installing REPORTED AI… %d%%", Int(progress * 100)))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
                     HStack(spacing: 10) {
                         ProgressView()
-                        Text("Installing REPORTED AI…")
+                        Text(reportedLocalized("Installing REPORTED AI…"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -661,7 +673,10 @@ struct ReportedAiInstallPanel: View {
                     controller.onAction(.install)
                 } label: {
                     Label(
-                        "Install REPORTED AI (\(OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel))",
+                        reportedLocalizedFormat(
+                            "Install REPORTED AI (%@)",
+                            OnDeviceGemmaVoiceDraftEngine.modelDownloadSizeLabel
+                        ),
                         systemImage: "arrow.down.circle.fill"
                     )
                     .font(.subheadline.weight(.semibold))

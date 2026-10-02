@@ -13,6 +13,14 @@ import UniformTypeIdentifiers
 import UIKit
 import WebKit
 
+func reportedLocalized(_ key: String) -> String {
+    NSLocalizedString(key, tableName: nil, bundle: .main, value: key, comment: "")
+}
+
+func reportedLocalizedFormat(_ key: String, _ arguments: CVarArg...) -> String {
+    String(format: reportedLocalized(key), locale: Locale.current, arguments: arguments)
+}
+
 @MainActor
 func dismissActiveKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -752,7 +760,7 @@ struct ProviderSignInButton: View {
                         .frame(width: 20, height: 20)
                         .frame(width: 24, height: 24)
                 }
-                Text(title)
+                Text(reportedLocalized(title))
                     .font(.headline)
                     .frame(maxWidth: .infinity)
             }
@@ -820,7 +828,7 @@ struct PrimaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(size.font)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -838,7 +846,7 @@ struct SecondaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(size.font)
                 .foregroundStyle(Color.reportedOrange)
                 .frame(maxWidth: .infinity)
@@ -856,7 +864,7 @@ struct TertiaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(reportedLocalized(title))
                 .foregroundStyle(foregroundColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
@@ -872,7 +880,7 @@ struct ThemeChip: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(.subheadline)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -906,7 +914,7 @@ struct ComplaintChip: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Text(reportedLocalized(title))
                 .font(.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)

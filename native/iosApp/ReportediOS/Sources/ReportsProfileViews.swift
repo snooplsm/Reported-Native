@@ -61,7 +61,12 @@ struct ReportsScreen: View {
                     pendingDeleteReport = nil
                 }
             } message: { report in
-                Text("This pending report for \([report.plateRegion, report.plate].filter { !$0.isEmpty }.joined(separator: " ")) will be removed.")
+                Text(
+                    reportedLocalizedFormat(
+                        "This pending report for %@ will be removed.",
+                        [report.plateRegion, report.plate].filter { !$0.isEmpty }.joined(separator: " ")
+                    )
+                )
             }
         }
     }
@@ -199,7 +204,14 @@ struct ReportsResultsSection: View {
             ProgressView()
         } else if viewModel.mode != nil {
             Section("Results") {
-                Text(viewModel.reports.isEmpty ? "No reports found." : "\(viewModel.reports.count) reports")
+                Text(
+                    viewModel.reports.isEmpty
+                        ? reportedLocalized("No reports found.")
+                        : reportedLocalizedFormat(
+                            viewModel.reports.count == 1 ? "%d report" : "%d reports",
+                            viewModel.reports.count
+                        )
+                )
             }
         }
     }
@@ -223,7 +235,11 @@ struct ReportSummaryRow: View {
             if isExpanded {
                 reportDetail
                 if report.canDelete {
-                    Button(isDeleting ? "Deleting..." : "Delete report", role: .destructive, action: onDelete)
+                    Button(
+                        isDeleting ? reportedLocalized("Deleting...") : reportedLocalized("Delete report"),
+                        role: .destructive,
+                        action: onDelete
+                    )
                         .disabled(isDeleting)
                 }
             }
@@ -235,13 +251,13 @@ struct ReportSummaryRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(report.street.isEmpty ? "Unknown address" : report.street)
+                    Text(report.street.isEmpty ? reportedLocalized("Unknown address") : report.street)
                         .font(.headline)
                     Text([report.plate, report.plateRegion].filter { !$0.isEmpty }.joined(separator: " - "))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(report.status.isEmpty ? "Pending" : report.status)
+                Text(report.status.isEmpty ? reportedLocalized("Pending") : report.status)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.reportedOrange)
             }
@@ -263,7 +279,7 @@ struct ReportSummaryRow: View {
                 Text(detail.description_).font(.subheadline)
             }
             if !detail.notes.isEmpty {
-                Text("Notes: \(detail.notes)")
+                Text(reportedLocalizedFormat("Notes: %@", detail.notes))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -314,7 +330,7 @@ struct ReportMediaStrip: View {
                 }
             }
             ForEach(Array(videoUrls.enumerated()), id: \.offset) { index, _ in
-                Text("Video \(index + 1)")
+                Text(reportedLocalizedFormat("Video %d", index + 1))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.reportedOrange)
             }

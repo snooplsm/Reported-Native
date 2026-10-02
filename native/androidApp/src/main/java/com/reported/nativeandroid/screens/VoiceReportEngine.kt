@@ -192,6 +192,8 @@ import com.reported.nativeandroid.app.SubmissionStage
 import com.reported.nativeandroid.app.isPhiladelphiaSubmission
 import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.ai.ReportedAiModelStore
+import com.reported.nativeandroid.di.AppGraph
+import com.reported.nativeandroid.di.MessageResolver
 import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
@@ -394,8 +396,9 @@ internal object OnDeviceGemmaVoiceDraftEngine {
 
     suspend fun downloadModel(
         context: Context,
+        messages: MessageResolver = AppGraph.messages,
         onProgress: suspend (downloadedBytes: Long, totalBytes: Long) -> Unit
-    ): Result<File> = ReportedAiModelStore.downloadModel(context, onProgress)
+    ): Result<File> = ReportedAiModelStore.downloadModel(context, messages, onProgress)
 
     suspend fun generateDraft(
         context: Context,

@@ -1,0 +1,188 @@
+/* Common */
+"Add Photo" = "Añadir foto";
+"Address" = "Dirección";
+"AM" = "a. m.";
+"Appearance" = "Apariencia";
+"Back" = "Atrás";
+"Cancel" = "Cancelar";
+"Clear" = "Borrar";
+"Close" = "Cerrar";
+"Continue" = "Continuar";
+"Day" = "Día";
+"Delete" = "Eliminar";
+"Done" = "Listo";
+"Edit" = "Editar";
+"Email" = "Correo electrónico";
+"First Name" = "Nombre";
+"Hour" = "Hora";
+"Infraction" = "Infracción";
+"Last Name" = "Apellido";
+"Light" = "Claro";
+"Dark" = "Oscuro";
+"Media" = "Fotos y videos";
+"Minimize" = "Minimizar";
+"Minute" = "Minuto";
+"Month" = "Mes";
+"OK" = "Aceptar";
+"Open" = "Abrir";
+"or" = "o";
+"Password" = "Contraseña";
+"Phone" = "Teléfono";
+"Plate" = "Placa";
+"PM" = "p. m.";
+"Save" = "Guardar";
+"Selected" = "Seleccionada";
+"Show Map" = "Mostrar mapa";
+"Skip" = "Omitir";
+"State" = "Estado";
+"STOP" = "DETENER";
+"Submit" = "Enviar";
+"System" = "Sistema";
+"Undo" = "Deshacer";
+"Use" = "Usar";
+"View" = "Ver";
+"Year" = "Año";
+
+/* Authentication and profile */
+"Already registered? Login" = "¿Ya tienes una cuenta? Inicia sesión";
+"Check your email" = "Revisa tu correo";
+"Create Account" = "Crear cuenta";
+"Creating..." = "Creando…";
+"Edit Profile" = "Editar perfil";
+"Forgot Password?" = "¿Olvidaste tu contraseña?";
+"I'm willing to testify by phone if needed." = "Puedo testificar por teléfono si es necesario.";
+"Login" = "Iniciar sesión";
+"Logging In..." = "Iniciando sesión…";
+"Log Out" = "Cerrar sesión";
+"Logout" = "Cerrar sesión";
+"Log out?" = "¿Cerrar sesión?";
+"Are you sure you want to log out?" = "¿Seguro que quieres cerrar sesión?";
+"Need an account? Register" = "¿Necesitas una cuenta? Regístrate";
+"Profile" = "Perfil";
+"Register" = "Registrarse";
+"Saving..." = "Guardando…";
+"Sign in to edit your profile and manage your account." = "Inicia sesión para editar tu perfil y administrar tu cuenta.";
+"Sign in to see your history and keep track of the reports you've submitted." = "Inicia sesión para ver tu historial y seguir los reportes que enviaste.";
+"Sign in with Apple" = "Continuar con Apple";
+"Sign in with Google" = "Continuar con Google";
+
+/* Navigation */
+"Auto-Report" = "Auto-Report";
+"Live" = "En vivo";
+"My Reports" = "Mis reportes";
+"New Report" = "Nuevo reporte";
+"Open menu" = "Abrir menú";
+"Report" = "Reporte";
+"Settings" = "Configuración";
+
+/* Report flow */
+"Choose a complaint or add a photo." = "Elige una infracción o añade una foto.";
+"Choose State" = "Elegir estado";
+"Clear address" = "Borrar dirección";
+"Clear plate" = "Borrar placa";
+"Clear report?" = "¿Borrar el reporte?";
+"Dismiss" = "Cerrar";
+"Enter the plate manually." = "Ingresa la placa manualmente.";
+"Image unavailable" = "Imagen no disponible";
+"No image" = "Sin imagen";
+"No plate candidates" = "No hay placas posibles";
+"Occurred At" = "Ocurrió el";
+"Pan map to change address." = "Mueve el mapa para cambiar la dirección.";
+"Possible plates" = "Placas posibles";
+"Process" = "Procesar";
+"Process video for license plates?" = "¿Procesar el video para detectar placas?";
+"Report Submitted" = "Reporte enviado";
+"Tap a plate to use it" = "Toca una placa para usarla";
+"This will discard the current report draft." = "Esto descartará el borrador actual.";
+"Use this plate?" = "¿Usar esta placa?";
+"Use time from image" = "Usar la hora de la imagen";
+"Vehicle details from LookupAPlate" = "Datos del vehículo de LookupAPlate";
+"We can scan every video frame and show the best candidate plates for you to choose from." = "Podemos analizar cada cuadro del video y mostrarte las mejores placas posibles para que elijas.";
+
+/* Reports */
+"Choose how you want to pull your reports. We will not load the list until you ask." = "Elige cómo quieres consultar tus reportes. No cargaremos la lista hasta que lo solicites.";
+"Delete report" = "Eliminar reporte";
+"Deleting..." = "Eliminando…";
+"No reports found." = "No se encontraron reportes.";
+"%d report" = "%d reporte";
+"%d reports" = "%d reportes";
+"Unknown address" = "Dirección desconocida";
+"Pending" = "Pendiente";
+"Notes: %@" = "Notas: %@";
+"This pending report for %@ will be removed." = "Se eliminará este reporte pendiente de %@.";
+"Video %d" = "Video %d";
+"No media attached." = "No hay contenido adjunto.";
+"Open report image" = "Abrir imagen del reporte";
+"Results" = "Resultados";
+"Search Filters" = "Filtros de búsqueda";
+"Use end date" = "Usar fecha final";
+"Use start date" = "Usar fecha inicial";
+
+/* Auto-Report */
+"Bad" = "Incorrecto";
+"Discard" = "Descartar";
+"Good" = "Correcto";
+"Keep" = "Conservar";
+"No reports are currently marked Keep." = "Actualmente no hay reportes marcados para conservar.";
+"Processed photos" = "Fotos procesadas";
+"Review Auto-Reports" = "Revisar Auto-Report";
+"Review Results" = "Revisar resultados";
+"Scan photos into a bulk review" = "Analizar fotos para revisarlas en grupo";
+"Scan window" = "Período de análisis";
+"Scan your recent photos to build a bulk review." = "Analiza tus fotos recientes para crear una revisión en grupo.";
+"Scanning Photos" = "Analizando fotos";
+"Submission Summary" = "Resumen del envío";
+"Summary" = "Resumen";
+
+/* Settings */
+"Allow offline photo processing" = "Permitir el procesamiento local de fotos";
+"Background photo library scanning is feature flagged and defaults off." = "El análisis de la fototeca en segundo plano está sujeto a una función controlada y se encuentra desactivado de forma predeterminada.";
+"Confidence thresholds" = "Umbrales de confianza";
+"Media scanner" = "Escáner de fotos";
+"Private media checks" = "Análisis privado de fotos y videos";
+"Reported is not a government app. Reports are prepared from your submitted media and sent through the configured reporting service." = "Reported no es una aplicación gubernamental. Los reportes se preparan con el contenido que envías y se mandan mediante el servicio de reportes configurado.";
+"Reported scans only the photos and videos you choose or share with the app. We do not keep broad access to your photo library." = "Reported solo analiza las fotos y los videos que eliges o compartes con la app. No conservamos acceso amplio a tu fototeca.";
+"Reset thresholds" = "Restablecer umbrales";
+"Scanner notifications" = "Notificaciones del escáner";
+"Sources" = "Fuentes";
+"Trained with Reported data." = "Entrenado con datos de Reported.";
+"Use on-device computer vision for media you choose or share with Reported." = "Usa visión artificial en el dispositivo para el contenido que eliges o compartes con Reported.";
+"View Roboflow project" = "Ver proyecto de Roboflow";
+"Thresholds: plate %@+, state %@+, infraction %@+." = "Umbrales: placa %@+, estado %@+, infracción %@+.";
+
+/* Reported AI and voice */
+"Cancel processing" = "Cancelar procesamiento";
+"Cancel Reported AI processing" = "Cancelar el procesamiento de Reported AI";
+"Dictate the complaint, plate, state, time, address, description, and notes, and we'll fill in the fields." = "Dicta la infracción, la placa, el estado, la hora, la dirección, la descripción y las notas, y completaremos los campos.";
+"Dismiss voice assistant" = "Cerrar el asistente de voz";
+"Install the optional on-device model to use Reported AI without sending report details to an AI service." = "Instala el modelo opcional en el dispositivo para usar Reported AI sin enviar los datos del reporte a un servicio de IA.";
+"Hardware acceleration is unavailable for this model on this device. REPORTED AI may run slowly." = "La aceleración por hardware no está disponible para este modelo en este dispositivo. REPORTED AI puede funcionar lentamente.";
+"Install REPORTED AI (%@)" = "Instalar REPORTED AI (%@)";
+"Installed" = "Instalado";
+"Installed (%@)" = "Instalado (%@)";
+"Installing REPORTED AI…" = "Instalando REPORTED AI…";
+"Installing REPORTED AI… %d%%" = "Instalando REPORTED AI… %d%%";
+"Installing REPORTED AI..." = "Instalando REPORTED AI…";
+"Mixed field sources" = "Fuentes de campos combinadas";
+"Processing audio" = "Procesando audio";
+"Recording" = "Grabando";
+"Reported AI" = "Reported AI";
+"REPORTED AI did not finish installing." = "REPORTED AI no terminó de instalarse.";
+"REPORTED AI did not finish installing correctly." = "REPORTED AI no terminó de instalarse correctamente.";
+"REPORTED AI installed." = "REPORTED AI se instaló.";
+"REPORTED AI is not installed. Install REPORTED AI (%@) before voice drafting can run." = "REPORTED AI no está instalado. Instala REPORTED AI (%@) antes de usar el dictado.";
+"Not installed" = "No instalado";
+"Stop recording" = "Detener grabación";
+"This changes every field in this Reported AI draft." = "Esto cambia todos los campos de este borrador de Reported AI.";
+
+/* Support */
+"Buy us coffee" = "Invítanos un café";
+"Buy us coffee!!" = "¡Invítanos un café!";
+"Buy us\ncoffee!!" = "Invítanos\nun café";
+"Dismiss system notice" = "Cerrar aviso del sistema";
+"Open Buy Me a Coffee" = "Abrir Buy Me a Coffee";
+"Reported is free to use, but we do have infrastructure costs." = "Reported es gratis, pero tenemos costos de infraestructura.";
+"Why support Reported" = "Por qué apoyar a Reported";
+
+/* Location-specific reporting */
+"Philadelphia mobility access" = "Acceso de movilidad de Filadelfia";

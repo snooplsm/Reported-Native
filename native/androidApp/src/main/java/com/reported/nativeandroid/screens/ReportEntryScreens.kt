@@ -143,6 +143,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -191,6 +192,7 @@ import com.reported.nativeandroid.app.SubmissionMedia
 import com.reported.nativeandroid.app.SubmissionStage
 import com.reported.nativeandroid.app.isPhiladelphiaSubmission
 import com.reported.nativeandroid.BuildConfig
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.ai.ReportedAiModelStore
 import com.reported.nativeandroid.analytics.ReportedAnalytics
 import com.reported.nativeandroid.media.MediaScannerScheduler
@@ -293,10 +295,10 @@ fun AddressSearchScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
             }
             Text(
-                "Address",
+                stringResource(R.string.field_address),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center
@@ -446,10 +448,10 @@ fun PlateEntryScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
             }
             Text(
-                "Plate",
+                stringResource(R.string.field_plate),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center
@@ -460,7 +462,7 @@ fun PlateEntryScreen(
                     onBack()
                 }
             ) {
-                Text("Done")
+                Text(stringResource(R.string.action_done))
             }
         }
 
@@ -477,7 +479,7 @@ fun PlateEntryScreen(
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
             singleLine = true,
-            label = { Text("License plate") },
+            label = { Text(stringResource(R.string.field_license_plate)) },
             trailingIcon = if (fieldValue.text.isNotEmpty()) {
                 {
                     IconButton(
@@ -486,7 +488,7 @@ fun PlateEntryScreen(
                             onAction(ComposerAction.FieldsChanged(plate = ""))
                         }
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Clear plate")
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.report_clear_plate))
                     }
                 }
             } else {
@@ -515,7 +517,7 @@ fun PlateEntryScreen(
             if (state.plateCandidates.isEmpty()) {
                 item {
                     Text(
-                        "No plate candidates found in the image.",
+                        stringResource(R.string.report_no_plate_candidates),
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -524,7 +526,7 @@ fun PlateEntryScreen(
             } else {
                 item {
                     Text(
-                        "Possible plates",
+                        stringResource(R.string.report_possible_plates),
                         modifier = Modifier.padding(horizontal = 4.dp),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -589,12 +591,16 @@ internal fun ImageAddressPickerRow(
             Icon(Icons.Outlined.LocationOn, contentDescription = null)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    if (suggestion != null) "Use address from image" else "No image address found",
+                    if (suggestion != null) {
+                        stringResource(R.string.report_use_image_address)
+                    } else {
+                        stringResource(R.string.report_no_image_address)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    suggestion?.label ?: "This photo or video did not include usable GPS metadata.",
+                    suggestion?.label ?: stringResource(R.string.report_no_gps_metadata),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -641,7 +647,7 @@ internal fun PlateCandidateChoiceRow(
                     )
                 }
                 Text(
-                    "${(candidate.confidence * 100).toInt()}% confidence",
+                    stringResource(R.string.report_confidence_percent, (candidate.confidence * 100).toInt()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -661,7 +667,7 @@ internal fun PlateCandidateChoiceRow(
                 }
             }
             Text(
-                if (selected) "Selected" else "Use",
+                if (selected) stringResource(R.string.action_selected) else stringResource(R.string.action_use),
                 style = MaterialTheme.typography.labelLarge,
                 color = if (selected) Color(0xFF20B15A) else MaterialTheme.colorScheme.primary
             )

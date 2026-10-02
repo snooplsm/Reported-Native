@@ -3,8 +3,11 @@ package com.reported.nativeandroid.profile
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.ai.ReportedAiModelStore
 import com.reported.nativeandroid.app.UdfStore
+import com.reported.nativeandroid.di.AppGraph
+import com.reported.nativeandroid.di.MessageResolver
 import com.reported.nativeandroid.media.AutoReportThresholds
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
@@ -60,9 +63,14 @@ sealed interface SettingsEffect {
     data class OpenUrl(val url: String) : SettingsEffect
 }
 
-class SettingsViewModel(application: Application) :
+class SettingsViewModel internal constructor(
+    application: Application,
+    private val messages: MessageResolver
+) :
     AndroidViewModel(application),
     UdfStore<SettingsUiState, SettingsAction> {
+
+    constructor(application: Application) : this(application, AppGraph.messages)
 
     private val appContext = application.applicationContext
     private val _state = MutableStateFlow(SettingsUiState())
@@ -215,7 +223,7 @@ class SettingsViewModel(application: Application) :
             )
         }
         viewModelScope.launch {
-            ReportedAiModelStore.downloadModel(appContext) { downloadedBytes, totalBytes ->
+            ReportedAiModelStore.downloadModel(appContext, messages) { downloadedBytes, totalBytes ->
                 _state.update {
                     it.copy(
                         reportedAiDownloadProgress = if (totalBytes > 0L) {
@@ -229,12 +237,12 @@ class SettingsViewModel(application: Application) :
                 onSuccess = {
                     _state.value = settingsState(
                         reportedAiDownloadProgress = 1f,
-                        reportedAiMessage = "REPORTED AI installed."
+                        reportedAiMessage = messages.resolve(R.string.reported_ai_installed_message)
                     )
                 },
                 onFailure = { error ->
                     _state.value = settingsState(
-                        reportedAiMessage = error.message ?: "Could not install REPORTED AI."
+                        reportedAiMessage = error.message ?: messages.resolve(R.string.reported_ai_install_error)
                     )
                 }
             )
@@ -248,9 +256,9 @@ class SettingsViewModel(application: Application) :
             val deleted = ReportedAiModelStore.deleteModel(appContext)
             _state.value = settingsState(
                 reportedAiMessage = if (deleted > 0) {
-                    "REPORTED AI deleted."
+                    messages.resolve(R.string.reported_ai_deleted_message)
                 } else {
-                    "No REPORTED AI model was installed."
+                    messages.resolve(R.string.reported_ai_not_installed_message)
                 }
             )
         }
@@ -271,7 +279,7 @@ class SettingsViewModel(application: Application) :
         autoReportComplaintThreshold = AutoReportThresholds.complaintConfidence(appContext),
         reportedAiInstalled = ReportedAiModelStore.isModelInstalled(appContext),
         reportedAiModelSize = ReportedAiModelStore.installedModelSizeLabel(appContext),
-        reportedAiAccelerationMessage = ReportedAiModelStore.accelerationMessage(appContext),
+        reportedAiAccelerationMessage = ReportedAiModelStore.accelerationMessage(appContext, messages),
         reportedAiDownloadSizeLabel = ReportedAiModelStore.compactDownloadSizeLabel,
         reportedAiDownloading = reportedAiDownloading,
         reportedAiDownloadProgress = reportedAiDownloadProgress,

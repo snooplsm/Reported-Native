@@ -43,6 +43,8 @@ import com.reported.nativeandroid.app.isPhiladelphiaSubmission
 import com.reported.nativeandroid.BuildConfig
 import com.reported.nativeandroid.ai.ReportedAiModelStore
 import com.reported.nativeandroid.analytics.ReportedAnalytics
+import com.reported.nativeandroid.di.AppGraph
+import com.reported.nativeandroid.di.MessageResolver
 import com.reported.nativeandroid.media.MediaScannerScheduler
 import com.reported.nativeandroid.media.MediaScannerSettings
 import kotlinx.coroutines.Job
@@ -87,7 +89,8 @@ fun ReportComposerScreen(
     sharedMediaRequest: SharedMediaRequest? = null,
     onSharedMediaConsumed: (Long) -> Unit = {},
     onReportSubmitted: (String) -> Unit = {},
-    vm: ComposerViewModel = viewModel()
+    vm: ComposerViewModel = viewModel(),
+    messages: MessageResolver = AppGraph.messages
 ) {
     val state by vm.state.collectAsState()
     val context = LocalContext.current
@@ -116,7 +119,9 @@ fun ReportComposerScreen(
     var voiceModelInstalled by remember { mutableStateOf(OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)) }
     var voiceModelDownloading by remember { mutableStateOf(false) }
     var voiceModelDownloadProgress by remember { mutableStateOf<Float?>(null) }
-    var voiceAccelerationMessage by remember { mutableStateOf(ReportedAiModelStore.accelerationMessage(context)) }
+    var voiceAccelerationMessage by remember {
+        mutableStateOf(ReportedAiModelStore.accelerationMessage(context, messages))
+    }
     var voiceImageContext by remember { mutableStateOf<String?>(null) }
     var voiceImageContextJob by remember { mutableStateOf<Job?>(null) }
     var hasVoiceMicrophonePermission by remember {
@@ -501,7 +506,7 @@ fun ReportComposerScreen(
                 audioFile.delete()
             }
             voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
-            voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+            voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context, messages)
         }
     }
 
@@ -525,7 +530,7 @@ fun ReportComposerScreen(
     fun openVoiceAssistant() {
         ReportedAnalytics.logAiSparkleTapped(surface = "report_composer")
         voiceError = null
-        voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+        voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context, messages)
         hasVoiceMicrophonePermission =
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         showVoiceAssistSheet = true
@@ -551,7 +556,7 @@ fun ReportComposerScreen(
         voiceModelDownloading = true
         voiceModelDownloadProgress = null
         scope.launch {
-            OnDeviceGemmaVoiceDraftEngine.downloadModel(context) { downloadedBytes, totalBytes ->
+            OnDeviceGemmaVoiceDraftEngine.downloadModel(context, messages) { downloadedBytes, totalBytes ->
                 voiceModelDownloadProgress = if (totalBytes > 0L) {
                     (downloadedBytes.toDouble() / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
                 } else {
@@ -560,13 +565,13 @@ fun ReportComposerScreen(
             }.fold(
                 onSuccess = {
                     voiceModelInstalled = true
-                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context, messages)
                     voiceError = null
                     voiceModelDownloadProgress = 1f
                 },
                 onFailure = { error ->
                     voiceModelInstalled = OnDeviceGemmaVoiceDraftEngine.isModelInstalled(context)
-                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context)
+                    voiceAccelerationMessage = ReportedAiModelStore.accelerationMessage(context, messages)
                     voiceError = error.message ?: "Could not install REPORTED AI."
                 }
             )
