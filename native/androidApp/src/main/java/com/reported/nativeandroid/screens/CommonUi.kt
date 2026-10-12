@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -485,13 +487,13 @@ fun TertiaryButton(
     }
 }
 
-private val preferredPlateRegions = listOf("NY", "NJ", "CT", "PA", "FL", "OTHER")
+private val preferredPlateRegions = listOf("NY", "NJ", "CT", "PA", "FL", "N/A", "OTHER")
 private val allPlateRegions = listOf(
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
     "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
     "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "N/A"
 )
 
 @Composable
@@ -600,6 +602,7 @@ fun PlateRegionPickerField(
             },
             text = {
                 FlowRow(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
