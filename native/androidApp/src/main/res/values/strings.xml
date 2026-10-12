@@ -1,4 +1,9 @@
 <resources>
+    <string name="photo_location_permission_title">Photo location access</string>
+    <string name="photo_location_permission_message">Allow photo location access to fill the report address from your photo. Without it, GPS may be hidden and you may need to enter the address. This does not access your current location.</string>
+    <string name="photo_location_permission_allow">Allow access</string>
+    <string name="photo_location_permission_settings">Open settings</string>
+    <string name="photo_location_permission_skip">Continue without GPS</string>
     <string name="profile_missing_contact">Complete the empty contact fields for reports that require them. NYPD reports with contact info withheld do not require them.</string>
     <string name="profile_public_sharing">Allow public sharing of report photos, videos, description, category and location</string>
     <string name="profile_withhold_contact">Withhold my contact info from NYPD service requests</string>

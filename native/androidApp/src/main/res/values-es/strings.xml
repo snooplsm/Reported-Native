@@ -1,4 +1,9 @@
 <resources>
+    <string name="photo_location_permission_title">Ubicación de la foto</string>
+    <string name="photo_location_permission_message">Permite leer la ubicación de la foto para completar la dirección. Sin permiso, el GPS puede estar oculto y tendrás que indicar la dirección. No accede a tu ubicación actual.</string>
+    <string name="photo_location_permission_allow">Permitir acceso</string>
+    <string name="photo_location_permission_settings">Abrir ajustes</string>
+    <string name="photo_location_permission_skip">Continuar sin GPS</string>
     <string name="profile_missing_contact">Completa los datos de contacto que falten para reportes que los requieran. No hacen falta si ocultas tus datos a NYPD.</string>
     <string name="profile_public_sharing">Permitir publicar fotos, videos, descripción, categoría y ubicación del reporte</string>
     <string name="profile_withhold_contact">No compartir mis datos de contacto con NYPD</string>

@@ -31,6 +31,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
+import com.reported.nativeandroid.auth.findActivity
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.res.stringResource
+import com.reported.nativeandroid.R
 import com.reported.nativeandroid.app.ComposerAction
 import com.reported.nativeandroid.app.ComposerEvent
 import com.reported.nativeandroid.app.ComposerViewModel
@@ -80,6 +87,18 @@ internal fun hasMediaLocationPermission(context: Context): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_MEDIA_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+internal fun photoMetadataPermissions(): Array<String> = buildList {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        add(Manifest.permission.READ_MEDIA_IMAGES)
+    } else {
+        add(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+}.toTypedArray()
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ReportComposerScreen(
@@ -106,6 +125,7 @@ fun ReportComposerScreen(
     }
     var pendingComplaintId by remember { mutableStateOf<String?>(null) }
     var pendingMultipleSelection by remember { mutableStateOf(false) }
+    var showPhotoLocationPermissionDialog by remember { mutableStateOf(false) }
     var pendingMediaForCurrentReport by remember { mutableStateOf(false) }
     var showComplaintChooser by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
@@ -459,7 +479,7 @@ fun ReportComposerScreen(
     }
 
     val tutorialMetadataPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
     ) {}
 
     fun processVoiceAudio(audioFile: File) {
@@ -663,9 +683,54 @@ fun ReportComposerScreen(
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants[Manifest.permission.ACCESS_MEDIA_LOCATION] == true || hasMediaLocationPermission(context)) {
+            launchDocumentPicker()
+        } else {
+            showPhotoLocationPermissionDialog = true
+        }
+    }
+
+    val photoLocationSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        launchDocumentPicker()
+        if (hasMediaLocationPermission(context)) launchDocumentPicker()
+        else showPhotoLocationPermissionDialog = true
+    }
+
+    fun choosePhotoWithLocationPermission() {
+        if (hasMediaLocationPermission(context)) launchDocumentPicker()
+        else locationPermissionLauncher.launch(photoMetadataPermissions())
+    }
+
+    if (showPhotoLocationPermissionDialog) {
+        val canRequestAgain = context.findActivity()?.let {
+            photoMetadataPermissions().any { permission -> ActivityCompat.shouldShowRequestPermissionRationale(it, permission) }
+        } == true
+        AlertDialog(
+            onDismissRequest = { showPhotoLocationPermissionDialog = false },
+            title = { Text(stringResource(R.string.photo_location_permission_title)) },
+            text = { Text(stringResource(R.string.photo_location_permission_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPhotoLocationPermissionDialog = false
+                    if (canRequestAgain) locationPermissionLauncher.launch(photoMetadataPermissions())
+                    else photoLocationSettingsLauncher.launch(Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${context.packageName}")
+                    ))
+                }) {
+                    Text(stringResource(if (canRequestAgain) R.string.photo_location_permission_allow else R.string.photo_location_permission_settings))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPhotoLocationPermissionDialog = false
+                    launchDocumentPicker()
+                }) { Text(stringResource(R.string.photo_location_permission_skip)) }
+            }
+        )
     }
 
     LaunchedEffect(Unit) { vm.onAction(ComposerAction.LoadDraft) }
@@ -766,7 +831,7 @@ fun ReportComposerScreen(
         onTutorialScannerEnabledChange = { tutorialScannerEnabled = it },
         onTutorialNotificationsEnabledChange = { tutorialNotificationsEnabled = it },
         onRequestMediaLocationPermission = {
-            tutorialMetadataPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            tutorialMetadataPermissionLauncher.launch(photoMetadataPermissions())
         },
         onTutorialSkip = {
             markReportTutorialSeen(context)
@@ -847,13 +912,13 @@ fun ReportComposerScreen(
             pendingMultipleSelection = false
             pendingMediaForCurrentReport = false
             pendingComplaintId = complaintId
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            choosePhotoWithLocationPermission()
         },
         onLaunchMediaPicker = {
             pendingComplaintId = state.selectedComplaintId
             pendingMultipleSelection = state.primaryMedia != null
             pendingMediaForCurrentReport = state.primaryMedia == null
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_MEDIA_LOCATION)
+            choosePhotoWithLocationPermission()
         },
         onClearRequested = { showDiscardDialog = true },
 
