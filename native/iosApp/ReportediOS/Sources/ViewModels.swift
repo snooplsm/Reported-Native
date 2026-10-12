@@ -852,7 +852,7 @@ final class ComposerViewModel: ObservableObject, UdfStore {
                     mediaToSubmitMillis: state.mediaToSubmitMillis
                 )
                 print("ReportedSubmit: submit flow finished successfully")
-                state = ComposerState()
+                state = ComposerState(draftLoaded: true)
                 submittedReportObjectId = submittedObjectId
             } catch {
                 print("ReportedSubmit: submit flow failed \(error)")
