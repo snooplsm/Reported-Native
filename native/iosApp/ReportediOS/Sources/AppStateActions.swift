@@ -32,6 +32,8 @@ struct RegisterState {
 }
 
 struct ProfileState {
+    var canBeSharedPublicly = true
+    var withholdContactInfoFromNypd = false
     var firstName = ""
     var lastName = ""
     var phone = ""
@@ -117,6 +119,7 @@ enum ReportsAction {
 }
 
 enum ProfileAction {
+    case privacyChanged(publicly: Bool? = nil, withhold: Bool? = nil)
     case load
     case toggleEditing
     case save

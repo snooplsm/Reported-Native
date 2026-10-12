@@ -27,7 +27,9 @@ internal data class UserDto(
     val lastName: String? = null,
     val phone: String? = null,
     val sessionToken: String? = null,
-    val testify: Boolean? = null
+    val testify: Boolean? = null,
+    @SerialName("can_be_shared_publicly") val canBeSharedPublicly: Boolean = true,
+    @SerialName("withhold_contact_info_from_nypd") val withholdContactInfoFromNypd: Boolean = false
 )
 
 internal fun UserDto.toModel(): UserSession = UserSession(
@@ -38,7 +40,9 @@ internal fun UserDto.toModel(): UserSession = UserSession(
     lastName = lastName ?: parseLastName.orEmpty(),
     phone = phone ?: parsePhone.orEmpty(),
     sessionToken = sessionToken.orEmpty(),
-    testify = testify ?: false
+    testify = testify ?: false,
+    canBeSharedPublicly = canBeSharedPublicly,
+    withholdContactInfoFromNypd = withholdContactInfoFromNypd
 )
 
 @Serializable
@@ -216,7 +220,9 @@ internal data class UpdateProfileRequestDto(
     val phone: String,
     val firstName: String,
     val lastName: String,
-    val testify: Boolean
+    val testify: Boolean,
+    @SerialName("can_be_shared_publicly") val canBeSharedPublicly: Boolean,
+    @SerialName("withhold_contact_info_from_nypd") val withholdContactInfoFromNypd: Boolean
 )
 
 @Serializable
@@ -226,7 +232,9 @@ internal data class ParseUpdateProfileRequestDto(
     @SerialName("Phone") val phone: String,
     @SerialName("FirstName") val firstName: String,
     @SerialName("LastName") val lastName: String,
-    val testify: Boolean
+    val testify: Boolean,
+    @SerialName("can_be_shared_publicly") val canBeSharedPublicly: Boolean,
+    @SerialName("withhold_contact_info_from_nypd") val withholdContactInfoFromNypd: Boolean
 )
 
 @Serializable

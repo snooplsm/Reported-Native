@@ -85,6 +85,9 @@ fun ProfileScreen(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     state.error?.let { MessageCard(it) }
+                    if (listOf(state.firstName, state.lastName, state.phone, state.email).any { it.isBlank() }) {
+                        Text(stringResource(R.string.profile_missing_contact), style = MaterialTheme.typography.bodySmall)
+                    }
                     if (isLandscape) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -144,6 +147,15 @@ fun ProfileScreen(
                         )
                         Text(stringResource(R.string.testify_by_phone))
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(state.canBeSharedPublicly, { vm.onAction(ProfileAction.PrivacyChanged(publicly = it)) }, enabled = state.editing && !state.loading)
+                        Text(stringResource(R.string.profile_public_sharing))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(state.withholdContactInfoFromNypd, { vm.onAction(ProfileAction.PrivacyChanged(withhold = it)) }, enabled = state.editing && !state.loading)
+                        Text(stringResource(R.string.profile_withhold_contact))
+                    }
+                    Text(stringResource(R.string.profile_contact_explanation), style = MaterialTheme.typography.bodySmall)
                     if (state.editing) {
                         PrimaryButton(stringResource(R.string.action_save), onClick = { vm.onAction(ProfileAction.SavePressed()) }, enabled = !state.loading)
                     } else {

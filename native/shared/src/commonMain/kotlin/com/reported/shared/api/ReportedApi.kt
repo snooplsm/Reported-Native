@@ -143,7 +143,9 @@ class ReportedApi(
         phone: String,
         firstName: String,
         lastName: String,
-        testify: Boolean
+        testify: Boolean,
+        canBeSharedPublicly: Boolean,
+        withholdContactInfoFromNypd: Boolean
     ): UserSession {
         val session = sessionStore.read()
         return if (session?.objectId?.isNotBlank() == true) {
@@ -159,7 +161,9 @@ class ReportedApi(
                         phone = phone,
                         firstName = firstName,
                         lastName = lastName,
-                        testify = testify
+                        testify = testify,
+                        canBeSharedPublicly = canBeSharedPublicly,
+                        withholdContactInfoFromNypd = withholdContactInfoFromNypd
                     )
                 )
             }
@@ -168,7 +172,9 @@ class ReportedApi(
                 phone = phone,
                 firstName = firstName,
                 lastName = lastName,
-                testify = testify
+                testify = testify,
+                canBeSharedPublicly = canBeSharedPublicly,
+                withholdContactInfoFromNypd = withholdContactInfoFromNypd
             )
         } else {
             val dto = client.put("${apiBaseUrl()}user/update") {
@@ -180,7 +186,9 @@ class ReportedApi(
                         phone = phone,
                         firstName = firstName,
                         lastName = lastName,
-                        testify = testify
+                        testify = testify,
+                        canBeSharedPublicly = canBeSharedPublicly,
+                        withholdContactInfoFromNypd = withholdContactInfoFromNypd
                     )
                 )
             }.body<UserDto>()
@@ -232,6 +240,7 @@ class ReportedApi(
 
     suspend fun submitReport(command: SubmitReportCommand): String {
         val session = sessionStore.read() ?: error("Not logged in")
+        session.requireReportContact(command.plate, CityReportingRules.isPhiladelphiaReport(command.latitude, command.longitude, command.address))
         val enrichedReport = command.enrichForHireVehicleDetails()
         val endpoint = "${parseBaseUrl()}/classes/$parseDefaultSubmissionClassName"
         println("ReportedSubmit: POST $endpoint")

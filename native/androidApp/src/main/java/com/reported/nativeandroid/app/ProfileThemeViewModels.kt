@@ -45,6 +45,10 @@ class ProfileViewModel : ViewModel(), UdfStore<ProfileUiState, ProfileAction> {
 
     override fun onAction(action: ProfileAction) {
         when (action) {
+            is ProfileAction.PrivacyChanged -> _state.update { it.copy(
+                canBeSharedPublicly = action.publicly ?: it.canBeSharedPublicly,
+                withholdContactInfoFromNypd = action.withhold ?: it.withholdContactInfoFromNypd
+            ) }
             ProfileAction.Load -> load()
             ProfileAction.ToggleEditing -> toggleEditing()
             is ProfileAction.SavePressed -> save(action.onSaved)
@@ -70,6 +74,9 @@ class ProfileViewModel : ViewModel(), UdfStore<ProfileUiState, ProfileAction> {
                     phone = session.phone,
                     email = session.email,
                     testify = session.testify,
+                    canBeSharedPublicly = session.canBeSharedPublicly,
+                    withholdContactInfoFromNypd = session.withholdContactInfoFromNypd,
+                    editing = session.missingContactFields.isNotEmpty(),
                     themeMode = themeMode
                 )
             } else {
@@ -114,7 +121,9 @@ class ProfileViewModel : ViewModel(), UdfStore<ProfileUiState, ProfileAction> {
                     phone = _state.value.phone,
                     firstName = _state.value.firstName,
                     lastName = _state.value.lastName,
-                    testify = _state.value.testify
+                    testify = _state.value.testify,
+                    canBeSharedPublicly = _state.value.canBeSharedPublicly,
+                    withholdContactInfoFromNypd = _state.value.withholdContactInfoFromNypd
                 )
             }.onSuccess {
                 _state.update { current -> current.copy(loading = false, editing = false) }

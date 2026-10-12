@@ -89,7 +89,10 @@ internal fun buildParseSubmissionBody(
                 put("longitude", command.longitude)
             })
         }
-        put("can_be_shared_publicly", true)
+        put("can_be_shared_publicly", session.canBeSharedPublicly)
+        if (session.withholdContactInfoFromNypd) {
+            put("withhold_contact_info_from_nypd", true)
+        }
         put("typeofreport", "complaint")
         put("colorTaxi", colorTaxi)
         put("loc1_address", command.address)

@@ -840,6 +840,10 @@ class ComposerViewModel : ViewModel(), UdfStore<ComposerUiState, ComposerAction>
                     philadelphiaMobilityAccessDetails = philadelphiaDetails
                 )
                 lastSubmitCommand = attemptedCommand
+                AppGraph.shared.loadSessionUseCase.execute()?.requireReportContact(
+                    snapshot.plate,
+                    CityReportingRules.isPhiladelphiaReport(snapshot.latitude, snapshot.longitude, attemptedCommand.address)
+                )
                 Log.d(
                     "ReportedSubmit",
                     "Validated report; media=${submittedMedia.size} plate=${snapshot.plate}/${snapshot.plateRegion} complaintIds=${snapshot.selectedComplaintIds}"
