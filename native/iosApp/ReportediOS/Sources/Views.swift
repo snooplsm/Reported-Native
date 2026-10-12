@@ -38,7 +38,7 @@ func currentInterfaceIsLandscape(fallbackSize: CGSize) -> Bool {
     return fallbackSize.width > fallbackSize.height
 }
 
-let preferredPlateRegions = ["NY", "NJ", "CT", "PA", "FL", "OTHER"]
+let preferredPlateRegions = ["NY", "NJ", "CT", "PA", "FL", "N/A", "OTHER"]
 let dismissedSystemNoticeKey = "reported.dismissed_system_notice"
 let buyMeACoffeeURL = URL(string: "https://www.buymeacoffee.com/reported")!
 let reportedRoboflowProjectURL = URL(string: "https://app.roboflow.com/reported/reported/13")!
@@ -50,7 +50,7 @@ let allPlateRegions = [
     "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
     "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
     "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "N/A"
 ]
 
 struct ComposerScreen: View {
