@@ -190,6 +190,7 @@ gradle.taskGraph.whenReady {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     coreLibraryDesugaring(libs.desugarJdkLibs)
     implementation(project(":shared"))
 

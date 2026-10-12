@@ -886,14 +886,15 @@ class ComposerViewModel : ViewModel(), UdfStore<ComposerUiState, ComposerAction>
                     mediaToSubmitMillis = result.mediaToSubmitMillis
                 )
                 Log.d("ReportedSubmit", "Submit flow finished successfully")
-                AppGraph.shared.clearDraftUseCase.execute()
-                _state.value = ComposerUiState(
+                completeComposerSubmission(
+                    objectId = result.objectId,
                     complaintCategories = Catalogs.complaintCategories,
                     showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages,
-                    infoMessage = "Report submitted.",
-                    draftLoaded = true
-                )
-                _events.tryEmit(ComposerEvent.ReportSubmitted(result.objectId))
+                    clearDraft = { AppGraph.shared.clearDraftUseCase.execute() }
+                ) { freshState, event ->
+                    _state.value = freshState
+                    _events.tryEmit(event)
+                }
             }.onFailure { error ->
                 Log.e("ReportedSubmit", "Submit flow failed", error)
                 val failedSnapshot = _state.value
