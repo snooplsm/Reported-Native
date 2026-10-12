@@ -18,6 +18,14 @@ packages:
     from: 1.24.2
   LiteRTLM:
     path: Packages/LiteRTLMSafe
+schemes:
+  ReportediOS:
+    build:
+      targets:
+        ReportediOS: all
+    test:
+      targets:
+        - ReportediOSTests
 targets:
   ReportediOSTests:
     type: bundle.unit-test
