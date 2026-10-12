@@ -236,18 +236,9 @@ func reverseGeocodeAddress(latitude: Double, longitude: Double) async -> Compose
     let provider = reportAddressProvider(latitude: latitude, longitude: longitude, address: "")
     switch provider {
     case .philadelphia:
-        if let suggestion = await reverseGeocodePhiladelphiaAis(latitude: latitude, longitude: longitude) {
-            return suggestion
-        }
-        if let suggestion = await reverseGeocodeNyc(latitude: latitude, longitude: longitude) {
-            return suggestion
-        }
-        return await reverseGeocodePlatform(latitude: latitude, longitude: longitude)
+        return await reverseGeocodePhiladelphiaAis(latitude: latitude, longitude: longitude)
     case .newYorkCity:
-        if let suggestion = await reverseGeocodeNyc(latitude: latitude, longitude: longitude) {
-            return suggestion
-        }
-        return await reverseGeocodePlatform(latitude: latitude, longitude: longitude)
+        return await reverseGeocodeNyc(latitude: latitude, longitude: longitude)
     }
 }
 
@@ -281,10 +272,13 @@ func reverseGeocodeNyc(latitude: Double, longitude: Double) async -> ComposerSta
           let properties = first["properties"] as? [String: Any] else {
         return nil
     }
+    let street = (properties["street"] as? String)?.nilIfBlank
+    let layer = properties["layer"] as? String
+    guard street != nil || layer == "address" || layer == "street" else { return nil }
     let label = (properties["label"] as? String)
         ?? (properties["name"] as? String)
         ?? (properties["address"] as? String)
-    guard let label else { return nil }
+    guard let label = label?.nilIfBlank else { return nil }
     return ComposerState.AddressSuggestion(
         label: label,
         latitude: latitude,
@@ -408,7 +402,8 @@ func philadelphiaAisFeatureToSuggestion(
         ?? stringValue(properties["address"])
         ?? stringValue(properties["opa_address"])
     let zipCode = stringValue(properties["zip_code"]) ?? stringValue(properties["zip"])
-    var label = streetAddress ?? "Philadelphia address"
+    guard let validStreetAddress = streetAddress?.nilIfBlank else { return nil }
+    var label = validStreetAddress
     if !label.localizedCaseInsensitiveContains("Philadelphia") {
         label += ", Philadelphia"
     }
