@@ -137,6 +137,10 @@ suspend fun reverseGeocodeNyc(latitude: Double, longitude: Double): AddressSugge
             connection.inputStream.bufferedReader().use { reader ->
                 val json = JSONObject(reader.readText())
                 val feature = json.optJSONArray("features")?.optJSONObject(0) ?: return@use null
+                val properties = feature.optJSONObject("properties") ?: return@use null
+                // Country/city centroids are not usable report addresses.
+                if (properties.optString("street").isBlank() &&
+                    properties.optString("layer") !in setOf("address", "street")) return@use null
                 featureToSuggestion(feature)
             }
         }.getOrNull().also {
@@ -147,10 +151,8 @@ suspend fun reverseGeocodeNyc(latitude: Double, longitude: Double): AddressSugge
 suspend fun reverseGeocodeAddress(context: Context, latitude: Double, longitude: Double): AddressSuggestion? =
     when (reportAddressProviderFor(context, latitude, longitude, "")) {
         ReportAddressProvider.Philadelphia -> reverseGeocodePhiladelphiaAis(latitude, longitude)
-            ?: reverseGeocodeNyc(latitude, longitude)
         ReportAddressProvider.NewYorkCity -> reverseGeocodeNyc(latitude, longitude)
     }
-        ?: withContext(Dispatchers.IO) { reverseGeocodePlatform(context, latitude, longitude) }
 
 suspend fun searchReportAddresses(
     context: Context,
@@ -259,9 +261,10 @@ private fun philadelphiaAisFeatureToSuggestion(
     val streetAddress = properties.optString("street_address")
         .ifBlank { properties.optString("address") }
         .ifBlank { properties.optString("opa_address") }
+    if (streetAddress.isBlank()) return null
     val zipCode = properties.optString("zip_code").takeIf { it.isNotBlank() }
     val label = buildString {
-        append(streetAddress.ifBlank { "Philadelphia address" })
+        append(streetAddress)
         if (!contains("Philadelphia", ignoreCase = true)) append(", Philadelphia")
         if (!contains(", PA", ignoreCase = true)) append(", PA")
         if (!zipCode.isNullOrBlank() && !contains(zipCode)) append(" $zipCode")
