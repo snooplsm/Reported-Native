@@ -51,8 +51,10 @@ class UpdateProfileUseCase(private val repository: AuthRepository) {
         phone: String,
         firstName: String,
         lastName: String,
-        testify: Boolean
-    ): UserSession = repository.updateProfile(email, phone, firstName, lastName, testify)
+        testify: Boolean,
+        canBeSharedPublicly: Boolean,
+        withholdContactInfoFromNypd: Boolean
+    ): UserSession = repository.updateProfile(email, phone, firstName, lastName, testify, canBeSharedPublicly, withholdContactInfoFromNypd)
 }
 
 class LogoutUseCase(private val repository: AuthRepository) {

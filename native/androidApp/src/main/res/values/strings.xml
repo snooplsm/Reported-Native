@@ -1,4 +1,8 @@
 <resources>
+    <string name="profile_missing_contact">Complete the empty contact fields for reports that require them. NYPD reports with contact info withheld do not require them.</string>
+    <string name="profile_public_sharing">Allow public sharing of report photos, videos, description, category and location</string>
+    <string name="profile_withhold_contact">Withhold my contact info from NYPD service requests</string>
+    <string name="profile_contact_explanation">If off, NYPD may call or email you. TLC reports always include contact info.</string>
     <string name="app_name">Reported</string>
 
     <!-- Common actions and fields -->

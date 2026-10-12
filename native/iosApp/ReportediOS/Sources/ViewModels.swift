@@ -774,6 +774,9 @@ final class ComposerViewModel: ObservableObject, UdfStore {
         Task {
             var failureReport = baseFailureReport
             do {
+                if let session = try await SharedBridge.shared.container.loadSessionUseCase.execute() {
+                    try session.requireReportContact(plate: state.plate, isPhiladelphia: philadelphiaDetails != nil)
+                }
                 await MainActor.run {
                     state.submitProgress = 0.02
                     state.submitMessage = "Uploading media"

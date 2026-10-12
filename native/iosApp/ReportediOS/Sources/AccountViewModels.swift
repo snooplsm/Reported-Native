@@ -207,6 +207,9 @@ final class ProfileViewModel: ObservableObject, UdfStore {
 
     func onAction(_ action: ProfileAction) {
         switch action {
+        case .privacyChanged(let publicly, let withhold):
+            if let publicly { state.canBeSharedPublicly = publicly }
+            if let withhold { state.withholdContactInfoFromNypd = withhold }
         case .load:
             load()
         case .toggleEditing:
@@ -237,6 +240,9 @@ final class ProfileViewModel: ObservableObject, UdfStore {
                 state.phone = session.phone
                 state.email = session.email
                 state.testify = session.testify
+                state.canBeSharedPublicly = session.canBeSharedPublicly
+                state.withholdContactInfoFromNypd = session.withholdContactInfoFromNypd
+                state.editing = !session.missingContactFields.isEmpty
             }
         }
     }
@@ -276,7 +282,9 @@ final class ProfileViewModel: ObservableObject, UdfStore {
                     phone: state.phone,
                     firstName: state.firstName,
                     lastName: state.lastName,
-                    testify: state.testify
+                    testify: state.testify,
+                    canBeSharedPublicly: state.canBeSharedPublicly,
+                    withholdContactInfoFromNypd: state.withholdContactInfoFromNypd
                 )
                 state.loading = false
                 state.editing = false
