@@ -18,7 +18,26 @@ packages:
     from: 1.24.2
   LiteRTLM:
     path: Packages/LiteRTLMSafe
+schemes:
+  ReportediOS:
+    build:
+      targets:
+        ReportediOS: all
+    test:
+      targets:
+        - ReportediOSTests
 targets:
+  ReportediOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ReportediOSTests
+    dependencies:
+      - target: ReportediOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.reported.reported.tests
   ReportediOS:
     type: application
     platform: iOS

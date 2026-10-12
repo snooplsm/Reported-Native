@@ -840,7 +840,6 @@ final class ComposerViewModel: ObservableObject, UdfStore {
                     state.submitProgress = 0.96
                     state.submitMessage = "Cleaning up"
                 }
-                try? await SharedBridge.shared.container.clearDraftUseCase.execute()
                 IOSMediaScannerSettings.markSubmittedAutoReportMediaURLs(submittedMedia.map(\.fileURL))
                 PersistentMediaStore.deleteStoredMedia(submittedMediaURLs)
                 ReportedAnalytics.logSubmitReport(
@@ -852,8 +851,14 @@ final class ComposerViewModel: ObservableObject, UdfStore {
                     mediaToSubmitMillis: state.mediaToSubmitMillis
                 )
                 print("ReportedSubmit: submit flow finished successfully")
-                state = ComposerState()
-                submittedReportObjectId = submittedObjectId
+                await completeComposerSubmission(
+                    objectId: submittedObjectId,
+                    clearDraft: { try await SharedBridge.shared.container.clearDraftUseCase.execute() },
+                    publish: { freshState, objectId in
+                        self.state = freshState
+                        self.submittedReportObjectId = objectId
+                    }
+                )
             } catch {
                 print("ReportedSubmit: submit flow failed \(error)")
                 let failedSession = try? await SharedBridge.shared.container.loadSessionUseCase.execute()
