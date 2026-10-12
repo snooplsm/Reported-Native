@@ -32,7 +32,7 @@ struct RegisterState {
 }
 
 struct ProfileState {
-    var canBeSharedPublicly = false
+    var canBeSharedPublicly = true
     var withholdContactInfoFromNypd = false
     var firstName = ""
     var lastName = ""

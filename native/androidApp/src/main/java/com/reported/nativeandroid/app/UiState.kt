@@ -157,7 +157,7 @@ data class ProfileUiState(
     val phone: String = "",
     val email: String = "",
     val testify: Boolean = false,
-    val canBeSharedPublicly: Boolean = false,
+    val canBeSharedPublicly: Boolean = true,
     val withholdContactInfoFromNypd: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val error: String? = null,

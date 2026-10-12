@@ -28,7 +28,7 @@ internal data class UserDto(
     val phone: String? = null,
     val sessionToken: String? = null,
     val testify: Boolean? = null,
-    @SerialName("can_be_shared_publicly") val canBeSharedPublicly: Boolean = false,
+    @SerialName("can_be_shared_publicly") val canBeSharedPublicly: Boolean = true,
     @SerialName("withhold_contact_info_from_nypd") val withholdContactInfoFromNypd: Boolean = false
 )
 

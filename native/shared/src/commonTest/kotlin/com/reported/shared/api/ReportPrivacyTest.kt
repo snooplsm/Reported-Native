@@ -12,12 +12,12 @@ class ReportPrivacyTest {
         address = "New York", complaintIds = listOf("Z8vjWz8uYr")
     )
 
-    @Test fun oldSessionsDefaultToPrivateAndDoNotWithhold() {
+    @Test fun oldSessionsDefaultToPublicSharingAndDoNotWithhold() {
         val session = Json.decodeFromString<UserSession>("""{"email":"test@example.com"}""")
-        assertFalse(session.canBeSharedPublicly)
+        assertTrue(session.canBeSharedPublicly)
         assertFalse(session.withholdContactInfoFromNypd)
         val payload = buildParseSubmissionBody(command, session, "android", 105)
-        assertEquals(JsonPrimitive(false), payload["can_be_shared_publicly"])
+        assertEquals(JsonPrimitive(true), payload["can_be_shared_publicly"])
         assertFalse(payload.containsKey("withhold_contact_info_from_nypd"))
     }
 
@@ -56,5 +56,11 @@ class ReportPrivacyTest {
         val user = Json.decodeFromString<UserDto>("""{"can_be_shared_publicly":true,"withhold_contact_info_from_nypd":true}""").toModel()
         assertTrue(user.canBeSharedPublicly)
         assertTrue(user.withholdContactInfoFromNypd)
+    }
+
+    @Test fun missingServerPreferenceDefaultsToPublicButExplicitOptOutIsPreserved() {
+        assertTrue(Json.decodeFromString<UserDto>("{}").toModel().canBeSharedPublicly)
+        assertFalse(Json.decodeFromString<UserDto>("""{"can_be_shared_publicly":false}""").toModel().canBeSharedPublicly)
+        assertFalse(Json.decodeFromString<UserSession>("""{"canBeSharedPublicly":false}""").canBeSharedPublicly)
     }
 }

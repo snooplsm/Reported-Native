@@ -13,7 +13,7 @@ data class UserSession(
     val sessionToken: String = "",
     val avatarUrl: String? = null,
     val testify: Boolean = false,
-    val canBeSharedPublicly: Boolean = false,
+    val canBeSharedPublicly: Boolean = true,
     val withholdContactInfoFromNypd: Boolean = false
 ) {
     val isAuthorized: Boolean
