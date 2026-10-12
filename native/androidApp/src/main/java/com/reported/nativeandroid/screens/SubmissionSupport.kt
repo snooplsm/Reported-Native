@@ -823,12 +823,26 @@ private val exifTagsToCopy = listOf(
     ExifInterface.TAG_WHITE_BALANCE
 )
 
-private fun openInputStreamSafely(context: Context, uri: Uri): InputStream? = runCatching {
-    when (uri.scheme) {
-        "file" -> uri.path?.let(::File)?.takeIf { it.exists() }?.inputStream()
-        else -> context.contentResolver.openInputStream(uri)
+private fun openInputStreamSafely(context: Context, uri: Uri): InputStream? {
+    if (uri.scheme == "file") {
+        return runCatching { uri.path?.let(::File)?.takeIf { it.exists() }?.inputStream() }.getOrNull()
     }
-}.getOrNull()
+    // Preserve GPS in the durable copy too, not only during metadata inspection.
+    // Document grants can be converted to MediaStore grants without requesting
+    // access to the user's entire library. Providers may still deny originals.
+    val candidates = buildList {
+        mediaStoreUriForPickerOrDocument(context, uri)?.let { mediaUri ->
+            originalMediaUri(mediaUri)?.let(::add)
+        }
+        if (!uri.isPickerUri()) originalMediaUri(uri)?.let(::add)
+        add(uri)
+    }.distinct()
+    for (candidate in candidates) {
+        val stream = runCatching { context.contentResolver.openInputStream(candidate) }.getOrNull()
+        if (stream != null) return stream
+    }
+    return null
+}
 
 private fun setRetrieverDataSource(context: Context, retriever: MediaMetadataRetriever, uri: Uri) {
     if (uri.scheme == "file") {

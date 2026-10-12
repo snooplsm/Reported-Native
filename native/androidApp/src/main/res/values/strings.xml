@@ -1,4 +1,9 @@
 <resources>
+    <string name="photo_location_permission_title">Photo location access</string>
+    <string name="photo_location_permission_message">Allow photo location access to fill the report address from your photo. Without it, GPS may be hidden and you may need to enter the address. This does not access your current location.</string>
+    <string name="photo_location_permission_allow">Allow access</string>
+    <string name="photo_location_permission_settings">Open settings</string>
+    <string name="photo_location_permission_skip">Continue without GPS</string>
     <string name="app_name">Reported</string>
 
     <!-- Common actions and fields -->
