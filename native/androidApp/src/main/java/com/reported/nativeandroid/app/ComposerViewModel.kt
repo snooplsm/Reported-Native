@@ -890,7 +890,8 @@ class ComposerViewModel : ViewModel(), UdfStore<ComposerUiState, ComposerAction>
                 _state.value = ComposerUiState(
                     complaintCategories = Catalogs.complaintCategories,
                     showComplaintImages = ReportedRemoteConfig.snapshot.value.showComplaintImages,
-                    infoMessage = "Report submitted."
+                    infoMessage = "Report submitted.",
+                    draftLoaded = true
                 )
                 _events.tryEmit(ComposerEvent.ReportSubmitted(result.objectId))
             }.onFailure { error ->
