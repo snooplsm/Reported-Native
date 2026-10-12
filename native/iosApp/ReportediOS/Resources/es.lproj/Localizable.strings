@@ -1,4 +1,8 @@
 /* Common */
+"Allow public sharing of report photos, videos, description, category and location" = "Permitir publicar fotos, videos, descripción, categoría y ubicación del reporte";
+"Withhold my contact info from NYPD service requests" = "No compartir mis datos de contacto con NYPD";
+"If off, NYPD may call or email you. TLC reports always include contact info." = "Si no se activa, NYPD puede llamarte o escribirte. TLC siempre recibe tus datos de contacto.";
+"Complete the empty contact fields for reports that require them. NYPD reports with contact info withheld do not require them." = "Completa los datos de contacto que falten para reportes que los requieran. No hacen falta si ocultas tus datos a NYPD.";
 "Add Photo" = "Añadir foto";
 "Address" = "Dirección";
 "AM" = "a. m.";

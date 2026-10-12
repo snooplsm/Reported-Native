@@ -57,9 +57,11 @@ class AuthRepository(
         phone: String,
         firstName: String,
         lastName: String,
-        testify: Boolean
+        testify: Boolean,
+        canBeSharedPublicly: Boolean,
+        withholdContactInfoFromNypd: Boolean
     ): UserSession {
-        val session = api.updateProfile(email, phone, firstName, lastName, testify)
+        val session = api.updateProfile(email, phone, firstName, lastName, testify, canBeSharedPublicly, withholdContactInfoFromNypd)
             .copy(avatarUrl = sessionStore.read()?.avatarUrl)
         sessionStore.write(session)
         return session

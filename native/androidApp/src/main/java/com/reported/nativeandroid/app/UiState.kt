@@ -157,6 +157,8 @@ data class ProfileUiState(
     val phone: String = "",
     val email: String = "",
     val testify: Boolean = false,
+    val canBeSharedPublicly: Boolean = true,
+    val withholdContactInfoFromNypd: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val error: String? = null,
     val editing: Boolean = false
@@ -202,6 +204,7 @@ sealed interface RegisterAction {
 }
 
 sealed interface ProfileAction {
+    data class PrivacyChanged(val publicly: Boolean? = null, val withhold: Boolean? = null) : ProfileAction
     data object Load : ProfileAction
     data object ToggleEditing : ProfileAction
     data class SavePressed(val onSaved: () -> Unit = {}) : ProfileAction

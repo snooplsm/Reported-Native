@@ -486,11 +486,27 @@ struct ProfileScreen: View {
                         ScreenCard {
                             if let error = viewModel.state.error { MessageView(text: error) }
                             profileFields(isLandscape: isLandscape)
+                            if [viewModel.state.firstName, viewModel.state.lastName, viewModel.state.email, viewModel.state.phone].contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                                Text("Complete the empty contact fields for reports that require them. NYPD reports with contact info withheld do not require them.")
+                                    .font(.caption)
+                            }
                             Toggle("I'm willing to testify by phone if needed.", isOn: Binding(
                                 get: { viewModel.state.testify },
                                 set: { viewModel.onAction(.fieldsChanged(testify: $0)) }
                             ))
                             .disabled(!viewModel.state.editing)
+                            Toggle("Allow public sharing of report photos, videos, description, category and location", isOn: Binding(
+                                get: { viewModel.state.canBeSharedPublicly },
+                                set: { viewModel.onAction(.privacyChanged(publicly: $0)) }
+                            ))
+                            .disabled(!viewModel.state.editing || viewModel.state.loading)
+                            Toggle("Withhold my contact info from NYPD service requests", isOn: Binding(
+                                get: { viewModel.state.withholdContactInfoFromNypd },
+                                set: { viewModel.onAction(.privacyChanged(withhold: $0)) }
+                            ))
+                            .disabled(!viewModel.state.editing || viewModel.state.loading)
+                            Text("If off, NYPD may call or email you. TLC reports always include contact info.")
+                                .font(.caption)
                             if viewModel.state.editing {
                                 PrimaryButton(title: viewModel.state.loading ? "Saving..." : "Save") { viewModel.onAction(.save) }
                             } else {
