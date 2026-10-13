@@ -125,9 +125,11 @@ targets:
             exit 1
           fi
       - name: Build SharedCore
+        basedOnDependencyAnalysis: false
         outputFiles:
           - $(DERIVED_FILE_DIR)/SharedCoreBuild.stamp
         script: |
+          set -eu
           export JAVA_HOME=$(/usr/libexec/java_home -v 21)
           cd "$SRCROOT/.."
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-daemon
